@@ -10,7 +10,7 @@ use crate::{
     observable::{ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
 
-use super::{PlaneWaveResult, PlaneWaveState};
+use super::{PlaneWaveResult, RawState};
 
 #[doc(hidden)]
 pub trait PlaneWaveQuery<J>
@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<J, I, M, W> PlaneWaveQuery<J> for PlaneWaveState<J, I, M, W>
+impl<J, I, M, W> PlaneWaveQuery<J> for RawState<J, I, M, W>
 where
     J: Jet + JetMapping,
     J::Scalar: ComplexField,
