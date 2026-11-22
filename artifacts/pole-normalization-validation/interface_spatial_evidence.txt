@@ -1,0 +1,222 @@
+NormalizedMode {
+    point: ModePoint {
+        root: AcceptedRoot {
+            index: 0,
+            evidence: NumericalEvidence {
+                z: Complex {
+                    re: 0.34577422959812565,
+                    im: 1.8332363788991104e-16,
+                },
+                value: Complex {
+                    re: 1.4551915228366852e-10,
+                    im: 1.364242052659392e-11,
+                },
+                derivative: Complex {
+                    re: 94239.05918408814,
+                    im: -2511.7020038403016,
+                },
+                correction: Some(
+                    1.5503694437760151e-15,
+                ),
+                residual_limit: 1.0099999999999999e-6,
+                correction_limit: 2e-10,
+            },
+            coordinate: Complex {
+                re: 61210.06059941319,
+                im: 815.5542946155297,
+            },
+            provenance: DomainProvenance {
+                domain_identity: (),
+                context: ProblemContext {
+                    stack: Stack {
+                        left_exterior: AnalyticalMaterialHandle {
+                            type: "lamina_core::material::model::Constant<f64>",
+                            ..
+                        },
+                        right_exterior: AnalyticalMaterialHandle {
+                            type: "lamina_materials::model::drude::Drude<f64>",
+                            ..
+                        },
+                        layers_left_to_right: [],
+                    },
+                    polarisation: TransverseMagnetic,
+                    coordinate: InPlane {
+                        fixed_k0: 50000.0,
+                    },
+                },
+                requested: ConformalRegion {
+                    re_min: 0.32077422959812407,
+                    re_max: 0.3707742295981241,
+                    im_min: -0.024999999999999935,
+                    im_max: 0.025000000000000067,
+                },
+                evaluation: ConformalRegion {
+                    re_min: 0.32077422959810986,
+                    re_max: 0.3707742295981383,
+                    im_min: -0.025000000000014146,
+                    im_max: 0.025000000000014278,
+                },
+                selection: Coordinate {
+                    reference: Complex {
+                        re: 0.34577588478953974,
+                        im: 1.611658619884864e-6,
+                    },
+                    coordinate: Complex {
+                        re: 61210.1605994131,
+                        im: 815.6542946155133,
+                    },
+                },
+                reference: Complex {
+                    re: 0.34577588478953974,
+                    im: 1.611658619884864e-6,
+                },
+                reference_coordinate: Complex {
+                    re: 61210.1605994131,
+                    im: 815.6542946155133,
+                },
+                assumption: CallerAssumedHolomorphicPoleFree,
+                radiation: Unspecified,
+                coordinate_kind: Conformal,
+                frequency: None,
+            },
+            config: RefinementConfig {
+                residual_atol: 1e-8,
+                residual_rtol: 1e-11,
+                residual_scale: 100000.0,
+                z_atol: 1e-10,
+                z_rtol: 1e-10,
+                max_updates: 32,
+                max_backtracks: 12,
+                max_evaluations: 256,
+            },
+            work: RefinementWork {
+                updates: 0,
+                trials: 0,
+                evaluations: 2,
+            },
+        },
+        backend: "lamina_core::backend::scatter2::Scatter2",
+        chart: 0,
+        candidate: 0,
+        enclosure: Rect {
+            x_min: 0.3407742295981241,
+            x_max: 0.3482742295981241,
+            y_min: -0.0024999999999999363,
+            y_max: 0.005000000000000063,
+        },
+        signature: Ok(
+            BranchSignature {
+                k0: Complex {
+                    re: 50000.0,
+                    im: 0.0,
+                },
+                k_parallel: Complex {
+                    re: 61210.06059941319,
+                    im: 815.5542946155257,
+                },
+                left: Complex {
+                    re: -1413.083547360571,
+                    im: 35327.088684014,
+                },
+                right: Complex {
+                    re: 1413.083547360545,
+                    im: 105981.2660520416,
+                },
+            },
+        ),
+    },
+    normalization: PoleNormalizationData {
+        input: PoleNormalizationInput {
+            k0: Complex {
+                re: 50000.0,
+                im: 0.0,
+            },
+            beta: Complex {
+                re: 61210.06059941319,
+                im: 815.5542946155257,
+            },
+            kappa: [
+                Complex {
+                    re: -1413.083547360571,
+                    im: 35327.088684014,
+                },
+                Complex {
+                    re: 1413.083547360545,
+                    im: 105981.2660520416,
+                },
+            ],
+            polarisation: TransverseMagnetic,
+            variable: BetaAtFixedK0,
+        },
+        settings: PoleNormalizationSettings {
+            amplitude: Complex {
+                re: 1.0,
+                im: 0.0,
+            },
+            exterior_offsets_cm: [
+                0.0,
+                0.0,
+            ],
+            factor_atol: 1e-12,
+            factor_rtol: 1e-12,
+            factor_reference_scale: 1.0,
+            max_condition: 10000000000.0,
+            kappa_cutoff: 1e-10,
+            constitutive_cutoff: 1e-12,
+        },
+        convention: "scalar TE/TM outgoing operator; positive unit-delta jump; one planar Fourier component",
+        factor_units: "squared primary seed field (physical pole variable in cm^-1)",
+        layers: [],
+        exterior_segments: [
+            Complex {
+                re: 0.0,
+                im: -0.0,
+            },
+            Complex {
+                re: 0.0,
+                im: 0.0,
+            },
+        ],
+        outgoing_boundaries: [
+            Complex {
+                re: -1.7308205484040178,
+                im: 0.046147016538770104,
+            },
+            Complex {
+                re: 0.1920396389952249,
+                im: 0.01538962214603352,
+            },
+        ],
+        total: Complex {
+            re: -1.538780909408793,
+            im: 0.06153663868480362,
+        },
+        contribution_scale: 1.9240909202592409,
+        condition: 1.2494008787857265,
+        exclusion_threshold: 2.9240909202592405e-12,
+        scale: Complex {
+            re: 0.016102927247873395,
+            im: -0.8056592123583486,
+        },
+        legacy_finite_maxwell: None,
+        characteristic: Complex {
+            re: 1.4551915228366852e-10,
+            im: 1.3642420526593924e-11,
+        },
+        relative_boundary_defect: 2.0669755353744193e-15,
+    },
+    local_assumption: CallerAssumedHolomorphicPoleFree,
+    source_backend: "lamina_core::backend::scatter2::Scatter2",
+    normalization_backend: "lamina_core::backend::transfer2::Transfer2",
+    backend: Transfer2 {
+        stability_check: Final,
+    },
+    recovery: FieldRecoverySettings {
+        amplitude: Complex {
+            re: 1.0,
+            im: 0.0,
+        },
+        relative_boundary_limit: 1e-8,
+        characteristic_limit: 1e-5,
+    },
+}

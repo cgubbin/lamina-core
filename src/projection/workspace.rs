@@ -98,6 +98,7 @@ where
             self.n12().project_point(index)?,
             self.n21().project_point(index)?,
             self.n22().project_point(index)?,
+            self.complement().project_point(index)?,
         ))
     }
 }

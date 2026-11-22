@@ -34,7 +34,9 @@ use super::Scatter2Entries;
 /// ```
 ///
 /// Multiplying `d` and every numerator by the same nonzero scalar leaves the
-/// represented scattering matrix unchanged.
+/// represented scattering matrix unchanged. The complementary determinant h
+/// satisfies n12*n21-n11*n22=d*h and must scale with every other entry. Carry
+/// h independently: reconstructing it by division at d=0 loses continuation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scatter2ProjectiveEntries<A> {
     denominator: A,
@@ -42,6 +44,7 @@ pub struct Scatter2ProjectiveEntries<A> {
     n12: A,
     n21: A,
     n22: A,
+    complement: A,
 }
 
 impl<A> PlaneWaveEntries for Scatter2ProjectiveEntries<A> {
@@ -50,14 +53,26 @@ impl<A> PlaneWaveEntries for Scatter2ProjectiveEntries<A> {
 }
 
 impl<A> Scatter2ProjectiveEntries<A> {
-    pub(crate) const fn from_parts(denominator: A, n11: A, n12: A, n21: A, n22: A) -> Self {
+    pub(crate) const fn from_parts(
+        denominator: A,
+        n11: A,
+        n12: A,
+        n21: A,
+        n22: A,
+        complement: A,
+    ) -> Self {
         Self {
             denominator,
             n11,
             n12,
             n21,
             n22,
+            complement,
         }
+    }
+
+    pub(crate) fn complement(&self) -> &A {
+        &self.complement
     }
 
     pub(crate) fn denominator(&self) -> &A {
@@ -105,8 +120,9 @@ where
             denominator: one.clone(),
             n11: zero.clone(),
             n12: one.clone(),
-            n21: one,
+            n21: one.clone(),
             n22: zero,
+            complement: one,
         }
     }
 }
@@ -139,7 +155,21 @@ where
             n12: entries.s12().clone(),
             n21: entries.s21().clone(),
             n22: entries.s22().clone(),
+            complement: entries
+                .s12()
+                .multiply(entries.s21())
+                .subtract(&entries.s11().multiply(entries.s22())),
         }
+    }
+}
+
+impl<A> From<Scatter2Entries<A>> for Scatter2ProjectiveEntries<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: One,
+{
+    fn from(entries: Scatter2Entries<A>) -> Self {
+        Self::from_entries(&entries)
     }
 }
 
@@ -186,46 +216,27 @@ pub(crate) fn cascade_projection<A>(
 where
     A: ScalarAlgebra,
 {
-    let dl = left.denominator();
-    let dr = right.denominator();
-
-    let interaction = dl.multiply(dr).subtract(&left.n22().multiply(right.n11()));
-
-    let denominator = dl.multiply(dr).multiply(&interaction);
-
-    /*
-     * s11 =
-     *     L11 + L12 R11 L21 / (1 - L22 R11)
-     */
+    // Substitute n12*n21-n11*n22=d*h before evaluating: the discarded
+    // dl/dr factors are removable at intermediate network poles.
+    let denominator = left
+        .denominator()
+        .multiply(right.denominator())
+        .subtract(&left.n22().multiply(right.n11()));
     let n11 = left
         .n11()
-        .multiply(&interaction)
-        .add(&left.n12().multiply(right.n11()).multiply(left.n21()))
-        .multiply(dr);
-
-    /*
-     * s12 =
-     *     L12 R12 / (1 - L22 R11)
-     */
-    let n12 = dl.multiply(dr).multiply(left.n12()).multiply(right.n12());
-
-    /*
-     * s21 =
-     *     R21 L21 / (1 - L22 R11)
-     */
-    let n21 = dl.multiply(dr).multiply(right.n21()).multiply(left.n21());
-
-    /*
-     * s22 =
-     *     R22 + R21 L22 R12 / (1 - L22 R11)
-     */
+        .multiply(right.denominator())
+        .add(&left.complement().multiply(right.n11()));
+    let n12 = left.n12().multiply(right.n12());
+    let n21 = left.n21().multiply(right.n21());
     let n22 = right
         .n22()
-        .multiply(&interaction)
-        .add(&right.n21().multiply(left.n22()).multiply(right.n12()))
-        .multiply(dl);
-
-    Scatter2ProjectiveEntries::from_parts(denominator, n11, n12, n21, n22)
+        .multiply(left.denominator())
+        .add(&right.complement().multiply(left.n22()));
+    let complement = left
+        .complement()
+        .multiply(right.complement())
+        .subtract(&left.n11().multiply(right.n22()));
+    Scatter2ProjectiveEntries::from_parts(denominator, n11, n12, n21, n22, complement)
 }
 
 impl<J> ProjectAmplitudes for Scatter2ProjectiveEntries<J>
@@ -324,6 +335,11 @@ mod tests {
             jet(n12),
             jet(n21),
             jet(n22),
+            jet(if denominator == c(0.0) {
+                c(0.0)
+            } else {
+                (n12 * n21 - n11 * n22) / denominator
+            }),
         )
     }
 
@@ -363,6 +379,7 @@ mod tests {
             data.n12().scale(scale),
             data.n21().scale(scale),
             data.n22().scale(scale),
+            data.complement().scale(scale),
         )
     }
 
@@ -397,6 +414,59 @@ mod tests {
         assert_complex_close(scalar(entries.s21()), c(3.5), TOLERANCE);
 
         assert_complex_close(scalar(entries.s22()), c(5.5), TOLERANCE);
+    }
+
+    #[test]
+    fn intermediate_pole_has_finite_analytic_continuation() {
+        use crate::test_support::jet::HoloJ2;
+        use ndarray::arr0;
+        type J = HoloJ2;
+        let constant = |x: f64| J::constant(arr0(c(x)));
+        let right = Scatter2ProjectiveEntries::from_entries(&Scatter2Entries::from_parts(
+            constant(0.2),
+            constant(0.7),
+            constant(0.8),
+            constant(0.1),
+        ));
+        for delta in [0.0, 1e-7, -1e-7] {
+            // h=0 is supplied by the rank-one numerator's parameterization,
+            // not reconstructed through a 0/0 division at delta=0.
+            let left = Scatter2ProjectiveEntries::from_parts(
+                J::variable(arr0(c(delta))),
+                constant(1.0),
+                constant(2.0),
+                constant(3.0),
+                constant(6.0),
+                constant(0.0),
+            );
+            let combined = cascade_projection(&left, &right);
+            let entries = combined.entries();
+            for (entry, numerator, offset) in [
+                (entries.s11(), 1.0, 0.0),
+                (entries.s12(), 1.4, 0.0),
+                (entries.s21(), 2.4, 0.0),
+                (entries.s22(), 3.36, 0.1),
+            ] {
+                let denominator = delta - 1.2;
+                assert!(entry.all_finite());
+                assert_complex_close(
+                    entry.value()[()],
+                    c(offset + numerator / denominator),
+                    1e-12,
+                );
+                assert_complex_close(
+                    entry.first()[()],
+                    c(-numerator / denominator.powi(2)),
+                    1e-12,
+                );
+                assert_complex_close(
+                    entry.second()[()],
+                    c(2.0 * numerator / denominator.powi(3)),
+                    1e-12,
+                );
+            }
+            assert!(combined.denominator().value()[()].norm() > 1.0);
+        }
     }
 
     #[test]
@@ -542,7 +612,7 @@ mod tests {
 
     #[test]
     fn candidate_remains_finite_at_exact_projective_pole() {
-        let data = projection(c(0.0), c(3.0), c(5.0), c(7.0), c(11.0));
+        let data = projection(c(0.0), c(3.0), c(5.0), c(7.0), c(35.0 / 3.0));
 
         let context = make_context();
 
@@ -613,6 +683,117 @@ mod cascade_tests {
         Scatter2Entries::from_parts(jet(s11), jet(s12), jet(s21), jet(s22))
     }
 
+    #[test]
+    fn complementary_determinant_preserves_component_jets() {
+        use crate::test_support::jet::HoloJ2;
+        use ndarray::arr0;
+        type J = HoloJ2;
+        let p = J::variable(arr0(c(0.3)));
+        let zero = J::constant(arr0(c(0.0)));
+        let ordinary = Scatter2Entries::from_parts(zero.clone(), p.clone().exp(), p.exp(), zero);
+        let projective = Scatter2ProjectiveEntries::from_entries(&ordinary);
+        let h = projective.complement();
+        let expected = (0.6_f64).exp();
+        for (actual, expected) in [
+            (h.value()[()], expected),
+            (h.first()[()], 2.0 * expected),
+            (h.second()[()], 4.0 * expected),
+        ] {
+            assert!((actual - c(expected)).norm() < 1e-12);
+        }
+        let identity = Scatter2ProjectiveEntries::<J>::identity_like(&arr0(c(0.0)));
+        for component in [&identity, &projective] {
+            let residual = component
+                .n12()
+                .multiply(component.n21())
+                .subtract(&component.n11().multiply(component.n22()))
+                .subtract(&component.denominator().multiply(component.complement()));
+            assert!(residual.value()[()].norm() < 1e-12);
+            assert!(residual.first()[()].norm() < 1e-12);
+            assert!(residual.second()[()].norm() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn reduced_cascade_preserves_bivariate_arrays_associativity_and_analytic_scaling() {
+        use crate::{
+            SeedJet,
+            algebra::{ArrayJetBivariate2, HolomorphicParameter},
+        };
+        use ndarray::{Ix1, array};
+        type J = ArrayJetBivariate2<C, Ix1, HolomorphicParameter>;
+        let x = <J as SeedJet>::variable(array![c(0.0), c(0.2), C::new(-0.1, 0.2)], 0).unwrap();
+        let y = <J as SeedJet>::variable(array![c(0.1), c(0.0), C::new(0.3, -0.1)], 1).unwrap();
+        let network = |offset: f64| {
+            Scatter2Entries::from_parts(
+                x.scale(c(0.1))
+                    .add(&y.scale(c(0.03)))
+                    .add(&x.constant(c(offset))),
+                x.multiply(&y).scale(c(0.02)).add(&x.constant(c(0.7))),
+                x.scale(c(0.04)).add(&x.constant(c(0.6))),
+                y.square().scale(c(0.02)).subtract(&x.constant(c(0.1))),
+            )
+        };
+        let assert_jet = |a: &J, b: &J| {
+            for (a, b) in [
+                (a.value(), b.value()),
+                (a.axis0(), b.axis0()),
+                (a.axis1(), b.axis1()),
+                (a.axis0_axis0(), b.axis0_axis0()),
+                (a.axis0_axis1(), b.axis0_axis1()),
+                (a.axis1_axis1(), b.axis1_axis1()),
+            ] {
+                for (a, b) in a.iter().zip(b) {
+                    assert!((*a - *b).norm() < 1e-12, "{a:?} != {b:?}");
+                }
+            }
+        };
+        let assert_entries = |a: &Scatter2Entries<J>, b: &Scatter2Entries<J>| {
+            for (a, b) in [
+                (a.s11(), b.s11()),
+                (a.s12(), b.s12()),
+                (a.s21(), b.s21()),
+                (a.s22(), b.s22()),
+            ] {
+                assert_jet(a, b);
+            }
+        };
+        let a = network(0.1);
+        let b = network(0.2);
+        let c0 = network(0.05);
+        let pa = Scatter2ProjectiveEntries::from_entries(&a);
+        let pb = Scatter2ProjectiveEntries::from_entries(&b);
+        let pc = Scatter2ProjectiveEntries::from_entries(&c0);
+        let combined = cascade_projection(&pa, &pb);
+        assert_entries(&combined.entries(), &cascade(&a, &b));
+        let invariant = combined
+            .n12()
+            .multiply(combined.n21())
+            .subtract(&combined.n11().multiply(combined.n22()));
+        assert_jet(
+            &invariant,
+            &combined.denominator().multiply(combined.complement()),
+        );
+        assert_entries(
+            &cascade_projection(&combined, &pc).entries(),
+            &cascade_projection(&pa, &cascade_projection(&pb, &pc)).entries(),
+        );
+        // A nonconstant scale tests propagation of gauge derivatives, not just values.
+        let scale = x.add(&y).exp();
+        let scaled = Scatter2ProjectiveEntries::from_parts(
+            pa.denominator().multiply(&scale),
+            pa.n11().multiply(&scale),
+            pa.n12().multiply(&scale),
+            pa.n21().multiply(&scale),
+            pa.n22().multiply(&scale),
+            pa.complement().multiply(&scale),
+        );
+        assert_entries(
+            &cascade_projection(&scaled, &pb).entries(),
+            &combined.entries(),
+        );
+    }
+
     fn assert_entries_close(actual: &Entries, expected: &Entries) {
         assert_array_close(actual.s11().value(), expected.s11().value(), TOLERANCE);
 
@@ -656,6 +837,7 @@ mod cascade_tests {
             left.n12().scale(left_scale),
             left.n21().scale(left_scale),
             left.n22().scale(left_scale),
+            left.complement().scale(left_scale),
         );
 
         let scaled_right = Scatter2ProjectiveEntries::from_parts(
@@ -664,6 +846,7 @@ mod cascade_tests {
             right.n12().scale(right_scale),
             right.n21().scale(right_scale),
             right.n22().scale(right_scale),
+            right.complement().scale(right_scale),
         );
 
         let expected = cascade_projection(&left, &right).entries();
