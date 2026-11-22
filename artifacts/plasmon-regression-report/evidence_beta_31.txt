@@ -1,0 +1,531 @@
+SolveReport {
+    backend: "lamina_core::backend::scatter2::Scatter2",
+    discovery: Discovery {
+        inner: DiscoveryBatch {
+            identity: (),
+            entries: [
+                Ok(
+                    ProblemSearchResult {
+                        result: ModalSearchResult {
+                            estimates: [
+                                ModalEstimate {
+                                    estimate: SingularPointEstimate {
+                                        location: Complex {
+                                            re: 0.9269565103521891,
+                                            im: 0.1473170869173449,
+                                        },
+                                        multiplicity: 1,
+                                        enclosure: Rect {
+                                            x_min: 0.9224565103521931,
+                                            x_max: 0.9359565103521932,
+                                            y_min: 0.13831708691734507,
+                                            y_max: 0.15181708691734508,
+                                        },
+                                        kind: SinglePoint,
+                                        target: Zeros,
+                                    },
+                                    mode: ConformalMode {
+                                        z: Complex {
+                                            re: 0.9269565103521891,
+                                            im: 0.1473170869173449,
+                                        },
+                                        coordinate: Complex {
+                                            re: 168908.8749750899,
+                                            im: 25444.938966122685,
+                                        },
+                                        residual: Complex {
+                                            re: -8.731149137020111e-11,
+                                            im: 4.729372449219227e-11,
+                                        },
+                                    },
+                                },
+                            ],
+                            leaves: [
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.8819565103521931,
+                                        x_max: 0.9359565103521932,
+                                        y_min: 0.10231708691734508,
+                                        y_max: 0.13831708691734507,
+                                    },
+                                    depth: 1,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 1.619507373000615e-15,
+                                        integration_error: 7.091357026980174e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9359565103521932,
+                                        x_max: 0.9719565103521932,
+                                        y_min: 0.10231708691734508,
+                                        y_max: 0.13831708691734507,
+                                    },
+                                    depth: 1,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 2.659741016704379e-16,
+                                        integration_error: 4.693464602691539e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9359565103521932,
+                                        x_max: 0.9719565103521932,
+                                        y_min: 0.13831708691734507,
+                                        y_max: 0.19231708691734506,
+                                    },
+                                    depth: 1,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 1.448979958703083e-15,
+                                        integration_error: 7.092018456647748e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.8819565103521931,
+                                        x_max: 0.9089565103521932,
+                                        y_min: 0.13831708691734507,
+                                        y_max: 0.16531708691734506,
+                                    },
+                                    depth: 2,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 7.725662035123701e-16,
+                                        integration_error: 3.982235695420631e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.8819565103521931,
+                                        x_max: 0.9089565103521932,
+                                        y_min: 0.16531708691734506,
+                                        y_max: 0.19231708691734506,
+                                    },
+                                    depth: 2,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 2.895528061559559e-16,
+                                        integration_error: 2.7915363135093375e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9089565103521932,
+                                        x_max: 0.9359565103521932,
+                                        y_min: 0.16531708691734506,
+                                        y_max: 0.19231708691734506,
+                                    },
+                                    depth: 2,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 3.820763862503872e-16,
+                                        integration_error: 3.980220156031321e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9089565103521932,
+                                        x_max: 0.9224565103521931,
+                                        y_min: 0.13831708691734507,
+                                        y_max: 0.15181708691734508,
+                                    },
+                                    depth: 3,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 2.362110620315336e-15,
+                                        integration_error: 5.806000161960956e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9224565103521931,
+                                        x_max: 0.9359565103521932,
+                                        y_min: 0.13831708691734507,
+                                        y_max: 0.15181708691734508,
+                                    },
+                                    depth: 3,
+                                    data: ArgumentCell {
+                                        root_count: 1,
+                                        residual: 4.9069523615401895e-15,
+                                        integration_error: 8.188104583194515e-14,
+                                        score: 8.188104583194515e-14,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9089565103521932,
+                                        x_max: 0.9224565103521931,
+                                        y_min: 0.15181708691734508,
+                                        y_max: 0.16531708691734506,
+                                    },
+                                    depth: 3,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 1.7629116310452533e-15,
+                                        integration_error: 4.1017102915914845e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                                ArgumentLeaf {
+                                    bounds: Rect {
+                                        x_min: 0.9224565103521931,
+                                        x_max: 0.9359565103521932,
+                                        y_min: 0.15181708691734508,
+                                        y_max: 0.16531708691734506,
+                                    },
+                                    depth: 3,
+                                    data: ArgumentCell {
+                                        root_count: 0,
+                                        residual: 2.6035048902483043e-15,
+                                        integration_error: 5.805711347173017e-14,
+                                        score: 0.0,
+                                    },
+                                },
+                            ],
+                            summary: RunSummary {
+                                iterations: 3,
+                                elapsed: 16.308099ms,
+                                best_measure: Some(
+                                    8.188104583194515e-14,
+                                ),
+                            },
+                            termination: Converged,
+                        },
+                        provenance: DomainProvenance {
+                            domain_identity: (),
+                            context: ProblemContext {
+                                stack: Stack {
+                                    left_exterior: AnalyticalMaterialHandle {
+                                        type: "lamina_core::material::model::Constant<f64>",
+                                        ..
+                                    },
+                                    right_exterior: AnalyticalMaterialHandle {
+                                        type: "lamina_materials::model::drude::Drude<f64>",
+                                        ..
+                                    },
+                                    layers_left_to_right: [],
+                                },
+                                polarisation: TransverseMagnetic,
+                                coordinate: InPlane {
+                                    fixed_k0: 67796.87499999999,
+                                },
+                            },
+                            requested: ConformalRegion {
+                                re_min: 0.8819565103521931,
+                                re_max: 0.9719565103521932,
+                                im_min: 0.10231708691734508,
+                                im_max: 0.19231708691734506,
+                            },
+                            evaluation: ConformalRegion {
+                                re_min: 0.8819565103521789,
+                                re_max: 0.9719565103522074,
+                                im_min: 0.10231708691733087,
+                                im_max: 0.19231708691735927,
+                            },
+                            selection: Coordinate {
+                                reference: Complex {
+                                    re: 0.929443648058129,
+                                    im: 0.14812404847309932,
+                                },
+                                coordinate: Complex {
+                                    re: 169308.87497509056,
+                                    im: 25644.93896612282,
+                                },
+                            },
+                            reference: Complex {
+                                re: 0.929443648058129,
+                                im: 0.14812404847309932,
+                            },
+                            reference_coordinate: Complex {
+                                re: 169308.87497509056,
+                                im: 25644.93896612282,
+                            },
+                            assumption: CallerAssumedHolomorphicPoleFree,
+                            radiation: Unspecified,
+                            coordinate_kind: Conformal,
+                            frequency: None,
+                        },
+                    },
+                ),
+            ],
+            config: DiscoveryConfig {
+                score_tolerance: 1e-6,
+                zero_tolerance: 1e-12,
+                residual_tolerance: 1e-8,
+                boundary_shift_fraction: 0.1,
+                relative_tolerance: 1.49e-8,
+                absolute_tolerance: 1.49e-8,
+                max_iterations: 1000,
+                max_depth: 32,
+                max_leaves: 100000,
+                max_function_evaluations: 5000,
+            },
+        },
+    },
+    charts: [
+        ChartOutcomes {
+            provenance: Provenance {
+                inner: DomainProvenance {
+                    domain_identity: (),
+                    context: ProblemContext {
+                        stack: Stack {
+                            left_exterior: AnalyticalMaterialHandle {
+                                type: "lamina_core::material::model::Constant<f64>",
+                                ..
+                            },
+                            right_exterior: AnalyticalMaterialHandle {
+                                type: "lamina_materials::model::drude::Drude<f64>",
+                                ..
+                            },
+                            layers_left_to_right: [],
+                        },
+                        polarisation: TransverseMagnetic,
+                        coordinate: InPlane {
+                            fixed_k0: 67796.87499999999,
+                        },
+                    },
+                    requested: ConformalRegion {
+                        re_min: 0.8819565103521931,
+                        re_max: 0.9719565103521932,
+                        im_min: 0.10231708691734508,
+                        im_max: 0.19231708691734506,
+                    },
+                    evaluation: ConformalRegion {
+                        re_min: 0.8819565103521789,
+                        re_max: 0.9719565103522074,
+                        im_min: 0.10231708691733087,
+                        im_max: 0.19231708691735927,
+                    },
+                    selection: Coordinate {
+                        reference: Complex {
+                            re: 0.929443648058129,
+                            im: 0.14812404847309932,
+                        },
+                        coordinate: Complex {
+                            re: 169308.87497509056,
+                            im: 25644.93896612282,
+                        },
+                    },
+                    reference: Complex {
+                        re: 0.929443648058129,
+                        im: 0.14812404847309932,
+                    },
+                    reference_coordinate: Complex {
+                        re: 169308.87497509056,
+                        im: 25644.93896612282,
+                    },
+                    assumption: CallerAssumedHolomorphicPoleFree,
+                    radiation: Unspecified,
+                    coordinate_kind: Conformal,
+                    frequency: None,
+                },
+            },
+            candidates: Some(
+                [
+                    CandidateOutcome {
+                        index: 0,
+                        status: Accepted,
+                        last_valid: Some(
+                            NumericalEvidence {
+                                native_coordinate: Complex {
+                                    re: 0.9269565103521891,
+                                    im: 0.1473170869173449,
+                                },
+                                value: Complex {
+                                    re: -8.731149137020111e-11,
+                                    im: 4.729372449219227e-11,
+                                },
+                                derivative: Complex {
+                                    re: 53353.50349592277,
+                                    im: -8157.502989002335,
+                                },
+                                correction: Some(
+                                    1.8397445885762656e-15,
+                                ),
+                                residual_limit: 1.0099999999999999e-6,
+                                correction_limit: 1.1000000000000001e-10,
+                            },
+                        ),
+                        work: RefinementWork {
+                            updates: 0,
+                            trials: 0,
+                            evaluations: 2,
+                        },
+                    },
+                ],
+            ),
+        },
+    ],
+    points: [
+        ModePoint {
+            root: AcceptedRoot {
+                index: 0,
+                evidence: NumericalEvidence {
+                    z: Complex {
+                        re: 0.9269565103521891,
+                        im: 0.1473170869173449,
+                    },
+                    value: Complex {
+                        re: -8.731149137020111e-11,
+                        im: 4.729372449219227e-11,
+                    },
+                    derivative: Complex {
+                        re: 53353.50349592277,
+                        im: -8157.502989002335,
+                    },
+                    correction: Some(
+                        1.8397445885762656e-15,
+                    ),
+                    residual_limit: 1.0099999999999999e-6,
+                    correction_limit: 1.1000000000000001e-10,
+                },
+                coordinate: Complex {
+                    re: 168908.8749750899,
+                    im: 25444.938966122685,
+                },
+                provenance: DomainProvenance {
+                    domain_identity: (),
+                    context: ProblemContext {
+                        stack: Stack {
+                            left_exterior: AnalyticalMaterialHandle {
+                                type: "lamina_core::material::model::Constant<f64>",
+                                ..
+                            },
+                            right_exterior: AnalyticalMaterialHandle {
+                                type: "lamina_materials::model::drude::Drude<f64>",
+                                ..
+                            },
+                            layers_left_to_right: [],
+                        },
+                        polarisation: TransverseMagnetic,
+                        coordinate: InPlane {
+                            fixed_k0: 67796.87499999999,
+                        },
+                    },
+                    requested: ConformalRegion {
+                        re_min: 0.8819565103521931,
+                        re_max: 0.9719565103521932,
+                        im_min: 0.10231708691734508,
+                        im_max: 0.19231708691734506,
+                    },
+                    evaluation: ConformalRegion {
+                        re_min: 0.8819565103521789,
+                        re_max: 0.9719565103522074,
+                        im_min: 0.10231708691733087,
+                        im_max: 0.19231708691735927,
+                    },
+                    selection: Coordinate {
+                        reference: Complex {
+                            re: 0.929443648058129,
+                            im: 0.14812404847309932,
+                        },
+                        coordinate: Complex {
+                            re: 169308.87497509056,
+                            im: 25644.93896612282,
+                        },
+                    },
+                    reference: Complex {
+                        re: 0.929443648058129,
+                        im: 0.14812404847309932,
+                    },
+                    reference_coordinate: Complex {
+                        re: 169308.87497509056,
+                        im: 25644.93896612282,
+                    },
+                    assumption: CallerAssumedHolomorphicPoleFree,
+                    radiation: Unspecified,
+                    coordinate_kind: Conformal,
+                    frequency: None,
+                },
+                config: RefinementConfig {
+                    residual_atol: 1e-8,
+                    residual_rtol: 1e-11,
+                    residual_scale: 100000.0,
+                    z_atol: 1e-10,
+                    z_rtol: 1e-11,
+                    max_updates: 32,
+                    max_backtracks: 12,
+                    max_evaluations: 256,
+                },
+                work: RefinementWork {
+                    updates: 0,
+                    trials: 0,
+                    evaluations: 2,
+                },
+            },
+            backend: "lamina_core::backend::scatter2::Scatter2",
+            chart: 0,
+            candidate: 0,
+            enclosure: Rect {
+                x_min: 0.9224565103521931,
+                x_max: 0.9359565103521932,
+                y_min: 0.13831708691734507,
+                y_max: 0.15181708691734508,
+            },
+            signature: Ok(
+                BranchSignature {
+                    k0: Complex {
+                        re: 67796.87499999999,
+                        im: 0.0,
+                    },
+                    k_parallel: Complex {
+                        re: 168908.8749750899,
+                        im: 25444.93896612267,
+                    },
+                    left: Complex {
+                        re: -27711.359058340477,
+                        im: 155094.37864557013,
+                    },
+                    right: Complex {
+                        re: -22579.943845646787,
+                        im: 183813.78040098932,
+                    },
+                },
+            ),
+        },
+    ],
+    groups: [
+        DuplicateGroup {
+            members: [
+                0,
+            ],
+        },
+    ],
+    diagnostics: [],
+    exclusions: [],
+    geometry: Explicit,
+    refinement: RefinementConfig {
+        residual_atol: 1e-8,
+        residual_rtol: 1e-11,
+        residual_scale: 100000.0,
+        native_atol: 1e-10,
+        native_rtol: 1e-11,
+        max_updates: 32,
+        max_backtracks: 12,
+        max_evaluations: 256,
+    },
+    matching: MatchConfig {
+        native: MatchTolerance {
+            absolute: 1e-8,
+            relative: 1e-8,
+        },
+        physical: MatchTolerance {
+            absolute: 1e-8,
+            relative: 1e-8,
+        },
+        exterior: MatchTolerance {
+            absolute: 1e-8,
+            relative: 1e-8,
+        },
+    },
+}
