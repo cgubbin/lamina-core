@@ -6,7 +6,7 @@ use super::FieldPosition;
 
 /// A field-sampling request resolved against a particular physical stack.
 ///
-/// Unlike [`CompiledFieldSampling`], this representation retains the
+/// Unlike the internal compiled sampling, this representation retains the
 /// caller-facing spatial units used by the original request. Each position has
 /// also been resolved to an unambiguous region of the stack:
 ///

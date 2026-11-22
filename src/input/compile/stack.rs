@@ -67,6 +67,14 @@ pub enum StackCompileError<R> {
         #[source]
         source: UnsupportedDerivativeSlot,
     },
+
+    #[error(
+        "selected thickness layer {layer:?} is outside the {finite_layer_count} finite layer(s)"
+    )]
+    LayerOutOfBounds {
+        layer: FiniteLayerIndex,
+        finite_layer_count: usize,
+    },
 }
 
 #[allow(clippy::type_complexity)]
@@ -175,6 +183,39 @@ where
         stack.right_exterior().clone(),
         canonical_layers,
     ))
+}
+
+/// Compile a canonical stack with one selected finite-layer thickness seeded
+/// as the sole directional derivative in slot zero.
+///
+/// The derivative is with respect to the thickness value in the caller's
+/// stored [`lamina_units::LengthUnit`]. Seeding occurs before conversion to
+/// canonical centimetres, matching [`compile_canonical_constant_stack`]'s
+/// unit semantics. All other layer thicknesses remain constant.
+pub fn compile_canonical_thickness_stack<M, J>(
+    stack: &Stack<M, <J::Scalar as ComplexField>::RealField>,
+    sampled_shape: J::Dimension,
+    validation: &ValidationConfig<<J::Scalar as ComplexField>::RealField>,
+    layer: FiniteLayerIndex,
+) -> Result<CanonicalStack<M, J>, StackCompileError<<J::Scalar as ComplexField>::RealField>>
+where
+    J: StackThicknessJet,
+    J::Scalar: ComplexField,
+    <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
+    J::Dimension: Dimension + Clone,
+    M: Clone,
+{
+    if layer.get() >= stack.len() {
+        return Err(StackCompileError::LayerOutOfBounds {
+            layer,
+            finite_layer_count: stack.len(),
+        });
+    }
+
+    let mapping = DerivativeMapping::new([Parameter::LayerThickness(layer)])
+        .expect("a single thickness parameter has no duplicate assignment");
+    let compiled = compile_stack::<M, J>(stack, sampled_shape, validation, &mapping)?;
+    Ok(compiled.into_parts().0)
 }
 
 /// Layer-thickness-specific view over a parameter assignment.
@@ -408,6 +449,96 @@ mod tests {
         assert_eq!(canonical.layers()[0].material(), &"first material",);
 
         assert_eq!(canonical.layers()[1].material(), &"second material",);
+    }
+
+    #[test]
+    fn public_directional_compiler_seeds_only_the_selected_layer_in_slot_zero() {
+        let stack = stack_with_two_layers();
+        let canonical =
+            compile_canonical_thickness_stack::<_, RecordingJet<Array<Complex64, Ix0>>>(
+                &stack,
+                Ix0(),
+                &validation(),
+                FiniteLayerIndex::new(1),
+            )
+            .unwrap();
+
+        let layers = canonical.layers();
+        assert_eq!(layers[0].thickness_cm().slot, None);
+        assert_eq!(layers[1].thickness_cm().slot, Some(0));
+        assert_complex_close(
+            layers[0].thickness_cm().value[()],
+            Complex64::new(5e-5, 0.0),
+            1e-19,
+        );
+        assert_complex_close(
+            layers[1].thickness_cm().value[()],
+            Complex64::new(2e-4, 0.0),
+            1e-19,
+        );
+    }
+
+    #[test]
+    fn public_directional_compiler_rejects_exterior_and_missing_layer_indices() {
+        let stack = stack_with_two_layers();
+        let error = compile_canonical_thickness_stack::<_, RecordingJet<Array<Complex64, Ix0>>>(
+            &stack,
+            Ix0(),
+            &validation(),
+            FiniteLayerIndex::new(2),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            StackCompileError::LayerOutOfBounds {
+                layer: FiniteLayerIndex::new(2),
+                finite_layer_count: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn public_directional_compiler_preserves_caller_thickness_units() {
+        let nanometres = Stack::new(
+            "left",
+            vec![Layer::new("film", Length::nanometres(500.0))],
+            "right",
+        );
+        let centimetres = Stack::new(
+            "left",
+            vec![Layer::new("film", Length::centimetres(5e-5))],
+            "right",
+        );
+        type J = crate::ModeJet1<Complex64, Ix0>;
+
+        let nm_stack = compile_canonical_thickness_stack::<_, J>(
+            &nanometres,
+            Ix0(),
+            &validation(),
+            FiniteLayerIndex::new(0),
+        )
+        .unwrap();
+        let cm_stack = compile_canonical_thickness_stack::<_, J>(
+            &centimetres,
+            Ix0(),
+            &validation(),
+            FiniteLayerIndex::new(0),
+        )
+        .unwrap();
+        let nm_jet = nm_stack.layers()[0].thickness_cm();
+        let cm_jet = cm_stack.layers()[0].thickness_cm();
+
+        assert_complex_close(
+            *nm_jet.value().first().unwrap(),
+            *cm_jet.value().first().unwrap(),
+            1e-19,
+        );
+        assert_complex_close(
+            *nm_jet.first().first().unwrap(),
+            *cm_jet.first().first().unwrap() * 1e-7,
+            1e-19,
+        );
     }
 
     #[test]

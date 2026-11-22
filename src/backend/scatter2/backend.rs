@@ -10,7 +10,7 @@ use crate::{
     material::{ConstitutiveEvaluator, ConstitutiveLift},
 };
 
-use super::{Scatter2, Scatter2Entries, Scatter2Workspace};
+use super::{Scatter2, Scatter2Entries, Scatter2ProjectiveEntries, Scatter2Workspace};
 
 use nalgebra::ComplexField;
 use ndarray::Dimension;
@@ -104,7 +104,7 @@ impl Scatter2 {
 
             let layer_admittance = quantities.admittance().clone();
 
-            let interface = interface(&current_admittance, &layer_admittance);
+            let interface = interface_projection(&current_admittance, &layer_admittance);
 
             let propagation = propagation_from_exponent(exponent);
 
@@ -122,7 +122,7 @@ impl Scatter2 {
             IsotropicMediumQuantities::evaluate::<E, M>(stack.right_exterior(), coordinates)
                 .admittance_with_kappa(exterior.right(), polarisation);
 
-        let final_interface = interface(&current_admittance, &right_admittance);
+        let final_interface = interface_projection(&current_admittance, &right_admittance);
 
         workspace.append(final_interface);
 
@@ -159,6 +159,7 @@ impl Scatter2 {
 ///
 /// No explicit singularity check is performed. If `Y_L + Y_R = 0`, the
 /// resulting entries inherit the corresponding non-finite algebraic values.
+#[cfg(test)]
 pub(crate) fn interface<A>(left: &A, right: &A) -> Scatter2Entries<A>
 where
     A: ScalarAlgebra,
@@ -181,6 +182,25 @@ where
 
         s22: right.subtract(left).divide(&denominator),
     }
+}
+
+/// Polynomial interface chart. In particular YL+YR=0 is not evaluated as
+/// an ordinary Fresnel division before composing the complete stack.
+pub(crate) fn interface_projection<A>(left: &A, right: &A) -> Scatter2ProjectiveEntries<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: ComplexField + One,
+{
+    let two = A::Scalar::one() + A::Scalar::one();
+    let denominator = left.add(right);
+    Scatter2ProjectiveEntries::from_parts(
+        denominator.clone(),
+        left.subtract(right),
+        right.scale(two.clone()),
+        left.scale(two),
+        right.subtract(left),
+        denominator,
+    )
 }
 
 /// Construct homogeneous propagation entries from an exponent.
@@ -237,6 +257,53 @@ mod interface_tests {
     };
 
     use ndarray::{arr0, array};
+
+    #[test]
+    fn polynomial_interface_continues_opposite_admittances_and_carries_jets() {
+        use super::interface_projection;
+        use crate::{ScalarAlgebra, test_support::jet::HoloJ2};
+        type J = HoloJ2;
+        let left = J::constant(arr0(c(1.0)));
+        let right = J::variable(arr0(c(-1.0)));
+        let projective = interface_projection(&left, &right);
+        for value in [
+            projective.denominator(),
+            projective.n11(),
+            projective.n12(),
+            projective.n21(),
+            projective.n22(),
+            projective.complement(),
+        ] {
+            assert!(value.all_finite());
+        }
+        assert_eq!(projective.denominator().value()[()], c(0.0));
+        assert_eq!(projective.denominator().first()[()], c(1.0));
+        let invariant = projective
+            .n12()
+            .multiply(projective.n21())
+            .subtract(&projective.n11().multiply(projective.n22()));
+        let expected = projective.denominator().multiply(projective.complement());
+        assert_eq!(invariant.value(), expected.value());
+        assert_eq!(invariant.first(), expected.first());
+        assert_eq!(invariant.second(), expected.second());
+        let right = J::variable(arr0(c(2.0)));
+        let actual = interface_projection(&left, &right).entries();
+        let ordinary = interface(&left, &right);
+        for (a, b) in [
+            (actual.s11(), ordinary.s11()),
+            (actual.s12(), ordinary.s12()),
+            (actual.s21(), ordinary.s21()),
+            (actual.s22(), ordinary.s22()),
+        ] {
+            for (a, b) in [
+                (a.value()[()], b.value()[()]),
+                (a.first()[()], b.first()[()]),
+                (a.second()[()], b.second()[()]),
+            ] {
+                assert!((a - b).norm() < 1e-12);
+            }
+        }
+    }
 
     #[test]
     fn identical_media_are_transparent() {

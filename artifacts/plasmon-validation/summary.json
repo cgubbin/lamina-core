@@ -1,0 +1,32 @@
+{
+  "complex_beta": {
+    "accepted_points": 33,
+    "max_relative_root_error": 1.3050754028448989e-14,
+    "max_boundary_mismatch_over_kp": 5.216410013653489e-15,
+    "max_characteristic_residual_over_kp": 4.567076343366416e-15,
+    "max_scatter_transfer_value_difference_over_kp": 5.328989120342579e-31,
+    "min_dielectric_decay_over_kp": 0.023069733202366206,
+    "min_metal_decay_over_kp": 0.9936814163405787,
+    "te_modes_at_sampled_checks": 0
+  },
+  "complex_frequency": {
+    "accepted_points": 33,
+    "max_relative_root_error": 1.978524625335599e-14,
+    "max_boundary_mismatch_over_kp": 1.1694383086781385e-13,
+    "max_characteristic_residual_over_kp": 1.169368692747872e-13,
+    "max_scatter_transfer_value_difference_over_kp": 1.8496320793384858e-29,
+    "min_dielectric_decay_over_kp": 0.040016332016386616,
+    "min_metal_decay_over_kp": 0.9970245072036885,
+    "te_modes_at_sampled_checks": 0
+  },
+  "model": {
+    "epsilon_infinity": 1,
+    "epsilon_dielectric": 1,
+    "gamma_over_omega_p": 0.02,
+    "kp_inverse_cm": 100000.0,
+    "fitted_material": false,
+    "te_checks_per_case": 5,
+    "frequency_reference": "explicit complex; built-in radiation qualification remains unspecified",
+    "branch_tracking": "independent local point searches; analytic solution locates valid benchmark charts"
+  }
+}

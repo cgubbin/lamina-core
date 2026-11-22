@@ -138,6 +138,18 @@
 //! This separation allows the electromagnetic solve to be performed once and
 //! subsequently sampled or integrated in several different ways.
 //!
+//! For a sampled calculation, call [`RealAxisState::project_point`] to select
+//! one excitation, then [`RealAxisState::excitation`] to select its incident
+//! side. [`RealAxisExcitation::evaluate_fields`] returns a [`SpatialResponse`]
+//! containing the fields and their resolved sampling positions. Excitation
+//! fields are normalized to unit incident flux.
+//!
+//! Run `cargo run --example retained_fields` for a complete wavelength sweep
+//! followed by point projection and spatial field reconstruction. Sampling
+//! types such as [`LayerSampling`] and [`ExteriorSampling`] specify positions
+//! in physical length units; coincident samples on opposite sides of an
+//! interface preserve their distinct region identities.
+//!
 //! ## Complex-plane evaluation
 //!
 //! Outgoing modes require a different contract from driven real-axis
@@ -349,12 +361,22 @@ pub use domain::{ComplexPlane, RealAxis};
 pub use input::{
     CanonicalCoordinates, CanonicalStack, CoordinateGrid, CoordinateInput, CoordinateReference,
     CoordinateSamples, Coordinates, InPlaneCoordinate, IncidentSide, Polarisation,
-    StackCompileError, StackThicknessJet, compile_canonical_constant_stack,
+    ProjectionConstraintError, StackCompileError, StackThicknessJet, ValidationConfig,
+    compile_canonical_constant_stack, compile_canonical_thickness_stack,
 };
 
 pub use lamina_units::SpectralCoordinate;
 
-pub use evaluate::{ComplexPlaneEvaluator, RealAxisEvaluator};
+pub use evaluate::{
+    ComplexPlaneEvaluator, DeterminantEvaluationError, RealAxisEvaluationError, RealAxisEvaluator,
+    RealAxisExcitation, RealAxisResult, RealAxisState, SolveRequestError,
+};
+
+pub use projection::PointProjectionError;
+pub use spatial::{
+    ExteriorSampling, FieldPosition, FieldSampling, FieldSamplingError, FieldSamplingRegion,
+    LayerSampling, ResolvedFieldSampling, ResolvedLayerPosition, SpatialResponse,
+};
 
 pub use material::{
     AnalyticalMaterialHandle, Constant, ConstitutiveEvaluator, ConstitutiveLift, DerivativeOrder,
@@ -368,8 +390,8 @@ pub use field::VectorField;
 pub use observable::{
     AggregateBilinearNormalization, ConstitutiveFields, DirectedPower, ElectromagneticDissipation,
     ElectromagneticEnergy, ElectromagneticFields, ElectromagneticIntensities, FieldIndexError,
-    InterfacePower, LayerDissipation, LayerPower, PlaneWaveAmplitudes, PlaneWaveDeterminant,
-    PlaneWavePower, ProjectPlaneWaveModeDeterminant,
+    FieldReconstructionError, InterfacePower, LayerDissipation, LayerPower, PlaneWaveAmplitudes,
+    PlaneWaveDeterminant, PlaneWavePower, ProjectPlaneWaveModeDeterminant,
 };
 pub use parameter::{FiniteLayerIndex, Parameter};
 pub use scalar::ComplexScalar;
@@ -384,3 +406,15 @@ pub mod units {
         AngleUnit, AngularFrequencyUnit, FrequencyUnit, InverseLengthUnit, Length, LengthUnit,
     };
 }
+
+/// Normalization-independent homogeneous field recovery for supported backends.
+pub use evaluate::{
+    ModalDerivativeBackend, ModalFieldBackend, OwnedModeFields, UnscaledFieldError,
+    UnscaledFieldResult,
+};
+
+/// Complete scalar pole normalization with analytic outgoing boundary terms.
+pub use evaluate::{
+    ModalNormalizationBackend, PoleNormalizationData, PoleNormalizationError,
+    PoleNormalizationInput, PoleNormalizationSettings, PoleVariable,
+};

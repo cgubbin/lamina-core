@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Pole normalization validation</title>
+<style>body{font:17px system-ui;max-width:1200px;margin:32px auto;padding:20px;line-height:1.5}img{width:100%}pre{overflow:auto}</style>
+<h1>Planar pole normalization validated by independent residues</h1>
+<p>The scalar Green convention is L G=delta, with a positive unit flux jump and physical k0 or beta in cm⁻¹. This is one planar Fourier component, not a finite 3D mode volume.</p>
+<h2>No infinite exterior integral is needed</h2><p>At normal incidence with nondispersive exteriors, the outgoing electric and magnetic contributions cancel. Core's finite-layer Maxwell overlap already contains the equivalent scalar boundary contribution. TE/TM analytic cavity regressions check this identity and reject double counting. The scalar formula uses analytic endpoint derivatives; no infinite exterior quadrature is performed.</p>
+<img src="normalization_validation.png">
+<h2>Independent checks</h2><p>Twelve accepted modal points include guided TE/TM, both spectral formulations and polarizations, both complex interface-plasmon cases, both film modes and electric/magnetic dispersion. A separately constructed matched-wave Green function provides unit-jump and contour residues. Complex gauge changes and independent left/right boundary displacements preserve predictions. Negative controls omit scalar boundary or dispersion terms, conjugate a bilinear residue factor or use the wrong pole variable; each is detected. An unavailable control factor is recorded as such, not assigned a fabricated error.</p>
+<pre>{
+  &quot;residue_error&quot;: 3.5257113276446777e-13,
+  &quot;contour_error&quot;: 3.059445212977508e-13,
+  &quot;backend_error&quot;: 9.198311139588564e-15,
+  &quot;gauge_error&quot;: 2.5134270206671216e-15,
+  &quot;partition_error&quot;: 5.31783777425365e-16
+}</pre>
+<h2>Scope</h2><p>Normalized fields use the declared scalar pole convention, which differs by explicit factors from the legacy Maxwell-integral convention. Exterior branches and radiation provenance are retained. No exceptional-point certification, mode volume, Purcell factor or complete modal expansion is claimed.</p>
+<p>Raw files: <a href="cases.csv">case errors and controls</a>, <a href="convergence.csv">convergence</a>, <a href="contributions.csv">bilinear contributions</a>, <a href="coordinates.csv">physical coordinates</a>, <a href="settings.json">models and settings</a>.</p>
+<p>Reproduce from lamina-mode: <code>cargo run --release --locked --example pole_normalization -- --suite full --output NEW_DIRECTORY</code>, then <code>python scripts/plot_pole_normalization.py NEW_DIRECTORY</code>.</p>

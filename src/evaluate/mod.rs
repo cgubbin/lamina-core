@@ -23,6 +23,14 @@ mod real_axis;
 #[cfg(test)]
 mod tests;
 
-pub use complex_plane::ComplexPlaneEvaluator;
+pub use complex_plane::{
+    ComplexPlaneEvaluator, DeterminantEvaluationError, ModalDerivativeBackend, ModalFieldBackend,
+    OwnedModeFields, UnscaledFieldError, UnscaledFieldResult,
+};
 pub use error::{RealAxisEvaluationError, SolveRequestError};
-pub use real_axis::RealAxisEvaluator;
+pub use real_axis::{RealAxisEvaluator, RealAxisExcitation, RealAxisResult, RealAxisState};
+
+pub use complex_plane::{
+    ModalNormalizationBackend, PoleNormalizationData, PoleNormalizationError,
+    PoleNormalizationInput, PoleNormalizationSettings, PoleVariable,
+};

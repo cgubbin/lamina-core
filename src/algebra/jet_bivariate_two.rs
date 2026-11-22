@@ -494,6 +494,17 @@ where
         Self::from_components(value, axis0, axis1, axis0_axis0, axis0_axis1, axis1_axis1)
     }
 
+    pub(crate) fn squared_phase_function(&self, sinc: bool) -> Self
+    where
+        C: Copy,
+    {
+        self.compose_unary(
+            |x| super::entire::expansion(*x, sinc)[0],
+            |x| super::entire::expansion(*x, sinc)[1],
+            |x| super::entire::expansion(*x, sinc)[2],
+        )
+    }
+
     pub(crate) fn exprel(&self) -> Self
     where
         C: Copy,

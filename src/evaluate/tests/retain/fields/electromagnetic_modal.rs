@@ -107,11 +107,7 @@ fn first_order_geometry_stack(
         })
         .collect();
 
-    CanonicalStack::new(
-        *stack.left_exterior(),
-        *stack.right_exterior(),
-        layers,
-    )
+    CanonicalStack::new(*stack.left_exterior(), *stack.right_exterior(), layers)
 }
 
 fn bivariate_geometry_stack() -> CanonicalStack<crate::Constant<f64>, HoloJB2> {
@@ -136,11 +132,7 @@ fn bivariate_geometry_stack() -> CanonicalStack<crate::Constant<f64>, HoloJB2> {
         })
         .collect();
 
-    CanonicalStack::new(
-        *stack.left_exterior(),
-        *stack.right_exterior(),
-        layers,
-    )
+    CanonicalStack::new(*stack.left_exterior(), *stack.right_exterior(), layers)
 }
 
 macro_rules! for_each_value_backend {

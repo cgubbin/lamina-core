@@ -7,7 +7,7 @@ mod state;
 pub use excitation::RealAxisExcitation;
 pub use pair::{RealAxisExcitationPair, RealAxisPairError};
 pub use result::RealAxisResult;
-use state::RealAxisState;
+pub use state::RealAxisState;
 
 use nalgebra::ComplexField;
 use ndarray::Dimension;
@@ -34,8 +34,10 @@ use super::{RealAxisEvaluationError, SolveRequestError};
 /// Compiles and solves plane-wave excitation problems using a statically
 /// selected backend.
 ///
-/// The evaluator does not compute or crystallise observables. It returns a
-/// retained [`RealAxisState`] from which quantities may be requested later.
+/// [`evaluate`](Self::evaluate) returns a [`RealAxisResult`] for external
+/// observables. [`retain`](Self::retain) returns a [`RealAxisState`] that also
+/// supports internal-field reconstruction. Select an incident side with
+/// [`RealAxisState::excitation`] after projecting a sampled state to one point.
 #[derive(Clone, Debug)]
 pub struct RealAxisEvaluator<B> {
     backend: B,
