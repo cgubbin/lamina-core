@@ -217,6 +217,13 @@ where
     C: ComplexField + Copy,
     D: Dimension,
 {
+    pub(crate) fn squared_phase_function(&self, sinc: bool) -> Self
+    where
+        C: Copy,
+    {
+        Self::new(self.value().mapv(|x| super::entire::expansion(x, sinc)[0]))
+    }
+
     pub(crate) fn exprel(self) -> Self
     where
         C::RealField: FloatCore + FromPrimitive,

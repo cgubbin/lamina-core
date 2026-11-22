@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>Recovered modal fields</title>
+<style>body{font:17px system-ui;max-width:1200px;margin:32px auto;padding:20px;line-height:1.5}img{width:100%}</style>
+<h1>Recovered homogeneous modal fields</h1>
+<p>Both complex interface-plasmon cases, both coupled modes of a 40 nm metal film, and a leaky dielectric cavity. Each profile uses a common electric/magnetic complex scale with its left-boundary primary field set to one. This is arbitrary-amplitude recovery, without QNM normalization or mode volumes.</p>
+<img src="modal_fields.png">
+<p>Magnetic parity refers to H<sub>y</sub> about the film centre. Outgoing leaky fields grow at finite exterior distances; they are not clamped. Independent tests compare both supported backends, interface matching, magnetic parity and bound exterior decay.</p>
+<p><a href="fields.csv">Cartesian field data</a> · <a href="evidence.txt">Source points, gauges and recovery evidence</a> · <a href="modal_fields.pdf">PDF</a> · <a href="modal_fields.svg">SVG</a></p>
+<p>Reproduce from lamina-mode with <code>cargo run --release --locked --example modal_fields -- NEW_DIRECTORY</code>, then <code>python scripts/plot_modal_fields.py NEW_DIRECTORY</code>. See docs/modal-fields.md for sampling and units.</p>

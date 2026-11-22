@@ -1,0 +1,1 @@
+{"schema":1,"status":"complete","suite":"full","samples_per_case":33,"map_shape":[61,81],"kp_inverse_cm":100000,"eta":0.02,"root_tolerance":0.00000001,"boundary_tolerance":0.00000001,"failure":"","scope":"independent locally guided searches; not global coverage or QNM normalization"}

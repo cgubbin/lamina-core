@@ -1,0 +1,33 @@
+<!doctype html><html><meta charset="utf-8"><title>Planar plasmon validation</title><style>body{font:17px system-ui;max-width:1150px;margin:40px auto;padding:0 24px;color:#192933;line-height:1.55}img{width:100%}code,pre{background:#f1f4f5}pre{padding:18px;overflow:auto}h1,h2{line-height:1.2}</style><h1>Planar plasmon: numerical and physical validation</h1><p>Two half-spaces: vacuum | passive Drude metal. This is an illustrative analytical metal, not a fit to gold or silver. Time convention exp(−iωt); propagation exp(+iβz). The complex-wavevector and complex-frequency plots are different real-axis slices of the same dispersion surface, not interchangeable inverses at finite loss.</p><p><b>What was run:</b> 33 public APM discovery/refinement solves at real frequency, 33 at real wavevector, two additional solves for the characteristic maps, plus five local TE controls per case. Analytical roots place the small benchmark charts and select exterior branches; the markers are independent numerically accepted solver roots, not values copied from the formula. These charts do not demonstrate blind global discovery.</p><img src="dispersion.png"><img src="characteristic_maps.png"><img src="physicality_checks.png"><h2>Independent equations and acceptance checks</h2><p>Let u=ω/ωp and v=β/kp. εm=1−1/[u(u+iη)], η=0.02. At real u, v=u sqrt[εm/(1+εm)], with the passive forward sign. At real v the physical root obeys u⁴+iηu³−(1+2v²)u²−2iηv²u+v²=0, selected continuously from the positive lossless bound branch. The unsquared TM boundary condition κd/εd+κm/εm=0 is checked independently at each accepted point, with Im κd, Im κm positive. Transfer2 and Scatter2 checked values are compared at every root. The two half-spaces are used unchanged in both numerical paths.</p><h2>Measured results</h2><pre>{
+  "complex_beta": {
+    "accepted_points": 33,
+    "max_relative_root_error": 1.3050754028448989e-14,
+    "max_boundary_mismatch_over_kp": 5.216410013653489e-15,
+    "max_characteristic_residual_over_kp": 4.567076343366416e-15,
+    "max_scatter_transfer_value_difference_over_kp": 5.328989120342579e-31,
+    "min_dielectric_decay_over_kp": 0.023069733202366206,
+    "min_metal_decay_over_kp": 0.9936814163405787,
+    "te_modes_at_sampled_checks": 0
+  },
+  "complex_frequency": {
+    "accepted_points": 33,
+    "max_relative_root_error": 1.978524625335599e-14,
+    "max_boundary_mismatch_over_kp": 1.1694383086781385e-13,
+    "max_characteristic_residual_over_kp": 1.169368692747872e-13,
+    "max_scatter_transfer_value_difference_over_kp": 1.8496320793384858e-29,
+    "min_dielectric_decay_over_kp": 0.040016332016386616,
+    "min_metal_decay_over_kp": 0.9970245072036885,
+    "te_modes_at_sampled_checks": 0
+  },
+  "model": {
+    "epsilon_infinity": 1,
+    "epsilon_dielectric": 1,
+    "gamma_over_omega_p": 0.02,
+    "kp_inverse_cm": 100000.0,
+    "fitted_material": false,
+    "te_checks_per_case": 5,
+    "frequency_reference": "explicit complex; built-in radiation qualification remains unspecified",
+    "branch_tracking": "independent local point searches; analytic solution locates valid benchmark charts"
+  }
+}</pre><h2>Interpretation limits</h2><p>The eigenvalues and exterior decay support the physical SPP interpretation for this benchmark. The built-in named dielectric classifier deliberately marks negative-permittivity exteriors unsupported, and explicit complex anchors retain unspecified built-in radiation provenance. We checked the bound physical branch independently; we did not manufacture a verified-positive-dielectric anchor, classify metal modes with the paper's dielectric labels, compute fields/QNM normalization, certify arbitrary materials or establish global mode coverage. TE controls only test the listed local windows.</p><h2>Reproduce</h2><p>From the lamina-core repository, with the Rust development environment loaded:</p><pre>cargo run --release --manifest-path artifacts/plasmon-validation/Cargo.toml --locked --offline -- artifacts/plasmon-validation
+python artifacts/plasmon-validation/plot.py</pre><p>Plotting requires NumPy and Matplotlib. Raw CSVs, Rust/Python source, the local Cargo manifest/lockfile and PNG/PDF/SVG figures are included. The implementation uses public lamina-mode API imports. No solver/library source was changed.</p><p>Benchmark background: <a href="https://doc.comsol.com/6.3/doc/com.comsol.help.models.woptics.metal_air_surface_plasmon_polariton/metal_air_surface_plasmon_polariton.html">COMSOL's metal–dielectric interface derivation</a> (TM boundary condition, evanescence and TE exclusion).</p></html>

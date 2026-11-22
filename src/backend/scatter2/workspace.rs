@@ -159,27 +159,30 @@ impl<A> Scatter2Workspace<A> {
         self.retained.as_ref()
     }
 
-    pub(crate) fn append(&mut self, component: Scatter2Entries<A>)
+    pub(crate) fn append(&mut self, component: impl Into<Scatter2ProjectiveEntries<A>>)
     where
         A: ScalarAlgebra,
         A::Scalar: ComplexScalar + One,
         A::Dimension: Dimension,
     {
-        let component_projection = Scatter2ProjectiveEntries::from_entries(&component);
+        let component_projection = component.into();
 
         let total = cascade_projection(self.solution.entries(), &component_projection);
 
         self.solution.replace_entries(total);
 
         if let Some(retained) = &mut self.retained {
-            retained.components.push(component);
+            // Ordinary component charts are optional reconstruction data.
+            // Their exceptional-point singularities must never contaminate the
+            // independently accumulated projective determinant above.
+            retained.components.push(component_projection.entries());
         }
     }
 
     pub(crate) fn append_layer(
         &mut self,
-        interface: Scatter2Entries<A>,
-        propagation: Scatter2Entries<A>,
+        interface: impl Into<Scatter2ProjectiveEntries<A>>,
+        propagation: impl Into<Scatter2ProjectiveEntries<A>>,
         quantities: IsotropicLayerQuantities<A>,
         thickness: A,
     ) where
@@ -477,17 +480,40 @@ where
             .retained()
             .ok_or(ModeReconstructionError::ModeDataNotRetained)?;
 
+        // Recover the homogeneous solution from its outgoing right amplitude.
+        // The driven cut formula divides a tiny incident wave by a tiny global
+        // resonance denominator and loses accuracy at modal roots. Projective
+        // suffixes cancel that denominator algebraically before evaluation.
         let source = self.sample_source();
-
-        let left_waves = bidirectional_waves_from_state(
-            candidate.state(),
-            self.solution().context().left_admittance(),
-        );
-
-        let right_incoming = A::filled_constant_like(source, A::Scalar::zero());
-
-        let waves =
-            retained.reconstruct_from_incoming_waves(left_waves.forward(), &right_incoming, source);
+        let mut suffixes = vec![Scatter2ProjectiveEntries::identity_like(source)];
+        for component in retained.components.iter().rev() {
+            let next = cascade_projection(
+                &Scatter2ProjectiveEntries::from_entries(component),
+                suffixes.last().expect("identity suffix"),
+            );
+            suffixes.push(next);
+        }
+        suffixes.reverse();
+        let at_cut = |index: usize| {
+            let suffix = &suffixes[index];
+            let factor = candidate.right_outgoing().divide(suffix.n21());
+            let forward = suffix.denominator().multiply(&factor);
+            let backward = suffix.n11().multiply(&factor);
+            if !forward.all_finite() || !backward.all_finite() {
+                return Err(ModeReconstructionError::NoUsableNullVector);
+            }
+            Ok(BidirectionalWaves::new(forward, backward))
+        };
+        let waves = retained
+            .layer_cuts
+            .iter()
+            .map(|cut| {
+                Ok(LayerBoundaryWaves::new(
+                    at_cut(cut.left())?,
+                    at_cut(cut.right())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, ModeReconstructionError>>()?;
 
         debug_assert_eq!(waves.len(), retained.num_layers());
 

@@ -41,7 +41,7 @@ use super::{RealAxisExcitation, query::RealAxisExternalQueries};
 /// Observable quantities remain jet-valued until queried. Query methods first
 /// project the backend representation, then extract derivative parts, and
 /// finally assemble a caller-facing
-/// [`DifferentialResponse`](crate::differential::DifferentialResponse).
+/// differential response containing physical values and derivatives.
 #[derive(Clone, Debug)]
 pub struct RealAxisState<J, M, W>
 where
@@ -84,6 +84,12 @@ where
         }
     }
 
+    /// Select one excitation from a retained calculation as an owned point state.
+    ///
+    /// The index addresses the excitation axes, not spatial positions. Values,
+    /// derivatives, and retained backend data are projected together without
+    /// solving the electromagnetic problem again. Project before selecting an
+    /// excitation and reconstructing fields with a [`crate::FieldSampling`].
     pub fn project_point<Idx>(
         &self,
         index: &Idx,

@@ -192,20 +192,17 @@ impl<A> Transfer2Entries<A> {
         A::Scalar: ComplexField + One,
         A::Dimension: Dimension,
     {
-        let theta = quantities.kappa().multiply(thickness);
-
-        let sin = theta.sin();
-        let cos = theta.cos();
-
-        let factor_over_kappa = quantities.factor().divide(quantities.kappa());
-
-        let kappa_over_factor = quantities.kappa().divide(quantities.factor());
+        // Entire functions of q avoid the removable interior cutoff and the
+        // singular derivatives of sqrt(q). Do not use the cached kappa jet.
+        let q = quantities.kappa_squared();
+        let phase_squared = q.multiply(&thickness.square());
+        let cos = phase_squared.cos_sqrt();
+        let integrated_sinc = thickness.multiply(&phase_squared.sinc_sqrt());
 
         Self::new(
             cos.clone(),
-            sin.multiply(&factor_over_kappa)
-                .scale(-<A::Scalar as One>::one()),
-            sin.multiply(&kappa_over_factor),
+            integrated_sinc.multiply(quantities.factor()).negate(),
+            integrated_sinc.multiply(&q.divide(quantities.factor())),
             cos,
         )
     }
@@ -549,6 +546,88 @@ mod tests {
         assert_complex_close(identity.m12()[()], c(0.0), TOLERANCE);
         assert_complex_close(identity.m21()[()], c(0.0), TOLERANCE);
         assert_complex_close(identity.m22()[()], c(1.0), TOLERANCE);
+    }
+
+    #[test]
+    fn cutoff_layer_has_analytic_spectral_and_thickness_hessian() {
+        use crate::{SeedJet, test_support::jet::HoloJB2};
+        type J = HoloJB2;
+        let d = 0.3_f64;
+        let coordinates = CanonicalCoordinates::new(
+            <J as SeedJet>::variable(arr0(c(1.0)), 0).unwrap(),
+            <J as SeedJet>::constant(arr0(c(2.0))),
+        );
+        let thickness = <J as SeedJet>::variable(arr0(c(d)), 1).unwrap();
+        for (pol, f) in [
+            (Polarisation::TransverseElectric, 1.0),
+            (Polarisation::TransverseMagnetic, 4.0),
+        ] {
+            let layer =
+                IsotropicLayerQuantities::complex_plane(&constant(4.0, 1.0), &coordinates, pol);
+            let m = Transfer2Entries::from_layer(&layer, &thickness);
+            // Independent coefficients of cos(d sqrt(q)), sin(d sqrt(q))/sqrt(q),
+            // q=4*k0^2-4 at k0=1. Axes are k0 and thickness.
+            let expected = [
+                (
+                    m.m11(),
+                    [
+                        1.0,
+                        -4.0 * d * d,
+                        0.0,
+                        16.0 / 3.0 * d.powi(4) - 4.0 * d * d,
+                        -8.0 * d,
+                        0.0,
+                    ],
+                ),
+                (
+                    m.m12(),
+                    [
+                        -f * d,
+                        4.0 / 3.0 * f * d.powi(3),
+                        -f,
+                        f * (4.0 / 3.0 * d.powi(3) - 16.0 / 15.0 * d.powi(5)),
+                        4.0 * f * d * d,
+                        0.0,
+                    ],
+                ),
+                (
+                    m.m21(),
+                    [
+                        0.0,
+                        8.0 * d / f,
+                        0.0,
+                        (8.0 * d - 64.0 / 3.0 * d.powi(3)) / f,
+                        8.0 / f,
+                        0.0,
+                    ],
+                ),
+                (
+                    m.m22(),
+                    [
+                        1.0,
+                        -4.0 * d * d,
+                        0.0,
+                        16.0 / 3.0 * d.powi(4) - 4.0 * d * d,
+                        -8.0 * d,
+                        0.0,
+                    ],
+                ),
+            ];
+            for (entry, expected) in expected {
+                assert!(entry.all_finite());
+                let actual = [
+                    entry.value()[()],
+                    entry.axis0()[()],
+                    entry.axis1()[()],
+                    entry.axis0_axis0()[()],
+                    entry.axis0_axis1()[()],
+                    entry.axis1_axis1()[()],
+                ];
+                for (actual, expected) in actual.into_iter().zip(expected) {
+                    assert_complex_close(actual, c(expected), 1e-12);
+                }
+            }
+        }
     }
 
     #[test]
