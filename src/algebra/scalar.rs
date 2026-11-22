@@ -91,6 +91,12 @@ pub trait ScalarAlgebra: Clone + Sized + std::fmt::Debug + Jet {
     /// Apply the principal square root pointwise.
     fn sqrt(&self) -> Self;
 
+    /// Entire cosine of a square root, continued analytically at zero.
+    fn cos_sqrt(&self) -> Self;
+
+    /// Entire sinc of a square root, continued analytically at zero.
+    fn sinc_sqrt(&self) -> Self;
+
     /// Return whether every primal and derivative component is finite.
     fn all_finite(&self) -> bool;
 
@@ -239,6 +245,14 @@ where
         self.clone().sqrt()
     }
 
+    fn cos_sqrt(&self) -> Self {
+        self.squared_phase_function(false)
+    }
+
+    fn sinc_sqrt(&self) -> Self {
+        self.squared_phase_function(true)
+    }
+
     fn all_finite(&self) -> bool {
         array_is_finite(self.value())
     }
@@ -366,6 +380,14 @@ where
 
     fn sqrt(&self) -> Self {
         self.clone().sqrt()
+    }
+
+    fn cos_sqrt(&self) -> Self {
+        self.squared_phase_function(false)
+    }
+
+    fn sinc_sqrt(&self) -> Self {
+        self.squared_phase_function(true)
     }
 
     fn all_finite(&self) -> bool {
@@ -498,6 +520,14 @@ where
 
     fn sqrt(&self) -> Self {
         self.clone().sqrt()
+    }
+
+    fn cos_sqrt(&self) -> Self {
+        self.squared_phase_function(false)
+    }
+
+    fn sinc_sqrt(&self) -> Self {
+        self.squared_phase_function(true)
     }
 
     fn all_finite(&self) -> bool {
@@ -635,6 +665,14 @@ where
         self.clone().sqrt()
     }
 
+    fn cos_sqrt(&self) -> Self {
+        self.squared_phase_function(false)
+    }
+
+    fn sinc_sqrt(&self) -> Self {
+        self.squared_phase_function(true)
+    }
+
     fn all_finite(&self) -> bool {
         array_is_finite(self.value())
             && array_is_finite(self.axis0())
@@ -768,6 +806,14 @@ where
 
     fn sqrt(&self) -> Self {
         self.clone().sqrt()
+    }
+
+    fn cos_sqrt(&self) -> Self {
+        self.squared_phase_function(false)
+    }
+
+    fn sinc_sqrt(&self) -> Self {
+        self.squared_phase_function(true)
     }
 
     fn all_finite(&self) -> bool {

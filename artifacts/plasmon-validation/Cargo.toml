@@ -1,0 +1,16 @@
+[package]
+name = "plasmon-validation"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[[bin]]
+name = "plasmon-validation"
+path = "solver.rs"
+
+[dependencies]
+lamina-mode = { path = "../../../lamina-mode" }
+lamina-core = { path = "../../../lamina-core" }
+lamina-materials = { path = "../../../lamina-materials" }
+lamina-units = { path = "../../../lamina-units" }

@@ -5,23 +5,43 @@ use ndarray::{Dimension, Ix0};
 use num_traits::{Float, FromPrimitive, One, Zero};
 
 use crate::{
-    ComplexScalar, ConstitutiveFields, ElectromagneticDissipation, ElectromagneticFields, ElectromagneticIntensities, FiniteLayerIndex, IncidentSide, InterfacePower, LayerDissipation, LayerPower, PlaneWaveAmplitudes, RealAxis, algebra::{
+    ComplexScalar, ConstitutiveFields, ElectromagneticDissipation, ElectromagneticFields,
+    ElectromagneticIntensities, FiniteLayerIndex, IncidentSide, InterfacePower, LayerDissipation,
+    LayerPower, PlaneWaveAmplitudes, RealAxis,
+    algebra::{
         CartesianScalarAlgebra, ComplexJet, Jet, JetStack, RealCartesianVectorAlgebra,
         RealScalarAlgebra, ScalarAlgebra, ScalarAlgebraExpRelExt, ScaleBy,
-    }, backend::{
+    },
+    backend::{
         ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolutionSource, RetainedIsotropicLayers,
-    }, derivative_parts::DerivativePartsPolicy, differential::IntoDifferentialResponse, 
-    input::JetMapping, material::{
-        ConstitutiveEvaluator, ConstitutiveLift, ConstitutiveSpectralFirstLift,
-        ConstitutiveDerivativeEvaluator,
-    }, observable::{
-        Amplitudes, BoundaryProjectionError, ConstitutiveFieldReconstructionError, ConstitutiveSamplingError, ElectromagneticEnergy, EnergyConfinement, FieldReconstructionError, FieldSamplingContext, InterfaceProjectionError, InterfaceStates, InterfaceWaveData, Interfaces, LayerBoundaries, LayerBoundaryStates, LayerBoundaryWaves, LayerConfinementError, LayerEnergy, LayerEnergyError, LayerIntegrationInput, LayerParticipation, LayerParticipationError, LayerProjectionError, Layers, ProjectAmplitudes, ProjectPower, assemble_layer_integration_inputs, electromagnetic_dissipation_coefficients
-    }, spatial::{FieldSampling, ResolvedFieldSampling, SpatialResponse}, waves::{ReconstructLayerBoundaryWaves, WaveSamplingContext}
+    },
+    derivative_parts::DerivativePartsPolicy,
+    differential::IntoDifferentialResponse,
+    input::JetMapping,
+    material::{
+        ConstitutiveDerivativeEvaluator, ConstitutiveEvaluator, ConstitutiveLift,
+        ConstitutiveSpectralFirstLift,
+    },
+    observable::{
+        Amplitudes, BoundaryProjectionError, ConstitutiveFieldReconstructionError,
+        ConstitutiveSamplingError, ElectromagneticEnergy, EnergyConfinement,
+        FieldReconstructionError, FieldSamplingContext, InterfaceProjectionError, InterfaceStates,
+        InterfaceWaveData, Interfaces, LayerBoundaries, LayerBoundaryStates, LayerBoundaryWaves,
+        LayerConfinementError, LayerEnergy, LayerEnergyError, LayerIntegrationInput,
+        LayerParticipation, LayerParticipationError, LayerProjectionError, Layers,
+        ProjectAmplitudes, ProjectPower, assemble_layer_integration_inputs,
+        electromagnetic_dissipation_coefficients,
+    },
+    spatial::{FieldSampling, ResolvedFieldSampling, SpatialResponse},
+    waves::{ReconstructLayerBoundaryWaves, WaveSamplingContext},
 };
 
-use super::{RealAxisExcitationPair, RealAxisPairError, RealAxisState,
-        state::{RawInterfacePower, RawLayerPower},
-    query::{PlaneWaveQuery, RawPower,RawAmplitudes, DifferentialResponseFor, RealAxisExternalQueries}
+use super::{
+    RealAxisExcitationPair, RealAxisPairError, RealAxisState,
+    query::{
+        DifferentialResponseFor, PlaneWaveQuery, RawAmplitudes, RawPower, RealAxisExternalQueries,
+    },
+    state::{RawInterfacePower, RawLayerPower},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -121,7 +141,6 @@ where
             .scale_by(&J::into_complex(self.amplitude_scale.clone())))
     }
 
-
     fn normalised_interface_states(
         &self,
     ) -> Result<Interfaces<InterfaceStates<J>>, BoundaryProjectionError>
@@ -143,7 +162,6 @@ where
             .scale_by(&J::into_complex(self.amplitude_scale.clone())))
     }
 
-
     fn normalised_interface_wave_data(
         &self,
     ) -> Result<Interfaces<InterfaceWaveData<J>>, InterfaceProjectionError>
@@ -158,7 +176,9 @@ where
         J::Dimension: Dimension,
         J::RealJet: Clone,
     {
-        Ok(self.state.raw_interface_wave_data_unchecked(self.incident_side)?
+        Ok(self
+            .state
+            .raw_interface_wave_data_unchecked(self.incident_side)?
             .scale_by(&J::into_complex(self.amplitude_scale.clone())))
     }
 
@@ -260,12 +280,17 @@ where
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar + One + Zero,
         J::Dimension: Dimension,
-        <J::RealJet as Jet>::Scalar: One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
+        <J::RealJet as Jet>::Scalar:
+            One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
     {
         let interface_data = self.normalised_interface_wave_data()?;
 
-
-        Ok(interface_data.into_power(self.state.problem().coordinates().vacuum_angular_wavenumber()))
+        Ok(interface_data.into_power(
+            self.state
+                .problem()
+                .coordinates()
+                .vacuum_angular_wavenumber(),
+        ))
     }
 
     fn normalised_layer_power(
@@ -281,12 +306,11 @@ where
         J::RealJet: ScalarAlgebra + Clone,
         J::Scalar: ComplexScalar + One + Zero,
         J::Dimension: Dimension,
-        <J::RealJet as Jet>::Scalar: One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
+        <J::RealJet as Jet>::Scalar:
+            One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
     {
-        Ok(self.normalised_interface_power()?
-            .into_layer_power())
+        Ok(self.normalised_interface_power()?.into_layer_power())
     }
-
 
     fn normalised_layer_dissipation(
         &self,
@@ -295,14 +319,13 @@ where
         J: RealScalarAlgebra + ScalarAlgebraExpRelExt + Clone,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
-        <J::RealJet as Jet>::Scalar: FromPrimitive+ One,
+        <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         let layers = self
             .normalised_layer_integration_inputs()?
             .integrate_hermitian();
-
 
         let coordinates = self.state.problem().coordinates();
 
@@ -311,7 +334,6 @@ where
             coordinates.parallel_angular_wavenumber(),
         ))
     }
-
 
     fn normalised_nondispersive_layer_energy(
         &self,
@@ -336,13 +358,11 @@ where
         let problem = self.state.problem();
         let coordinates = problem.coordinates();
 
-
         Ok(integrated.into_nondispersive_energy(
             coordinates.vacuum_angular_wavenumber(),
             coordinates.parallel_angular_wavenumber(),
         ))
     }
-
 
     fn normalised_dispersive_layer_energy(
         &self,
@@ -363,12 +383,12 @@ where
     {
         let coordinates = self.state.problem().coordinates();
 
-
         let sequence = self
             .normalised_layer_integration_inputs()?
             .integrate_hermitian()
             .into_brillouin_layers(
-                self.state.problem()
+                self.state
+                    .problem()
                     .stack()
                     .layers()
                     .iter()
@@ -382,14 +402,11 @@ where
         ))
     }
 
-    pub fn amplitudes(
-        &self,
-    ) -> DifferentialResponseFor<J, RawAmplitudes<RealAxisState<J, M, W>, J>>
+    pub fn amplitudes(&self) -> DifferentialResponseFor<J, RawAmplitudes<RealAxisState<J, M, W>, J>>
     where
         W::Entries: ProjectAmplitudes,
         J::Policy: DerivativePartsPolicy<RawAmplitudes<RealAxisState<J, M, W>, J>>,
-        RawAmplitudes<RealAxisState<J, M, W>, J>:
-            IntoDifferentialResponse<J::Policy, J::Mapping>,
+        RawAmplitudes<RealAxisState<J, M, W>, J>: IntoDifferentialResponse<J::Policy, J::Mapping>,
     {
         self.state
             .raw_amplitudes(self.incident_side)
@@ -420,7 +437,8 @@ where
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar + One + Zero,
-        <J::RealJet as Jet>::Scalar: One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
+        <J::RealJet as Jet>::Scalar:
+            One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
         RawInterfacePower<J>: IntoDifferentialResponse<J::Policy, J::Mapping>,
     {
         Ok(self
@@ -441,7 +459,8 @@ where
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar + One + Zero,
-        <J::RealJet as Jet>::Scalar: One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
+        <J::RealJet as Jet>::Scalar:
+            One + Neg<Output = <J::RealJet as Jet>::Scalar> + FromPrimitive,
         RawLayerPower<J>: IntoDifferentialResponse<J::Policy, J::Mapping>,
     {
         Ok(self
@@ -460,7 +479,7 @@ where
         J: RealScalarAlgebra + ScalarAlgebraExpRelExt,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
-        <J::RealJet as Jet>::Scalar: FromPrimitive  +One,
+        <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         J::Policy: DerivativePartsPolicy<Layers<LayerDissipation<J::RealJet>>>,
         Layers<LayerDissipation<J::RealJet>>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
@@ -634,12 +653,11 @@ where
     {
         let wave_context = WaveSamplingContext::new(self.state.workspace());
 
-        let scale =
-        J::into_complex(self.amplitude_scale.clone());
+        let scale = J::into_complex(self.amplitude_scale.clone());
 
-    let boundary_waves = wave_context
-        .driven_boundary_waves(self.incident_side)?
-        .scale_by(&scale);
+        let boundary_waves = wave_context
+            .driven_boundary_waves(self.incident_side)?
+            .scale_by(&scale);
 
         let context = FieldSamplingContext::new(self.state.workspace());
 

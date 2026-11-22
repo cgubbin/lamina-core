@@ -116,6 +116,12 @@ where
         &self.solution
     }
 
+    /// Finite-layer, unconjugated Maxwell overlap used by this legacy path.
+    /// At normal incidence with nondispersive homogeneous exteriors their
+    /// outgoing E/H density cancels, so this already contains the equivalent
+    /// scalar boundary contribution. Do not add that term a second time.
+    /// General physical pole normalization and its coordinate convention are
+    /// exposed separately through [`crate::PoleNormalizationData`].
     pub fn seed_normalisation(&self) -> &AggregateBilinearNormalization<J> {
         &self.raw_normalisation
     }
@@ -153,15 +159,7 @@ where
             + ReconstructExteriorModeWaves<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
-        let wave_context = WaveSamplingContext::new(self.state.workspace());
-
-        let boundary_waves = wave_context.modal_boundary_waves(self.solution())?;
-
-        let context = FieldSamplingContext::new(self.state.workspace());
-
-        let compiled_sampling = sampling.compile();
-
-        context.reconstruct_from_boundary_waves(&boundary_waves, &compiled_sampling)
+        reconstruct_mode_fields(self.state, self.solution(), sampling)
     }
 
     #[allow(clippy::type_complexity)]
@@ -219,6 +217,37 @@ where
 
         Ok(SpatialResponse::new(reconstructed, sampling))
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub(super) fn reconstruct_mode_fields<'a, J, M, W>(
+    state: &ComplexPlaneState<'a, J, M, W>,
+    solution: &PlaneWaveModeCandidate<J>,
+    sampling: &ResolvedFieldSampling<<J::Scalar as ComplexField>::RealField>,
+) -> Result<
+    ElectromagneticFields<<<J as JetStack>::Stacked as CartesianScalarAlgebra>::Vector>,
+    FieldReconstructionError<<J::Scalar as ComplexField>::RealField>,
+>
+where
+    J: Jet<Dimension = Ix0> + JetStack + ScalarAlgebra,
+    J::Scalar: ComplexScalar,
+    <J::Scalar as ComplexField>::RealField: Float,
+    J::Stacked: CartesianScalarAlgebra,
+    W: PlaneWaveSolutionSource
+        + RetainedIsotropicLayers<Algebra = J>
+        + ReconstructLayerModeWaves<Algebra = J>
+        + ReconstructExteriorModeWaves<Algebra = J>,
+    <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
+{
+    let wave_context = WaveSamplingContext::new(state.workspace());
+
+    let boundary_waves = wave_context.modal_boundary_waves(solution)?;
+
+    let context = FieldSamplingContext::new(state.workspace());
+
+    let compiled_sampling = sampling.compile();
+
+    context.reconstruct_from_boundary_waves(&boundary_waves, &compiled_sampling)
 }
 
 pub(crate) fn raw_layer_integration_inputs_unchecked<J, W>(

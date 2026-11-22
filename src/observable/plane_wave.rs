@@ -401,12 +401,14 @@ mod projection_tests {
         s21: impl Into<C>,
         s22: impl Into<C>,
     ) -> Scatter2ProjectiveEntries<Algebra> {
+        let (s11, s12, s21, s22) = (s11.into(), s12.into(), s21.into(), s22.into());
         Scatter2ProjectiveEntries::from_parts(
             scalar(C::new(1.0, 0.0)),
             scalar(s11),
             scalar(s12),
             scalar(s21),
             scalar(s22),
+            scalar(s12 * s21 - s11 * s22),
         )
     }
 

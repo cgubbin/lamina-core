@@ -117,7 +117,7 @@ impl<S, A> IntegratedLayerData<S, A> {
         &self.quantities
     }
 
-    pub(super) fn into_parts(self) -> (S, IsotropicLayerQuantities<A>) {
+    pub(crate) fn into_parts(self) -> (S, IsotropicLayerQuantities<A>) {
         (self.state_products, self.quantities)
     }
 }

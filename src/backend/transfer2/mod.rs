@@ -16,6 +16,12 @@
 //!
 //! Optional stability checks detect non-finite matrix entries but do not
 //! diagnose all forms of ill-conditioning or loss of precision.
+//!
+//! Finite-layer transfer propagation uses entire functions of the squared
+//! longitudinal wavevector, so values and derivatives continue through regular
+//! interior cutoffs. This guarantee applies to the characteristic and driven
+//! boundary response; retained modal field reconstruction at exact cutoff is
+//! not covered, because its directional-wave basis is degenerate there.
 
 mod backend;
 mod entries;
