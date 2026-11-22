@@ -1,0 +1,59 @@
+Model: vacuum | Drude epsilon_inf=1, kp=100000 cm^-1, eta=0.02
+Assumptions: CallerAssumedHolomorphicPoleFree; explicit decaying complex anchors; exterior caller-assumed holomorphic nonzero; no exclusions.
+Discovery: DiscoveryConfig {
+    score_tolerance: 1e-6,
+    zero_tolerance: 1e-12,
+    residual_tolerance: 1e-8,
+    boundary_shift_fraction: 0.1,
+    relative_tolerance: 1.49e-8,
+    absolute_tolerance: 1.49e-8,
+    max_iterations: 1000,
+    max_depth: 32,
+    max_leaves: 100000,
+    max_function_evaluations: 5000,
+}
+Spatial refinement: RefinementConfig {
+    residual_atol: 1e-8,
+    residual_rtol: 1e-11,
+    residual_scale: 100000.0,
+    native_atol: 1e-10,
+    native_rtol: 1e-11,
+    max_updates: 32,
+    max_backtracks: 12,
+    max_evaluations: 256,
+}
+Temporal refinement: RefinementConfig {
+    residual_atol: 1e-8,
+    residual_rtol: 1e-11,
+    residual_scale: 100000.0,
+    native_atol: 1e-5,
+    native_rtol: 1e-11,
+    max_updates: 32,
+    max_backtracks: 12,
+    max_evaluations: 256,
+}
+Matching: MatchConfig {
+    native: MatchTolerance {
+        absolute: 1e-8,
+        relative: 1e-8,
+    },
+    physical: MatchTolerance {
+        absolute: 1e-8,
+        relative: 1e-8,
+    },
+    exterior: MatchTolerance {
+        absolute: 1e-8,
+        relative: 1e-8,
+    },
+}
+Chart config: ConformalChartConfig {
+    integration_tolerance: 1e-11,
+    max_depth: 20,
+}
+Continuation: ContinuationConfig {
+    integral_tolerance: 1e-10,
+    consistency_tolerance: 1e-8,
+    cutoff: 1e-10,
+    max_depth: 20,
+    max_evaluations: 4096,
+}
