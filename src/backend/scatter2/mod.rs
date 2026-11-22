@@ -12,6 +12,14 @@
 //! Exterior longitudinal wavevectors are supplied explicitly through
 //! [`ExteriorWavevectors`], allowing complex-plane callers to control exterior
 //! branch selection independently of the finite-layer propagation convention.
+//!
+//! Total scattering entries carry a complementary determinant through direct
+//! projective interfaces and composition. This continues removable interface
+//! and intermediate-pole charts without changing the characteristic gauge.
+//! Optional retained reconstruction still uses ordinary component charts;
+//! field reconstruction at exceptional interfaces and exact interior cutoffs
+//! is outside this continuation guarantee. Regular retained observables retain
+//! their established semantics.
 
 mod backend;
 mod entries;

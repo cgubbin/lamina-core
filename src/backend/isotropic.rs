@@ -86,12 +86,24 @@ pub struct IsotropicMediumQuantities<A> {
     epsilon: A,
     mu: A,
     kappa: A,
+    // Preserve q before sqrt: squaring a sqrt jet at q=0 cannot recover its
+    // finite derivatives after the intermediate square-root singularity.
+    kappa_squared: A,
 }
 
 impl<A> IsotropicMediumQuantities<A> {
     /// Construct already-evaluated medium quantities.
-    pub(crate) fn from_parts(epsilon: A, mu: A, kappa: A) -> Self {
-        Self { epsilon, mu, kappa }
+    pub(crate) fn from_parts(epsilon: A, mu: A, kappa: A) -> Self
+    where
+        A: ScalarAlgebra,
+    {
+        let kappa_squared = kappa.square();
+        Self {
+            epsilon,
+            mu,
+            kappa,
+            kappa_squared,
+        }
     }
 
     /// Return the relative permittivity.
@@ -174,13 +186,18 @@ impl<A> IsotropicMediumQuantities<A> {
             .parallel_angular_wavenumber()
             .multiply(coordinates.parallel_angular_wavenumber());
 
-        let kappa = epsilon
+        let kappa_squared = epsilon
             .multiply(&mu)
             .multiply(&k0_squared)
-            .subtract(&k_parallel_squared)
-            .sqrt();
+            .subtract(&k_parallel_squared);
+        let kappa = kappa_squared.sqrt();
 
-        Self::from_parts(epsilon, mu, kappa)
+        Self {
+            epsilon,
+            mu,
+            kappa,
+            kappa_squared,
+        }
     }
 }
 
@@ -200,6 +217,11 @@ pub struct IsotropicLayerQuantities<A> {
 }
 
 impl<A> IsotropicLayerQuantities<A> {
+    /// Squared longitudinal wavevector, including regular cutoff derivatives.
+    pub(crate) fn kappa_squared(&self) -> &A {
+        &self.medium.kappa_squared
+    }
+
     /// Return the polarization-independent medium quantities.
     pub(crate) fn medium(&self) -> &IsotropicMediumQuantities<A> {
         &self.medium
@@ -382,6 +404,28 @@ mod tests {
     // ---------------------------------------------------------------------
     // Polarization-independent medium quantities
     // ---------------------------------------------------------------------
+
+    #[test]
+    fn squared_wavevector_retains_cutoff_derivatives_before_sqrt() {
+        use crate::{ScalarAlgebra, test_support::jet::HoloJ2};
+        let coordinates = CanonicalCoordinates::new(
+            HoloJ2::variable(arr0(c(1.0))),
+            HoloJ2::constant(arr0(c(2.0))),
+        );
+        for pol in [
+            Polarisation::TransverseElectric,
+            Polarisation::TransverseMagnetic,
+        ] {
+            let quantities =
+                IsotropicLayerQuantities::complex_plane(&constant(4.0, 1.0), &coordinates, pol);
+            let q = quantities.kappa_squared();
+            assert!(q.all_finite());
+            assert_eq!(q.value()[()], c(0.0));
+            assert_eq!(q.first()[()], c(8.0));
+            assert_eq!(q.second()[()], c(8.0));
+            assert!(!quantities.kappa().all_finite());
+        }
+    }
 
     #[test]
     fn medium_quantities_store_evaluated_material_properties() {

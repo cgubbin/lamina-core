@@ -21,6 +21,7 @@
 //! these algebraic implementation details.
 
 mod cartesian;
+mod entire;
 mod exprel;
 mod jet_bivariate_one;
 mod jet_bivariate_two;

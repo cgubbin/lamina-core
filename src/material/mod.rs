@@ -315,6 +315,21 @@ pub trait DifferentiableMaterial: Material {
 /// Implementations must define a meromorphic continuation consistent with the
 /// same physical dispersion model used on the real axis.
 ///
+/// This trait supplies evaluations, not a certificate that a complex search
+/// domain is free of singularities. A pole-free determinant zero search requires
+/// the full characteristic to be holomorphic on a neighborhood of the closed
+/// domain. Material validity must hold at the spectral point for a
+/// fixed-frequency search and throughout the mapped spectral domain when
+/// frequency varies. Real-axis fit intervals and finite contour samples do not
+/// establish this property.
+///
+/// Material poles and unhandled zeros of the polarization factor (`mu` for TE,
+/// `epsilon` for TM) require exclusions or a proven analytic continuation.
+/// Propagation through a material pole need not produce a finite-order pole of
+/// the characteristic, so multiplying by a material denominator does not
+/// generally regularize it. Removable backend chart failures must be
+/// distinguished from these physical singularities.
+///
 /// Typical implementations include
 ///
 /// - Drude,

@@ -1,0 +1,29 @@
+# Tasks
+
+## 1. Shared fallible chart boundary and native coordinates
+
+- [x] 1.1 Extract the private fallible analytic-chart interface and adapt existing conformal dispersion/search consumers to it without changing their behaviour. Verify current conformal value/derivative, reference, margin and typed-error regressions pass; document the contract and why continuation failures cannot be hidden inside an infallible raw map.
+- [x] 1.2 Introduce explicit dimensionless-conformal versus physical-frequency chart-coordinate metadata and distinguishable frequency-bound inputs using existing rectangle and core unit conventions. Preserve the meaning of requested/evaluation bounds, enclosures, corrections and matching tolerances through provenance and reports. Verify existing conformal semantics and direct-chart cm^-1 semantics in focused tests and document the distinction.
+
+## 2. Dispersive exterior continuation
+
+- [x] 2.1 Implement fallible per-exterior continuation from a fixed reference using actual core analytical material values and q'/q, with validated consistency/cutoff settings and finite integration work limits. Verify independent analytic q=exp(k) values across a principal cut, opposite reference signs, shuffled sample order, inconsistent references, non-finite evaluations and side-specific budget failures; document the reference and domain prerequisites alongside the implementation.
+- [x] 2.2 Construct branch-consistent exterior ModeJet1 values using core constitutive lifting and verify kappa'=q'/(2*kappa) with both permittivity and permeability dispersion. Check known analytic derivatives and finite differences, reject non-finite derivative components and retain original errors; document that the direct-coordinate characteristic derivative is dF/dk0 and is not obtained by differentiating the numerical quadrature.
+
+## 3. Stack-bound frequency problems and executable domains
+
+- [x] 3.1 Add direct-frequency problem construction from an existing AnalyticalMaterialStack, fixed real beta, polarization and backend; bind exterior continuation and checked optics to the same stack. Add explicit complex reference construction and branch-consistency provenance. Verify no exterior replacement/freezing, no parallel stack type, foreign ownership rejection and unspecified physical radiation for complex explicit references; document core material capability requirements.
+- [x] 3.2 Add required characteristic/material and nonzero-holomorphic-exterior declarations, typed known-exclusion rectangles and numerical-halo validation. Verify pole/threshold exclusions intersecting the requested rectangle or halo fail before discovery, invalid bounds fail, reference identity is preserved, and genuine out-of-region points remain errors. Document caller responsibility, conservative exclusion of all q zeros and the absence of sampling-based certification or contours with holes.
+- [x] 3.3 Integrate real-anchor outgoing/decaying and incoming/growing verification with the actual dispersive anchor material values and existing radiation provenance. Verify a lossless dispersive exterior is accepted without being frozen, mismatches/cutoffs/unsupported lossy or magnetic anchors remain typed errors, and manual complex references remain usable without invented outgoing qualification; document the two reference modes in the guide.
+
+## 4. Search integration, physical regressions and documentation
+
+- [x] 4.1 Connect frequency charts to shared discovery, bounded refinement, physical point descriptions and explicit multi-chart plans. Verify native enclosures and settings use frequency units, accepted roots retain exact source domains and assumptions, opposite exterior branches are not merged, and spectral interpretation retains its supported components and classification limits; document the internal stack-to-result flow.
+- [x] 4.2 Add independent TE/TM dispersive-substrate slab fixtures away from known poles and thresholds, checking roots and physical derivatives against an independent scalar characteristic. Show nonzero dispersion shifts the root beyond tolerance compared with freezing at the reference, and verify zero-dispersion limits against the existing conformal strategy with the correct derivative chain rule. Name the runnable regressions in the mathematical guide.
+- [x] 4.3 Add integrated failure and coverage regressions for exterior continuation/material failures during search, refinement and physical-data evaluation, independent successful/failed frequency charts, overlap reconciliation and budget-limited clusters. Verify original causes, observations, groups, multiplicities, terminations and declared exclusions are retained without accepting roots outside the original enclosure or inside the halo; document the coverage and failure semantics.
+- [x] 4.4 Update README and included public guide with the two spectral strategies, core-stack private usage, frequency units, reference modes, explicit analytic assumptions/exclusions and continuation controls. Verify local links and rustdoc render, and update the roadmap to put dispersive charts before the public API while preserving later milestones and crate ownership.
+
+## 5. Integration verification
+
+- [x] 5.1 Run locked lamina-mode all-target tests, doctests, clippy and no-dependency rustdoc plus changed-file formatting. Record results against the 250-test baseline and distinguish existing warnings; run relevant core checks only if a demonstrated missing primitive required core changes.
+- [x] 5.2 Review the completed change against every spec scenario, confirm no stack/material framework or unrelated dependency/upstream changes were introduced, and run strict OpenSpec validation. Record remaining domain, reference, coverage and physical-interpretation limits together with the public API handoff.
