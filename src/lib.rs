@@ -361,8 +361,8 @@ pub use domain::{ComplexPlane, RealAxis};
 pub use input::{
     CanonicalCoordinates, CanonicalStack, CoordinateGrid, CoordinateInput, CoordinateReference,
     CoordinateSamples, Coordinates, InPlaneCoordinate, IncidentSide, Polarisation,
-    ProjectionConstraintError, StackCompileError, StackThicknessJet,
-    compile_canonical_constant_stack,
+    ProjectionConstraintError, StackCompileError, StackThicknessJet, ValidationConfig,
+    compile_canonical_constant_stack, compile_canonical_thickness_stack,
 };
 
 pub use lamina_units::SpectralCoordinate;
@@ -408,7 +408,13 @@ pub mod units {
 }
 
 /// Normalization-independent homogeneous field recovery for supported backends.
-pub use evaluate::{ModalFieldBackend, UnscaledFieldError, UnscaledFieldResult, OwnedModeFields};
+pub use evaluate::{
+    ModalDerivativeBackend, ModalFieldBackend, OwnedModeFields, UnscaledFieldError,
+    UnscaledFieldResult,
+};
 
 /// Complete scalar pole normalization with analytic outgoing boundary terms.
-pub use evaluate::{PoleVariable, PoleNormalizationInput, PoleNormalizationSettings, PoleNormalizationData, PoleNormalizationError, ModalNormalizationBackend};
+pub use evaluate::{
+    ModalNormalizationBackend, PoleNormalizationData, PoleNormalizationError,
+    PoleNormalizationInput, PoleNormalizationSettings, PoleVariable,
+};

@@ -28,8 +28,11 @@ pub(crate) use context::{
 pub use error::CompilePlaneWaveError;
 pub(crate) use error::MappingError;
 pub(crate) use layout::JetMapping;
-pub use stack::{StackCompileError, StackThicknessJet, compile_canonical_constant_stack};
-pub(crate) use validation::ValidationConfig;
+pub use stack::{
+    StackCompileError, StackThicknessJet, compile_canonical_constant_stack,
+    compile_canonical_thickness_stack,
+};
+pub use validation::ValidationConfig;
 
 use coordinates::CoordinateCompileError;
 use stack::compile_stack;
