@@ -26,12 +26,13 @@ mod error;
 pub(crate) use canonical::CanonicalProblem;
 pub(crate) use compile::{
     CompilationContext, CompileJet, CompilePlaneWaveError, CoordinateContext, JetMapping,
-    ProjectionConstraint, ProjectionConstraintError, ValidationConfig, compile_real,
+    ProjectionConstraint, ValidationConfig, compile_real,
 };
 pub(crate) use coordinate::ReferenceRequirement;
 pub(crate) use coordinate_input::CoordinateValues;
 
 pub use canonical::{CanonicalCoordinates, CanonicalStack};
+pub use compile::ProjectionConstraintError;
 pub use compile::{StackCompileError, StackThicknessJet, compile_canonical_constant_stack};
 pub use coordinate::{Coordinates, InPlaneCoordinate};
 pub use coordinate_input::{

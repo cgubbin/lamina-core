@@ -139,6 +139,18 @@ which the retained solution can reconstruct quantities such as:
 This separation allows the electromagnetic solve to be performed once and
 subsequently sampled or integrated in several different ways.
 
+For a sampled calculation, call [`RealAxisState::project_point`] to select
+one excitation, then [`RealAxisState::excitation`] to select its incident
+side. [`RealAxisExcitation::evaluate_fields`] returns a [`SpatialResponse`]
+containing the fields and their resolved sampling positions. Excitation
+fields are normalized to unit incident flux.
+
+Run `cargo run --example retained_fields` for a complete wavelength sweep
+followed by point projection and spatial field reconstruction. Sampling
+types such as [`LayerSampling`] and [`ExteriorSampling`] specify positions
+in physical length units; coincident samples on opposite sides of an
+interface preserve their distinct region identities.
+
 ### Complex-plane evaluation
 
 Outgoing modes require a different contract from driven real-axis
@@ -320,4 +332,4 @@ backend representation.
 The current numerical backends implement isotropic 2×2 transfer and
 scattering formulations.
 
-License: MIT
+License: MIT OR Apache-2.0
