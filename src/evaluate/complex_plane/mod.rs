@@ -33,10 +33,12 @@
 //! optically thick stack. Checked evaluation reports non-finite results without
 //! changing the requested point, backend, or determinant gauge.
 
+mod derivatives;
 pub(super) mod mode;
 mod normalization;
 mod state;
 mod unscaled;
+pub use derivatives::*;
 pub use normalization::*;
 
 use std::fmt::Debug;
