@@ -1,0 +1,31 @@
+{
+  "page_stationary_beta_per_um_and_omega_per_ps": [
+    [
+      7.407205313714259,
+      804.5878623049804,
+      -4.136261048385167
+    ],
+    [
+      30.33516779083293,
+      778.3402820649288,
+      -5.057402752123358
+    ]
+  ],
+  "design_crossing_gap_per_um": 0.04577579914884336,
+  "smallest_sampled_gap_per_um": 0.04042318062166378,
+  "field_gauges": {
+    "lower-0-fields": "unit-delta pole",
+    "lower-50-fields": "unit-delta pole",
+    "lower-100-fields": "unit-delta pole",
+    "upper-0-fields": "unit-delta pole",
+    "upper-50-fields": "unit-delta pole",
+    "upper-100-fields": "unit-delta pole",
+    "page-20-fields": "unit-delta pole",
+    "page-34-fields": "unit-delta pole",
+    "page-50-fields": "unit-delta pole",
+    "page-220-fields": "unit-delta pole",
+    "page-263-fields": "unit-delta pole",
+    "page-300-fields": "unit-delta pole"
+  },
+  "max_plasmon_relative_error": 1.2112984642591042e-11
+}

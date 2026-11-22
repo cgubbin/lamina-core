@@ -1,0 +1,24 @@
+BranchSettings {
+    local_assumption: CallerAssumedHolomorphicInK0AndBetaAndRegularInThickness,
+    domain_assumption: CallerAssumedHolomorphicPoleFree,
+    radius: 30.0,
+    minimum_step: 1e-5,
+    retries: 20,
+    refinement: RefinementConfig {
+        residual_atol: 1e-6,
+        residual_rtol: 0.0,
+        residual_scale: 1.0,
+        native_atol: 1e-10,
+        native_rtol: 1e-10,
+        max_updates: 32,
+        max_backtracks: 12,
+        max_evaluations: 256,
+    },
+    slope: ImplicitSlopeSettings {
+        denominator_atol: 1e-12,
+        denominator_rtol: 1e-10,
+        denominator_reference_scale: 1.0,
+    },
+}
+strategy: DirectFrequency
+finite layer widths (µm): [0.16838766157089702, 0.7, 0.32906003102117337]
