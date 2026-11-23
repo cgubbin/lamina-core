@@ -409,8 +409,8 @@ pub mod units {
 
 /// Normalization-independent homogeneous field recovery for supported backends.
 pub use evaluate::{
-    ModalDerivativeBackend, ModalFieldBackend, OwnedModeFields, UnscaledFieldError,
-    UnscaledFieldResult,
+    DirectionalModeFields, ModalCharacteristicDirection, ModalDerivativeBackend, ModalFieldBackend,
+    OwnedModeFields, UnscaledFieldError, UnscaledFieldResult,
 };
 
 /// Complete scalar pole normalization with analytic outgoing boundary terms.
