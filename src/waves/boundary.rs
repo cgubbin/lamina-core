@@ -38,6 +38,25 @@ impl<A> BoundaryWaveSolution<A> {
     pub(crate) fn into_parts(self) -> (ExteriorBoundaryWaves<A>, Vec<LayerBoundaryWaves<A>>) {
         (self.exterior, self.layers)
     }
+
+    /// Keep only the outgoing wave in each exterior: backward (towards -z) on
+    /// the left and forward (towards +z) on the right.
+    ///
+    /// For an outgoing mode the incoming exterior waves vanish, but at an
+    /// accepted root they keep a round-off remainder that grows away from the
+    /// stack and eventually swamps the outgoing wave. Use this only for
+    /// solutions that are accepted modes: away from a root the incoming waves
+    /// are genuine and are needed for interface continuity.
+    pub(crate) fn outgoing_exteriors(self) -> Self
+    where
+        A: crate::algebra::ScalarAlgebra + Clone,
+    {
+        let (exterior, layers) = self.into_parts();
+        let (left, right) = exterior.into_parts();
+        let left = BidirectionalWaves::new(left.backward().zero_like(), left.backward().clone());
+        let right = BidirectionalWaves::new(right.forward().clone(), right.forward().zero_like());
+        Self::new(ExteriorBoundaryWaves::new(left, right), layers)
+    }
 }
 
 impl<A> ScaleBy<A> for BoundaryWaveSolution<A>
