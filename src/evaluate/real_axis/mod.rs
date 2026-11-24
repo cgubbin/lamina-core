@@ -20,7 +20,7 @@ use crate::{
     algebra::{
         ArrayJet0, ArrayJet1, ArrayJet2, ArrayJetBivariate1, ArrayJetBivariate2, Jet, RealParameter,
     },
-    backend::{Backend, PlaneWaveSolution, evaluate_exterior_wavevectors},
+    backend::{Backend, PlaneWaveSolution, evaluate_stack_exterior_wavevectors},
     domain::RealAxis,
     input::{CompileJet, CompilePlaneWaveError, CoordinateInput, ValidationConfig, compile_real},
     material::ConstitutiveEvaluator,
@@ -351,10 +351,9 @@ impl<B> RealAxisEvaluator<B> {
             compile_real::<M, J>(input, stack, &ValidationConfig::permissive(), mapping)
                 .map_err(RealAxisEvaluationError::compile)?;
 
-        let exterior = evaluate_exterior_wavevectors::<RealAxis, M, J>(
+        let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
-            canonical_problem.stack().left_exterior(),
-            canonical_problem.stack().right_exterior(),
+            canonical_problem.stack(),
         );
 
         let solution = self
@@ -397,10 +396,9 @@ impl<B> RealAxisEvaluator<B> {
             compile_real::<M, J>(input, stack, &ValidationConfig::permissive(), mapping)
                 .map_err(RealAxisEvaluationError::compile)?;
 
-        let exterior = evaluate_exterior_wavevectors::<RealAxis, M, J>(
+        let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
-            canonical_problem.stack().left_exterior(),
-            canonical_problem.stack().right_exterior(),
+            canonical_problem.stack(),
         );
 
         let workspace = self

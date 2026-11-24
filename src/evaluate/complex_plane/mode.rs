@@ -32,6 +32,11 @@ pub enum QnmCreationError {
     #[error(transparent)]
     Normalisation(#[from] QnmNormalisationError),
 
+    /// The finite-layer quasinormal normalisation does not cover the
+    /// exterior region of a closed side.
+    #[error("quasinormal-mode normalisation needs a stack open on both sides")]
+    ClosedStack,
+
     #[error(transparent)]
     Reconstruction(#[from] ModeReconstructionError),
 }
@@ -93,6 +98,10 @@ where
             + ModalSolutionSource<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
+        if !state.stack().is_open() {
+            return Err(QnmCreationError::ClosedStack);
+        }
+
         let seed = state.workspace().modal_boundary_solution()?;
 
         let raw_normalisation = raw_qnm_normalisation_unchecked(&seed, state)?;
@@ -262,7 +271,15 @@ where
     let boundary_waves = wave_context.modal_boundary_waves(solution)?;
     let boundary_waves = match exterior {
         ExteriorWaves::Retained => boundary_waves,
-        ExteriorWaves::Outgoing => boundary_waves.outgoing_exteriors(),
+        ExteriorWaves::Outgoing => {
+            let solution = state.workspace().solution();
+            let context = solution.context();
+
+            boundary_waves.outgoing_exteriors(
+                context.left_closure().is_some(),
+                context.right_closure().is_some(),
+            )
+        }
     };
 
     let context = FieldSamplingContext::new(state.workspace());

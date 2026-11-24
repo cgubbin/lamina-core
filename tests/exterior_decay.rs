@@ -61,7 +61,7 @@ fn check(backend: &impl ModalFieldBackend) {
             &stack,
             C::new(K0, 0.),
             C::new(beta, 0.),
-            [C::new(0., kappa); 2],
+            [Some(C::new(0., kappa)); 2],
             Polarisation::TransverseElectric,
             &sampling,
             C::new(1., 0.),

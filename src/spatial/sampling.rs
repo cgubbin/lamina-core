@@ -60,7 +60,7 @@ use num_traits::{Float, FromPrimitive, Zero};
 
 use crate::{
     FiniteLayerIndex, ScalarAlgebra, Stack, algebra::Jet, input::CanonicalStack,
-    spatial::ResolvedFieldSampling,
+    spatial::ResolvedFieldSampling, stack::StackSide,
 };
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -86,6 +86,16 @@ pub enum FieldSamplingError<R> {
 
     #[error("field distance must be finite and non-negative, got {distance:?}")]
     InvalidExteriorDistance { distance: Length<R> },
+
+    #[error(
+        "exterior distance {distance:?} on the {side:?} side lies beyond the wall closing \
+         that side, {limit:?} from the outermost interface"
+    )]
+    BeyondTermination {
+        side: StackSide,
+        distance: Length<R>,
+        limit: Length<R>,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -362,12 +372,22 @@ impl<R> FieldSampling<R> {
     where
         R: Float + FromPrimitive,
     {
-        self.resolve_with_stack(stack.len(), |index| {
-            stack
-                .layers_left_to_right()
-                .get(index.get())
-                .map(|layer| layer.thickness())
-        })
+        let limits = match crate::input::validate_terminations(stack) {
+            Ok((left, right)) => [left.exterior_extent_cm(), right.exterior_extent_cm()],
+            // An invalid termination is reported when the stack is compiled.
+            Err(_) => [None, None],
+        };
+
+        self.resolve_with_stack(
+            stack.len(),
+            |index| {
+                stack
+                    .layers_left_to_right()
+                    .get(index.get())
+                    .map(|layer| layer.thickness())
+            },
+            limits,
+        )
     }
 
     /// Resolve this sampling request against a canonical scalar stack.
@@ -385,19 +405,31 @@ impl<R> FieldSampling<R> {
         J: ScalarAlgebra + Jet<Dimension = Ix0>,
         J::Scalar: ComplexField<RealField = R> + Copy,
     {
-        self.resolve_with_stack(stack.layer_count(), |index| {
-            stack.layer(index).map(|layer| {
-                let thickness_cm = layer.thickness_cm().value()[()].real();
+        let extent = |termination: &crate::input::canonical::CanonicalTermination<J>| {
+            Some(termination.gap_cm()?.value()[()].real())
+        };
 
-                Length::new(thickness_cm, LengthUnit::Centimetre)
-            })
-        })
+        self.resolve_with_stack(
+            stack.layer_count(),
+            |index| {
+                stack.layer(index).map(|layer| {
+                    let thickness_cm = layer.thickness_cm().value()[()].real();
+
+                    Length::new(thickness_cm, LengthUnit::Centimetre)
+                })
+            },
+            [
+                extent(stack.left_termination()),
+                extent(stack.right_termination()),
+            ],
+        )
     }
 
     fn resolve_with_stack<F>(
         &self,
         layer_count: usize,
         mut layer_thickness: F,
+        exterior_extents_cm: [Option<R>; 2],
     ) -> Result<ResolvedFieldSampling<R>, FieldSamplingError<R>>
     where
         R: Float + FromPrimitive,
@@ -452,6 +484,34 @@ impl<R> FieldSampling<R> {
                         });
                     }
                 }
+            }
+        }
+
+        for position in &positions {
+            let (side, distance, extent) = match position {
+                FieldPosition::LeftExterior { distance } => {
+                    (StackSide::Left, distance, exterior_extents_cm[0])
+                }
+                FieldPosition::RightExterior { distance } => {
+                    (StackSide::Right, distance, exterior_extents_cm[1])
+                }
+                FieldPosition::Layer { .. } => continue,
+            };
+
+            let Some(extent) = extent else {
+                continue;
+            };
+
+            // A sample on the wall itself, given in other units, may differ
+            // from the extent by round-off.
+            let tolerance = R::from_f64(1.0e-12).expect("representable");
+
+            if distance.as_centimetres() > extent * (R::one() + tolerance) {
+                return Err(FieldSamplingError::BeyondTermination {
+                    side,
+                    distance: *distance,
+                    limit: Length::new(extent, LengthUnit::Centimetre),
+                });
             }
         }
 

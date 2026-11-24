@@ -6,6 +6,7 @@ use crate::{
         ModeReconstructionError, PlaneWaveModeCandidate, PlaneWaveSolution,
         PlaneWaveSolutionSource, PlaneWaveSolutionView, ReconstructExteriorModeWaves,
         ReconstructLayerModeWaves, RetainedIsotropicLayers, RunMode, SolutionWorkspace,
+        right_exterior_mode_waves,
         scatter2::{
             Scatter2ExteriorContext, Scatter2ProjectiveEntries, cascade_projection,
             entries::{Scatter2Entries, cascade},
@@ -229,10 +230,18 @@ where
 {
     type Algebra = A;
 
+    fn has_closed_side(&self) -> bool {
+        self.solution().context().has_closure()
+    }
+
     fn reconstruct_layer_boundary_waves(
         &self,
         incident_side: IncidentSide,
     ) -> Option<Vec<LayerBoundaryWaves<A>>> {
+        if self.has_closed_side() {
+            return None;
+        }
+
         Some(
             self.retained
                 .as_ref()?
@@ -401,7 +410,7 @@ where
 
 impl<A> ModalSolutionSource for Scatter2Workspace<A>
 where
-    A: ScalarAlgebra,
+    A: ScalarAlgebra + Clone,
     A::Scalar: ComplexScalar + One,
     A::Dimension: Dimension,
 {
@@ -413,7 +422,7 @@ where
         Ok(self
             .solution()
             .entries()
-            .right_gauged_mode_candidate(self.solution().context().left_admittance()))
+            .right_gauged_mode_candidate(self.solution().context()))
     }
 }
 
@@ -456,9 +465,7 @@ where
             self.solution().context().left_admittance(),
         );
 
-        let zero = seed.right_outgoing().zero_like();
-
-        let right = BidirectionalWaves::new(seed.right_outgoing().clone(), zero);
+        let right = right_exterior_mode_waves(seed, self.solution().context().right_admittance());
 
         Ok(ExteriorBoundaryWaves::new(left, right))
     }
@@ -494,11 +501,31 @@ where
             suffixes.push(next);
         }
         suffixes.reverse();
+        // A closed right side reflects the outgoing wave back with its load.
+        let right_load = self
+            .solution()
+            .context()
+            .right_closure()
+            .map(|closure| closure.load());
         let at_cut = |index: usize| {
             let suffix = &suffixes[index];
             let factor = candidate.right_outgoing().divide(suffix.n21());
-            let forward = suffix.denominator().multiply(&factor);
-            let backward = suffix.n11().multiply(&factor);
+            let (forward, backward) = match &right_load {
+                Some(load) => (
+                    suffix
+                        .denominator()
+                        .subtract(&load.multiply(suffix.n22()))
+                        .multiply(&factor),
+                    suffix
+                        .n11()
+                        .add(&load.multiply(suffix.complement()))
+                        .multiply(&factor),
+                ),
+                None => (
+                    suffix.denominator().multiply(&factor),
+                    suffix.n11().multiply(&factor),
+                ),
+            };
             if !forward.all_finite() || !backward.all_finite() {
                 return Err(ModeReconstructionError::NoUsableNullVector);
             }
@@ -1190,28 +1217,30 @@ mod tests {
         stack: CanonicalStack<Constant<f64>, RealJ0>,
         mode: RunMode,
     ) -> Scatter2Workspace<RealJ0> {
-        Scatter2::new().accumulate::<RealJ0, RealAxis, _>(
-            &test_coordinates(),
-            &stack,
-            &ExteriorWavevectors::new(
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                    stack.left_exterior(),
-                    &test_coordinates(),
-                    Polarisation::TransverseElectric,
-                )
-                .kappa()
-                .clone(),
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                    stack.right_exterior(),
-                    &test_coordinates(),
-                    Polarisation::TransverseElectric,
-                )
-                .kappa()
-                .clone(),
-            ),
-            Polarisation::TransverseElectric,
-            mode,
-        )
+        Scatter2::new()
+            .accumulate::<RealJ0, RealAxis, _>(
+                &test_coordinates(),
+                &stack,
+                &ExteriorWavevectors::new(
+                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                        stack.left_exterior(),
+                        &test_coordinates(),
+                        Polarisation::TransverseElectric,
+                    )
+                    .kappa()
+                    .clone(),
+                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                        stack.right_exterior(),
+                        &test_coordinates(),
+                        Polarisation::TransverseElectric,
+                    )
+                    .kappa()
+                    .clone(),
+                ),
+                Polarisation::TransverseElectric,
+                mode,
+            )
+            .unwrap()
     }
 
     #[test]

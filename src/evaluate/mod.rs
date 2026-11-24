@@ -17,7 +17,7 @@
 //! and exterior-wavevector branches.
 
 mod complex_plane;
-mod error;
+pub(crate) mod error;
 mod real_axis;
 
 #[cfg(test)]

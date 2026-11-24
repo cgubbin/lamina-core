@@ -65,6 +65,12 @@ where
                 .iter()
                 .map(|each| each.project_point(index))
                 .collect::<Result<Vec<_>, _>>()?,
+        )
+        .with_terminations(
+            self.left_termination()
+                .try_map(|jet| jet.project_point(index))?,
+            self.right_termination()
+                .try_map(|jet| jet.project_point(index))?,
         ))
     }
 }

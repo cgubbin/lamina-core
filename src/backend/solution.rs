@@ -12,6 +12,7 @@
 
 use crate::{
     IncidentSide, Polarisation,
+    backend::ClosedSide,
     observable::{ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
 
@@ -56,6 +57,17 @@ pub trait ExteriorContextProvider {
 
     /// Return the selected polarization.
     fn polarisation(&self) -> Polarisation;
+
+    /// Return the closed-side data of the left side, if it is closed.
+    fn left_closure(&self) -> Option<&ClosedSide<Self::Algebra>>;
+
+    /// Return the closed-side data of the right side, if it is closed.
+    fn right_closure(&self) -> Option<&ClosedSide<Self::Algebra>>;
+
+    /// Return `true` when either side is closed by a wall.
+    fn has_closure(&self) -> bool {
+        self.left_closure().is_some() || self.right_closure().is_some()
+    }
 }
 
 pub trait PlaneWaveEntries {

@@ -47,14 +47,25 @@ impl<A> BoundaryWaveSolution<A> {
     /// stack and eventually swamps the outgoing wave. Use this only for
     /// solutions that are accepted modes: away from a root the incoming waves
     /// are genuine and are needed for interface continuity.
-    pub(crate) fn outgoing_exteriors(self) -> Self
+    ///
+    /// A closed side holds a standing wave between the outermost
+    /// interface and its wall; both of its waves are kept.
+    pub(crate) fn outgoing_exteriors(self, left_closed: bool, right_closed: bool) -> Self
     where
         A: crate::algebra::ScalarAlgebra + Clone,
     {
         let (exterior, layers) = self.into_parts();
         let (left, right) = exterior.into_parts();
-        let left = BidirectionalWaves::new(left.backward().zero_like(), left.backward().clone());
-        let right = BidirectionalWaves::new(right.forward().clone(), right.forward().zero_like());
+        let left = if left_closed {
+            left
+        } else {
+            BidirectionalWaves::new(left.backward().zero_like(), left.backward().clone())
+        };
+        let right = if right_closed {
+            right
+        } else {
+            BidirectionalWaves::new(right.forward().clone(), right.forward().zero_like())
+        };
         Self::new(ExteriorBoundaryWaves::new(left, right), layers)
     }
 }

@@ -21,10 +21,10 @@ use crate::{
     ComplexScalar, PlaneWaveAmplitudes, PlaneWavePower, Polarisation,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
     backend::{
-        ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries,
-        isotropic::IsotropicMediumQuantities,
+        ClosedSide, ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries,
+        TerminationError, exterior_parts,
     },
-    input::{CanonicalCoordinates, IncidentSide},
+    input::{CanonicalCoordinates, CanonicalStack, IncidentSide},
     material::{ConstitutiveEvaluator, ConstitutiveLift},
     observable::{ProjectAmplitudes, ProjectPower},
 };
@@ -144,6 +144,9 @@ pub struct Scatter2ExteriorContext<A> {
     parallel_angular_wavenumber: A,
 
     polarisation: Polarisation,
+
+    left_closure: Option<ClosedSide<A>>,
+    right_closure: Option<ClosedSide<A>>,
 }
 
 impl<A> ExteriorContextProvider for Scatter2ExteriorContext<A> {
@@ -191,6 +194,14 @@ impl<A> ExteriorContextProvider for Scatter2ExteriorContext<A> {
     fn polarisation(&self) -> Polarisation {
         self.polarisation
     }
+
+    fn left_closure(&self) -> Option<&ClosedSide<A>> {
+        self.left_closure.as_ref()
+    }
+
+    fn right_closure(&self) -> Option<&ClosedSide<A>> {
+        self.right_closure.as_ref()
+    }
 }
 
 impl<J> Scatter2ExteriorContext<J> {
@@ -207,6 +218,8 @@ impl<J> Scatter2ExteriorContext<J> {
         vacuum_angular_wavenumber: J,
         parallel_angular_wavenumber: J,
         polarisation: Polarisation,
+        left_closure: Option<ClosedSide<J>>,
+        right_closure: Option<ClosedSide<J>>,
     ) -> Self {
         Self {
             left_admittance,
@@ -220,9 +233,12 @@ impl<J> Scatter2ExteriorContext<J> {
             vacuum_angular_wavenumber,
             parallel_angular_wavenumber,
             polarisation,
+            left_closure,
+            right_closure,
         }
     }
 
+    #[cfg(test)]
     pub(super) fn new<E, M>(
         coordinates: &CanonicalCoordinates<J>,
         left_exterior: &M,
@@ -236,11 +252,21 @@ impl<J> Scatter2ExteriorContext<J> {
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let left_medium = IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
-        let right_medium = IsotropicMediumQuantities::evaluate::<E, M>(right_exterior, coordinates);
+        let left_medium =
+            crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
+        let right_medium = crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(
+            right_exterior,
+            coordinates,
+        );
 
-        let left_kappa = exterior.left().clone();
-        let right_kappa = exterior.right().clone();
+        let left_kappa = exterior
+            .left()
+            .expect("an open stack has a left exterior wavevector")
+            .clone();
+        let right_kappa = exterior
+            .right()
+            .expect("an open stack has a right exterior wavevector")
+            .clone();
 
         let left_admittance = left_medium.admittance_with_kappa(&left_kappa, polarisation);
         let right_admittance = right_medium.admittance_with_kappa(&right_kappa, polarisation);
@@ -260,7 +286,43 @@ impl<J> Scatter2ExteriorContext<J> {
             vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
             parallel_angular_wavenumber: coordinates.parallel_angular_wavenumber().clone(),
             polarisation,
+            left_closure: None,
+            right_closure: None,
         }
+    }
+
+    /// Construct the context for `stack`, whose open sides take their
+    /// wavevectors from `exterior` and whose closed sides take theirs from
+    /// the termination.
+    pub(crate) fn for_stack<E, M>(
+        coordinates: &CanonicalCoordinates<J>,
+        stack: &CanonicalStack<M, J>,
+        exterior: &ExteriorWavevectors<J>,
+        polarisation: Polarisation,
+    ) -> Result<Self, TerminationError>
+    where
+        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
+        J::Scalar: ComplexScalar,
+        J::Dimension: Dimension,
+        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+    {
+        let parts = exterior_parts::<E, M, J>(coordinates, stack, exterior, polarisation)?;
+
+        Ok(Self::from_parts(
+            parts.left_admittance,
+            parts.right_admittance,
+            parts.left_kappa,
+            parts.right_kappa,
+            parts.left_epsilon,
+            parts.right_epsilon,
+            parts.left_mu,
+            parts.right_mu,
+            coordinates.vacuum_angular_wavenumber().clone(),
+            coordinates.parallel_angular_wavenumber().clone(),
+            polarisation,
+            parts.left_closure,
+            parts.right_closure,
+        ))
     }
 
     pub(super) fn incident_and_transmitted_admittances(&self, side: IncidentSide) -> (&J, &J) {
@@ -827,6 +889,8 @@ mod tests {
             real_j0_from_real(9.0),  // k0
             real_j0_from_real(10.0), // k_parallel
             Polarisation::TransverseMagnetic,
+            None,
+            None,
         );
 
         assert_eq!(value(context.left_admittance()), c(1.0));

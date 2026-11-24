@@ -4,14 +4,18 @@ use crate::{
     ComplexScalar,
     algebra::ScalarAlgebra,
     backend::isotropic::IsotropicMediumQuantities,
-    input::CanonicalCoordinates,
+    input::{CanonicalCoordinates, CanonicalStack},
     material::{ConstitutiveEvaluator, ConstitutiveLift},
 };
 
-/// Canonical longitudinal angular wavevectors in the exterior media.
+/// Canonical longitudinal angular wavevectors in the open exterior media.
 ///
-/// `left` and `right` contain the branch-selected out-of-plane angular
-/// wavevectors `κ` in the corresponding semi-infinite exterior media.
+/// Each side holds the branch-selected out-of-plane angular wavevector `κ` of
+/// its semi-infinite exterior medium when that side is open, and nothing when
+/// the side is closed by a wall: a closed side's characteristic does
+/// not depend on a choice of exterior branch. A pattern that disagrees with
+/// the stack's terminations is rejected by the backends with
+/// [`TerminationError::ExteriorBranchMismatch`](crate::backend::TerminationError).
 ///
 /// Branch selection is completed before this value reaches a numerical
 /// backend. This allows advanced callers, such as complex-frequency mode
@@ -19,27 +23,80 @@ use crate::{
 /// rather than relying on the backend to reconstruct them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExteriorWavevectors<A> {
-    left: A,
-    right: A,
+    left: Option<A>,
+    right: Option<A>,
 }
 
 impl<A> ExteriorWavevectors<A> {
-    /// Construct exterior longitudinal wavevectors.
+    /// Construct wavevectors for a stack open on both sides.
     pub fn new(left: A, right: A) -> Self {
+        Self {
+            left: Some(left),
+            right: Some(right),
+        }
+    }
+
+    /// Construct wavevectors for a stack closed on the left and open on the
+    /// right.
+    pub fn closed_left(right: A) -> Self {
+        Self {
+            left: None,
+            right: Some(right),
+        }
+    }
+
+    /// Construct wavevectors for a stack open on the left and closed on the
+    /// right.
+    pub fn closed_right(left: A) -> Self {
+        Self {
+            left: Some(left),
+            right: None,
+        }
+    }
+
+    /// Construct the empty pattern of a stack closed on both sides.
+    pub fn closed() -> Self {
+        Self {
+            left: None,
+            right: None,
+        }
+    }
+
+    /// Construct wavevectors from optional per-side values.
+    pub fn from_options(left: Option<A>, right: Option<A>) -> Self {
         Self { left, right }
     }
 
-    /// Return the longitudinal wavevector in the left exterior medium.
-    pub fn left(&self) -> &A {
-        &self.left
+    /// Return the wavevector in the left exterior medium, if the left side is
+    /// open.
+    pub fn left(&self) -> Option<&A> {
+        self.left.as_ref()
     }
 
-    /// Return the longitudinal wavevector in the right exterior medium.
-    pub fn right(&self) -> &A {
-        &self.right
+    /// Return the wavevector in the right exterior medium, if the right side
+    /// is open.
+    pub fn right(&self) -> Option<&A> {
+        self.right.as_ref()
+    }
+
+    /// Return `true` when every supplied wavevector satisfies `predicate`.
+    pub fn all(&self, mut predicate: impl FnMut(&A) -> bool) -> bool {
+        self.left
+            .iter()
+            .chain(self.right.iter())
+            .all(&mut predicate)
+    }
+
+    /// Apply `f` to every supplied wavevector.
+    pub fn map<B>(&self, mut f: impl FnMut(&A) -> B) -> ExteriorWavevectors<B> {
+        ExteriorWavevectors {
+            left: self.left.as_ref().map(&mut f),
+            right: self.right.as_ref().map(&mut f),
+        }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn evaluate_exterior_wavevectors<E, M, J>(
     coordinates: &CanonicalCoordinates<J>,
     left_exterior: &M,
@@ -58,6 +115,32 @@ where
         IsotropicMediumQuantities::evaluate::<E, M>(right_exterior, coordinates).into_kappa();
 
     ExteriorWavevectors::new(left_kappa, right_kappa)
+}
+
+/// Principal-root exterior wavevectors for the open sides of `stack`.
+pub(crate) fn evaluate_stack_exterior_wavevectors<E, M, J>(
+    coordinates: &CanonicalCoordinates<J>,
+    stack: &CanonicalStack<M, J>,
+) -> ExteriorWavevectors<J>
+where
+    J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+{
+    let kappa =
+        |material| IsotropicMediumQuantities::evaluate::<E, M>(material, coordinates).into_kappa();
+
+    ExteriorWavevectors::from_options(
+        stack
+            .left_termination()
+            .is_open()
+            .then(|| kappa(stack.left_exterior())),
+        stack
+            .right_termination()
+            .is_open()
+            .then(|| kappa(stack.right_exterior())),
+    )
 }
 
 #[cfg(test)]
@@ -136,9 +219,9 @@ mod tests {
             Polarisation::TransverseElectric,
         );
 
-        assert_jet_close(exterior.left(), left_quantities.kappa());
+        assert_jet_close(exterior.left().unwrap(), left_quantities.kappa());
 
-        assert_jet_close(exterior.right(), right_quantities.kappa());
+        assert_jet_close(exterior.right().unwrap(), right_quantities.kappa());
     }
 
     #[test]
@@ -162,11 +245,14 @@ mod tests {
             Polarisation::TransverseElectric,
         );
 
-        assert_jet_close(exterior.left(), left_expected.kappa());
+        assert_jet_close(exterior.left().unwrap(), left_expected.kappa());
 
-        assert_jet_close(exterior.right(), right_expected.kappa());
+        assert_jet_close(exterior.right().unwrap(), right_expected.kappa());
 
-        assert_ne!(exterior.left().value()[()], exterior.right().value()[()],);
+        assert_ne!(
+            exterior.left().unwrap().value()[()],
+            exterior.right().unwrap().value()[()],
+        );
     }
 
     #[test]
@@ -180,7 +266,7 @@ mod tests {
 
         let tm = evaluate_exterior_wavevectors::<RealAxis, _, J>(&coordinates, &left, &right);
 
-        assert_jet_close(te.left(), tm.left());
-        assert_jet_close(te.right(), tm.right());
+        assert_jet_close(te.left().unwrap(), tm.left().unwrap());
+        assert_jet_close(te.right().unwrap(), tm.right().unwrap());
     }
 }

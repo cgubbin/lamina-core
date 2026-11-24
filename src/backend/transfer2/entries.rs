@@ -42,18 +42,20 @@ use crate::{
     Polarisation,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
     backend::{
-        ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries, PlaneWaveModeCandidate,
-        isotropic::{IsotropicLayerQuantities, IsotropicMediumQuantities},
+        ClosedSide, ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries,
+        PlaneWaveModeCandidate, TerminationError, exterior_parts,
+        isotropic::IsotropicLayerQuantities,
         transfer2::{error::Transfer2Entry, state::right_outgoing_transfer_state},
+        undefined_amplitudes,
     },
-    input::CanonicalCoordinates,
+    input::{CanonicalCoordinates, CanonicalStack},
     material::{ConstitutiveEvaluator, ConstitutiveLift},
     observable::{BoundaryState, ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
 
 use super::{
     projection::{right_incoming_column, right_outgoing_column},
-    state::transfer_state_slope,
+    state::{TransferState, transfer_state_slope},
 };
 
 /// Internal algebraic representation of a 2×2 transfer matrix.
@@ -222,6 +224,9 @@ pub struct Transfer2ExteriorContext<A> {
     vacuum_angular_wavenumber: A,
     parallel_angular_wavenumber: A,
     polarisation: Polarisation,
+
+    left_closure: Option<ClosedSide<A>>,
+    right_closure: Option<ClosedSide<A>>,
 }
 
 impl<A> ExteriorContextProvider for Transfer2ExteriorContext<A> {
@@ -270,6 +275,14 @@ impl<A> ExteriorContextProvider for Transfer2ExteriorContext<A> {
     fn polarisation(&self) -> Polarisation {
         self.polarisation
     }
+
+    fn left_closure(&self) -> Option<&ClosedSide<A>> {
+        self.left_closure.as_ref()
+    }
+
+    fn right_closure(&self) -> Option<&ClosedSide<A>> {
+        self.right_closure.as_ref()
+    }
 }
 
 impl<J> Transfer2ExteriorContext<J> {
@@ -286,6 +299,8 @@ impl<J> Transfer2ExteriorContext<J> {
         vacuum_angular_wavenumber: J,
         parallel_angular_wavenumber: J,
         polarisation: Polarisation,
+        left_closure: Option<ClosedSide<J>>,
+        right_closure: Option<ClosedSide<J>>,
     ) -> Self {
         Self {
             left_admittance,
@@ -299,9 +314,12 @@ impl<J> Transfer2ExteriorContext<J> {
             vacuum_angular_wavenumber,
             parallel_angular_wavenumber,
             polarisation,
+            left_closure,
+            right_closure,
         }
     }
 
+    #[cfg(test)]
     pub(super) fn new<E, M>(
         coordinates: &CanonicalCoordinates<J>,
         left_exterior: &M,
@@ -315,11 +333,21 @@ impl<J> Transfer2ExteriorContext<J> {
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let left_kappa = exterior.left().clone();
-        let right_kappa = exterior.right().clone();
+        let left_kappa = exterior
+            .left()
+            .expect("an open stack has a left exterior wavevector")
+            .clone();
+        let right_kappa = exterior
+            .right()
+            .expect("an open stack has a right exterior wavevector")
+            .clone();
 
-        let left_medium = IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
-        let right_medium = IsotropicMediumQuantities::evaluate::<E, M>(right_exterior, coordinates);
+        let left_medium =
+            crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
+        let right_medium = crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(
+            right_exterior,
+            coordinates,
+        );
 
         let left_admittance = left_medium.admittance_with_kappa(&left_kappa, polarisation);
         let right_admittance = right_medium.admittance_with_kappa(&right_kappa, polarisation);
@@ -339,7 +367,43 @@ impl<J> Transfer2ExteriorContext<J> {
             vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
             parallel_angular_wavenumber: coordinates.parallel_angular_wavenumber().clone(),
             polarisation,
+            left_closure: None,
+            right_closure: None,
         }
+    }
+
+    /// Construct the context for `stack`, whose open sides take their
+    /// wavevectors from `exterior` and whose closed sides take theirs from
+    /// the termination.
+    pub(crate) fn for_stack<E, M>(
+        coordinates: &CanonicalCoordinates<J>,
+        stack: &CanonicalStack<M, J>,
+        exterior: &ExteriorWavevectors<J>,
+        polarisation: Polarisation,
+    ) -> Result<Self, TerminationError>
+    where
+        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
+        J::Scalar: ComplexScalar,
+        J::Dimension: Dimension,
+        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+    {
+        let parts = exterior_parts::<E, M, J>(coordinates, stack, exterior, polarisation)?;
+
+        Ok(Self::from_parts(
+            parts.left_admittance,
+            parts.right_admittance,
+            parts.left_kappa,
+            parts.right_kappa,
+            parts.left_epsilon,
+            parts.right_epsilon,
+            parts.left_mu,
+            parts.right_mu,
+            coordinates.vacuum_angular_wavenumber().clone(),
+            coordinates.parallel_angular_wavenumber().clone(),
+            polarisation,
+            parts.left_closure,
+            parts.right_closure,
+        ))
     }
 }
 
@@ -350,7 +414,7 @@ impl<A> PlaneWaveEntries for Transfer2Entries<A> {
 
 impl<J> ProjectAmplitudes for Transfer2Entries<J>
 where
-    J: ScalarAlgebra,
+    J: ScalarAlgebra + Clone,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
 {
@@ -361,6 +425,10 @@ where
         exterior: &Self::ExteriorContext,
         incident_side: IncidentSide,
     ) -> Self::Amplitudes {
+        if exterior.has_closure() {
+            return closed_amplitudes(self, exterior, incident_side);
+        }
+
         let left_slope = transfer_state_slope(exterior.left_admittance());
 
         let right_slope = transfer_state_slope(exterior.right_admittance());
@@ -431,6 +499,69 @@ where
     }
 }
 
+/// Plane-wave amplitudes of a stack with a closed side.
+///
+/// Incidence comes from the open side; nothing is transmitted, and the
+/// reflection follows from the closed side's boundary condition. Incidence
+/// from a closed side has no meaning and gives non-finite amplitudes; the
+/// evaluators refuse it before projecting.
+fn closed_amplitudes<J>(
+    entries: &Transfer2Entries<J>,
+    exterior: &Transfer2ExteriorContext<J>,
+    incident_side: IncidentSide,
+) -> PlaneWaveAmplitudes<J>
+where
+    J: ScalarAlgebra + Clone,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+{
+    let source = entries.m11().value();
+    let zero = J::filled_constant_like(source, <J::Scalar as Zero>::zero());
+    let one = J::filled_constant_like(source, <J::Scalar as One>::one());
+
+    match (
+        incident_side,
+        exterior.left_closure(),
+        exterior.right_closure(),
+    ) {
+        (IncidentSide::Left, None, Some(right)) => {
+            /*
+             * The right boundary state is fixed by the closure up to an
+             * amplitude a: at the left boundary
+             *
+             *   a p = 1 + r,    a q = ξL (r − 1).
+             */
+            let left_slope = transfer_state_slope(exterior.left_admittance());
+            let (field, slope) = right.right_state();
+            let left = entries.apply_state(&TransferState::new(field, slope));
+            let two = one.add(&one);
+            let amplitude = two
+                .multiply(&left_slope)
+                .divide(&left_slope.multiply(left.field()).subtract(left.slope()));
+            let reflection = amplitude.multiply(left.field()).subtract(&one);
+
+            PlaneWaveAmplitudes::new(reflection, zero)
+        }
+
+        (IncidentSide::Right, Some(left), None) => {
+            let right_slope = transfer_state_slope(exterior.right_admittance());
+            let (incoming_field, incoming_slope) = right_incoming_column(entries, &right_slope);
+            let (outgoing_field, outgoing_slope) = right_outgoing_column(entries, &right_slope);
+            let (field_weight, slope_weight) = left.left_row();
+            let incoming = field_weight
+                .multiply(&incoming_field)
+                .add(&slope_weight.multiply(&incoming_slope));
+            let outgoing = field_weight
+                .multiply(&outgoing_field)
+                .add(&slope_weight.multiply(&outgoing_slope));
+
+            PlaneWaveAmplitudes::new(incoming.divide(&outgoing).negate(), zero)
+        }
+
+        _ => undefined_amplitudes(source),
+    }
+}
+
 impl<J> ProjectPower for Transfer2Entries<J>
 where
     J: Clone + RealScalarAlgebra,
@@ -467,48 +598,74 @@ where
 
 impl<J> ProjectPlaneWaveModeDeterminant for Transfer2Entries<J>
 where
-    J: ScalarAlgebra,
+    J: ScalarAlgebra + Clone,
     J::Scalar: ComplexScalar + One,
     J::Dimension: Dimension,
 {
     type Determinant = PlaneWaveDeterminant<J>;
 
     fn project_determinant(&self, exterior: &Self::ExteriorContext) -> Self::Determinant {
-        let candidate = right_gauged_mode_candidate(
-            self,
-            exterior.left_admittance(),
-            exterior.right_admittance(),
-        );
+        let candidate = right_gauged_mode_candidate(self, exterior);
 
         PlaneWaveDeterminant::new(candidate.into_residual())
     }
 }
 
-pub(crate) fn right_gauged_mode_candidate<A>(
+/// The outgoing-mode candidate gauged by a unit right boundary state.
+///
+/// With `ξ = −iY`, the characteristic is `D = ℓ_L · M · r_R`: an open right
+/// side contributes `r_R = [1, −ξ_R]ᵀ` (a unit outgoing wave) and an open left
+/// side `ℓ_L = [ξ_L, −1]`; a closed side contributes the wall condition
+/// carried through its gap (see [`ClosedSide`]).
+pub(crate) fn right_gauged_mode_candidate<A, X>(
     entries: &Transfer2Entries<A>,
-    left_admittance: &A,
-    right_admittance: &A,
+    context: &X,
 ) -> PlaneWaveModeCandidate<A>
 where
-    A: ScalarAlgebra,
+    A: ScalarAlgebra + Clone,
     A::Scalar: ComplexScalar + One,
     A::Dimension: Dimension,
+    X: ExteriorContextProvider<Algebra = A>,
 {
     let one = A::filled_constant_like(entries.m11().value(), A::Scalar::one());
 
-    let right_state = right_outgoing_transfer_state(&one, right_admittance);
+    let (right_state, right_closed_state) = match context.right_closure() {
+        None => (
+            right_outgoing_transfer_state(&one, context.right_admittance()),
+            None,
+        ),
+        Some(closure) => {
+            let (field, slope) = closure.right_state();
+            (
+                TransferState::new(field.clone(), slope.clone()),
+                Some(BoundaryState::new(field, slope)),
+            )
+        }
+    };
 
     let left_state = entries.apply_state(&right_state);
 
-    let left_slope = transfer_state_slope(left_admittance);
+    let residual = match context.left_closure() {
+        None => {
+            let left_slope = transfer_state_slope(context.left_admittance());
 
-    let residual = left_slope
-        .multiply(left_state.field())
-        .subtract(left_state.slope());
+            left_slope
+                .multiply(left_state.field())
+                .subtract(left_state.slope())
+        }
+        Some(closure) => {
+            let (field_weight, slope_weight) = closure.left_row();
+
+            field_weight
+                .multiply(left_state.field())
+                .add(&slope_weight.multiply(left_state.slope()))
+        }
+    };
 
     let (field, secondary) = left_state.into_parts();
 
     PlaneWaveModeCandidate::new(BoundaryState::new(field, secondary), one, residual)
+        .with_right_closed_state(right_closed_state)
 }
 
 #[cfg(test)]
@@ -951,11 +1108,16 @@ mod projection_tests {
         let coordinates = coordinates();
 
         let ordinary = ExteriorWavevectors::new(
-            IsotropicMediumQuantities::real_axis(&left_exterior, &coordinates).into_kappa(),
-            IsotropicMediumQuantities::real_axis(&right_exterior, &coordinates).into_kappa(),
+            crate::backend::IsotropicMediumQuantities::real_axis(&left_exterior, &coordinates)
+                .into_kappa(),
+            crate::backend::IsotropicMediumQuantities::real_axis(&right_exterior, &coordinates)
+                .into_kappa(),
         );
 
-        let flipped = ExteriorWavevectors::new(ordinary.left().negate(), ordinary.right().clone());
+        let flipped = ExteriorWavevectors::new(
+            ordinary.left().unwrap().negate(),
+            ordinary.right().unwrap().clone(),
+        );
 
         let ordinary_context = Transfer2ExteriorContext::new::<RealAxis, _>(
             &coordinates,

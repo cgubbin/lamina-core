@@ -227,8 +227,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
     {
         if !coordinates.vacuum_angular_wavenumber().all_finite()
             || !coordinates.parallel_angular_wavenumber().all_finite()
-            || !exterior.left().all_finite()
-            || !exterior.right().all_finite()
+            || !exterior.all(|kappa| kappa.all_finite())
         {
             return Err(DeterminantEvaluationError::NonFiniteInput);
         }

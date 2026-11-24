@@ -47,6 +47,9 @@ pub enum BoundaryProjectionError {
         requested: usize,
         layer_count: usize,
     },
+
+    #[error("boundary projection is unavailable: {0}")]
+    Termination(#[source] crate::backend::TerminationError),
 }
 
 /// Reconstruct directional waves at both boundaries of every finite layer.
@@ -57,6 +60,12 @@ pub(crate) fn project_layer_boundary_waves<A, W>(
 where
     W: ReconstructLayerBoundaryWaves<Algebra = A>,
 {
+    if workspace.has_closed_side() {
+        return Err(BoundaryProjectionError::Termination(
+            crate::backend::TerminationError::DrivenFieldsOfClosedStack,
+        ));
+    }
+
     let waves = workspace
         .reconstruct_layer_boundary_waves(incident_side)
         .ok_or(BoundaryProjectionError::LayersNotRetained)?;

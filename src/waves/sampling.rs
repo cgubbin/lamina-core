@@ -9,10 +9,11 @@ use crate::{
     backend::{
         ExteriorContextProvider, ModeReconstructionError, PlaneWaveEntries, PlaneWaveModeCandidate,
         PlaneWaveSolutionSource, ReconstructExteriorModeWaves, ReconstructLayerModeWaves,
-        RetainedIsotropicLayers,
+        RetainedIsotropicLayers, TerminationError,
     },
     observable::{Amplitudes, ProjectAmplitudes},
     spatial::{CanonicalFieldPosition, CompiledFieldSampling},
+    stack::StackSide,
     waves::{
         BidirectionalWaves, ExteriorBoundaryWaves, LayerBoundaryWaves,
         boundary::BoundaryWaveSolution,
@@ -37,6 +38,12 @@ pub enum WaveSamplingError {
 
     #[error("sampling requested but no layer data was retained")]
     LayersNotRetained,
+
+    #[error(transparent)]
+    Termination(#[from] TerminationError),
+
+    #[error("the sampling position lies beyond the wall closing the {side:?} side")]
+    BeyondTermination { side: StackSide },
 
     #[error(transparent)]
     ModeReconstruction(#[from] ModeReconstructionError),
@@ -116,6 +123,10 @@ impl<'a, W, A> WaveSamplingContext<'a, W, A> {
         W::Entries: ProjectAmplitudes,
         <W::Entries as ProjectAmplitudes>::Amplitudes: Amplitudes<Algebra = A>,
     {
+        if self.workspace.has_closed_side() {
+            return Err(TerminationError::DrivenFieldsOfClosedStack.into());
+        }
+
         let exterior = self
             .workspace
             .reconstruct_exterior_boundary_waves(incident_side);
@@ -185,9 +196,24 @@ where
 {
     let exterior_context = workspace.solution().context();
     match position {
-        CanonicalFieldPosition::LeftExterior { distance } => Ok(exterior
-            .left()
-            .propagate(exterior_context.left_kappa(), -distance)),
+        CanonicalFieldPosition::LeftExterior { distance } => {
+            match exterior_context.left_closure() {
+                None => Ok(exterior
+                    .left()
+                    .propagate(exterior_context.left_kappa(), -distance)),
+                Some(closure) => {
+                    let distance = closure.exterior_distance(distance).ok_or(
+                        WaveSamplingError::BeyondTermination {
+                            side: StackSide::Left,
+                        },
+                    )?;
+
+                    Ok(exterior
+                        .left()
+                        .propagate(exterior_context.left_kappa(), -distance))
+                }
+            }
+        }
 
         CanonicalFieldPosition::Layer { index, position } => {
             let layer_thickness = workspace
@@ -209,9 +235,24 @@ where
             Ok(layer.propagate_to_position(longitudinal_wavevector, layer_thickness, position))
         }
 
-        CanonicalFieldPosition::RightExterior { distance } => Ok(exterior
-            .right()
-            .propagate(exterior_context.right_kappa(), distance)),
+        CanonicalFieldPosition::RightExterior { distance } => {
+            match exterior_context.right_closure() {
+                None => Ok(exterior
+                    .right()
+                    .propagate(exterior_context.right_kappa(), distance)),
+                Some(closure) => {
+                    let distance = closure.exterior_distance(distance).ok_or(
+                        WaveSamplingError::BeyondTermination {
+                            side: StackSide::Right,
+                        },
+                    )?;
+
+                    Ok(exterior
+                        .right()
+                        .propagate(exterior_context.right_kappa(), distance))
+                }
+            }
+        }
     }
 }
 
@@ -254,13 +295,15 @@ mod tests {
             stack.right_exterior(),
         );
 
-        Scatter2::new().accumulate::<A, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior,
-            Polarisation::TransverseElectric,
-            mode,
-        )
+        Scatter2::new()
+            .accumulate::<A, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior,
+                Polarisation::TransverseElectric,
+                mode,
+            )
+            .unwrap()
     }
 
     #[test]

@@ -51,4 +51,7 @@ pub enum Transfer2Error {
         entry: Transfer2Entry,
         index: Vec<usize>,
     },
+
+    #[error(transparent)]
+    Termination(#[from] crate::backend::TerminationError),
 }

@@ -80,4 +80,11 @@ pub trait ReconstructLayerBoundaryWaves {
         &self,
         incident_side: IncidentSide,
     ) -> Option<Vec<LayerBoundaryWaves<Self::Algebra>>>;
+
+    /// Return `true` when either side of the solved stack is closed by a
+    /// wall. Plane-wave excitations of such stacks have no
+    /// reconstructed internal fields.
+    fn has_closed_side(&self) -> bool {
+        false
+    }
 }

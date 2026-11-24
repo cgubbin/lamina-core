@@ -45,7 +45,9 @@ pub enum UnscaledFieldError {
 /// High-level recovery capability implemented by the built-in isotropic backends.
 /// Uses the backend's arbitrary seed gauge, then multiplies both E and H by
 /// `amplitude`. No energy integral or normalization factor is evaluated.
-/// Exterior roots are supplied in physical left/right order, in cm^-1.
+/// Exterior roots are supplied in physical left/right order, in cm^-1, for
+/// open sides only: a side closed by a wall takes `None`, and its
+/// fields are the standing wave between the outermost interface and the wall.
 pub trait ModalFieldBackend {
     #[allow(clippy::too_many_arguments)] // explicit physical data; no parallel device representation
     fn unscaled_fields(
@@ -53,7 +55,7 @@ pub trait ModalFieldBackend {
         stack: &AnalyticalMaterialStack<C>,
         k0: C,
         beta: C,
-        kappa: [C; 2],
+        kappa: [Option<C>; 2],
         polarisation: Polarisation,
         sampling: &FieldSampling<f64>,
         amplitude: C,
@@ -67,41 +69,49 @@ macro_rules! implementation {
                 stack: &AnalyticalMaterialStack<C>,
                 k0: C,
                 beta: C,
-                kappa: [C; 2],
+                kappa: [Option<C>; 2],
                 polarisation: Polarisation,
                 sampling: &FieldSampling<f64>,
                 amplitude: C,
             ) -> Result<UnscaledFieldResult, UnscaledFieldError> {
                 use crate::material::EvaluateMeromorphicMaterial;
                 let finite = |v: C| v.re.is_finite() && v.im.is_finite();
-                if ![k0, beta, kappa[0], kappa[1], amplitude]
-                    .into_iter()
-                    .all(finite)
+                if ![k0, beta, amplitude].into_iter().all(finite)
+                    || !kappa.iter().flatten().copied().all(finite)
                     || amplitude.norm() == 0.
                 {
                     return Err(UnscaledFieldError::InvalidInput);
                 }
                 let mut left_factor = C::new(0., 0.);
-                for (i, m) in [stack.left_exterior(), stack.right_exterior()]
-                    .into_iter()
-                    .enumerate()
+                let mut left_kappa = C::new(0., 0.);
+                for (i, (m, open)) in [
+                    (stack.left_exterior(), stack.left_termination().is_open()),
+                    (stack.right_exterior(), stack.right_termination().is_open()),
+                ]
+                .into_iter()
+                .enumerate()
                 {
+                    if open != kappa[i].is_some() {
+                        return Err(UnscaledFieldError::InvalidInput);
+                    }
                     let epsilon = m.evaluate_relative_permittivity_complex(arr0(k0))[()];
                     let mu = m.evaluate_relative_permeability_complex(arr0(k0))[()];
                     let q = epsilon * mu * k0 * k0 - beta * beta;
-                    let scale = (epsilon * mu * k0 * k0).norm()
-                        + (beta * beta).norm()
-                        + kappa[i].norm_sqr();
+                    // A closed side's wavevector enters only through q.
+                    let root = kappa[i].unwrap_or_else(|| q.sqrt());
+                    let scale =
+                        (epsilon * mu * k0 * k0).norm() + (beta * beta).norm() + root.norm_sqr();
                     if !finite(epsilon)
                         || !finite(mu)
                         || !finite(q)
                         || !scale.is_finite()
                         || scale == 0.
-                        || (kappa[i] * kappa[i] - q).norm() > 1e-8 * scale
+                        || (root * root - q).norm() > 1e-8 * scale
                     {
                         return Err(UnscaledFieldError::InvalidInput);
                     }
                     if i == 0 {
+                        left_kappa = root;
                         left_factor = match polarisation {
                             Polarisation::TransverseElectric => mu,
                             Polarisation::TransverseMagnetic => epsilon,
@@ -113,9 +123,9 @@ macro_rules! implementation {
                 let state = evaluator
                     .retain(
                         CanonicalCoordinates::new(J::constant(arr0(k0)), J::constant(arr0(beta))),
-                        ExteriorWavevectors::new(
-                            J::constant(arr0(kappa[0])),
-                            J::constant(arr0(kappa[1])),
+                        ExteriorWavevectors::from_options(
+                            kappa[0].map(|kappa| J::constant(arr0(kappa))),
+                            kappa[1].map(|kappa| J::constant(arr0(kappa))),
                         ),
                         polarisation,
                     )
@@ -131,7 +141,8 @@ macro_rules! implementation {
                     .map_err(UnscaledFieldError::Seed)?;
                 let residual = seed.clone().into_residual().value()[()];
                 let seed_scale = seed.state().secondary().value()[()].norm()
-                    + (C::new(0., -1.) * kappa[0] / left_factor * seed.state().field().value()[()])
+                    + (C::new(0., -1.) * left_kappa / left_factor
+                        * seed.state().field().value()[()])
                         .norm();
                 let relative_boundary_defect = residual.norm() / seed_scale;
                 if seed_scale == 0.
@@ -199,7 +210,7 @@ mod tests {
                 &stack,
                 c(1.),
                 c(2_f64.sqrt()),
-                k,
+                k.map(Some),
                 Polarisation::TransverseMagnetic,
                 &sampling,
                 c(1.),
@@ -210,7 +221,7 @@ mod tests {
                 &stack,
                 c(1.),
                 c(2_f64.sqrt()),
-                k,
+                k.map(Some),
                 Polarisation::TransverseMagnetic,
                 &sampling,
                 C::new(2., 1.),
@@ -281,7 +292,7 @@ mod tests {
                 &stack,
                 k0,
                 c(0.),
-                [k0; 2],
+                [Some(k0); 2],
                 Polarisation::TransverseElectric,
                 &sampling,
                 c(1.),

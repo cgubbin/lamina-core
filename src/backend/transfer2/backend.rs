@@ -66,13 +66,12 @@ impl Transfer2 {
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let context = Transfer2ExteriorContext::new(
+        let context = Transfer2ExteriorContext::for_stack::<E, M>(
             coordinates,
-            stack.left_exterior(),
-            stack.right_exterior(),
+            stack,
             exterior,
             polarisation,
-        );
+        )?;
 
         let mut workspace = Transfer2Workspace::new(
             coordinates.vacuum_angular_wavenumber().value(),
@@ -452,7 +451,10 @@ mod tests {
             stack.right_exterior(),
         );
 
-        let flipped = ExteriorWavevectors::new(exterior.left().negate(), exterior.right().negate());
+        let flipped = ExteriorWavevectors::new(
+            exterior.left().unwrap().negate(),
+            exterior.right().unwrap().negate(),
+        );
 
         let ordinary = backend
             .accumulate::<_, RealAxis, _>(

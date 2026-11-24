@@ -12,7 +12,8 @@ use crate::{
         ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolutionSource, PlaneWaveSolutionView,
         RetainedIsotropicLayers,
     },
-    input::{CanonicalProblem, CompilationContext, JetMapping, ProjectionConstraintError},
+    evaluate::{SolveRequestError, error::check_open_incidence},
+    input::{CanonicalProblem, CompilationContext, JetMapping},
     material::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift},
     observable::{
         BoundaryProjectionError, ConstitutiveSamplingContext, ConstitutiveSamplingError,
@@ -312,7 +313,7 @@ where
     pub fn excitation(
         &self,
         requested: IncidentSide,
-    ) -> Result<RealAxisExcitation<'_, J, M, W>, ProjectionConstraintError>
+    ) -> Result<RealAxisExcitation<'_, J, M, W>, SolveRequestError>
     where
         J: ComplexJet + ScalarAlgebra + RealScalarAlgebra,
         J::RealJet: ScalarAlgebra,
@@ -323,6 +324,8 @@ where
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         self.context.projection_constraint().validate(requested)?;
+
+        check_open_incidence(self.workspace(), requested)?;
 
         Ok(RealAxisExcitation::new(self, requested))
     }
