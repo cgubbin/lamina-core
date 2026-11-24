@@ -1,5 +1,4 @@
-//! Stacks closed by walls and PMLs: characteristic, zeros, fields and
-//! derivatives.
+//! Stacks closed by walls: characteristic, zeros, fields and derivatives.
 use ndarray::{Ix0, arr0};
 use num_complex::Complex64 as C;
 
@@ -8,7 +7,7 @@ use crate::{
     ExteriorWavevectors, FieldSampling, FieldSamplingError, FiniteLayerIndex, LayerSampling,
     ModalFieldBackend, Polarisation, Scatter2, Stack, StackCompileError, StackSide, Transfer2,
     ValidationConfig,
-    backend::{IsotropicMediumQuantities, TerminationError},
+    backend::{TerminationError, evaluate_stack_exterior_wavevectors},
     compile_canonical_constant_stack, compile_canonical_thickness_stack,
     input::canonical::CanonicalTermination,
     stack::{Termination, Wall, WallKind},
@@ -52,43 +51,17 @@ fn wall(kind: WallKind, z_cm: f64) -> Termination<f64> {
     Wall::new(kind, Length::centimetres(z_cm)).into()
 }
 
-/// Principal exterior wavevectors for the open sides of `stack`.
-fn exterior(
-    stack: &crate::input::CanonicalStack<Material, J>,
-    coordinates: &CanonicalCoordinates<J>,
-) -> ExteriorWavevectors<J> {
-    let kappa = |material| {
-        IsotropicMediumQuantities::evaluate::<ComplexPlane, _>(material, coordinates).into_kappa()
-    };
-    ExteriorWavevectors::from_options(
-        stack
-            .left_termination()
-            .is_open()
-            .then(|| kappa(stack.left_exterior())),
-        stack
-            .right_termination()
-            .is_open()
-            .then(|| kappa(stack.right_exterior())),
-    )
-}
-
-/// The characteristic on a canonical stack, as a jet in β (`beta_variable`)
-/// or in k0.
-fn characteristic_canonical(
+/// The characteristic on a canonical stack, with the open sides' principal
+/// exterior wavevectors.
+fn determinant(
     stack: crate::input::CanonicalStack<Material, J>,
     backend: Backend,
-    k0: C,
-    beta: C,
+    k0: J,
+    beta: J,
     polarisation: Polarisation,
-    beta_variable: bool,
 ) -> Result<J, String> {
-    let (k0, beta) = if beta_variable {
-        (J::constant(arr0(k0)), J::variable(arr0(beta)))
-    } else {
-        (J::variable(arr0(k0)), J::constant(arr0(beta)))
-    };
     let coordinates = CanonicalCoordinates::new(k0, beta);
-    let exterior = exterior(&stack, &coordinates);
+    let exterior = evaluate_stack_exterior_wavevectors::<ComplexPlane, _, J>(&coordinates, &stack);
     match backend {
         Backend::Transfer => ComplexPlaneEvaluator::from_canonical_stack(stack, Transfer2::new())
             .checked_determinant(&coordinates, &exterior, polarisation)
@@ -121,6 +94,7 @@ fn compile(stack: &Stack<Material, f64>) -> crate::input::CanonicalStack<Materia
     compile_canonical_constant_stack::<_, J>(stack, Ix0(), &ValidationConfig::permissive()).unwrap()
 }
 
+/// The characteristic as a jet in β.
 fn characteristic(
     stack: &Stack<Material, f64>,
     backend: Backend,
@@ -128,7 +102,8 @@ fn characteristic(
     beta: C,
     polarisation: Polarisation,
 ) -> J {
-    characteristic_canonical(compile(stack), backend, k0, beta, polarisation, true).unwrap()
+    let (k0, beta) = (J::constant(arr0(k0)), J::variable(arr0(beta)));
+    determinant(compile(stack), backend, k0, beta, polarisation).unwrap()
 }
 
 /// Newton refinement in β from `start`.
@@ -150,6 +125,16 @@ fn refine(f: impl Fn(C) -> J, start: C) -> C {
 const EPS: f64 = 2.25;
 const K0: f64 = 3.0;
 const WIDTH: f64 = 1.2;
+
+/// Two layers, one lossy, between different exteriors.
+fn lossy_stack(left: Termination<f64>, right: Termination<f64>) -> Stack<Material, f64> {
+    Stack::builder(Constant::dielectric(1.5), Constant::dielectric(2.0))
+        .layer(Constant::dielectric(4.0), Length::centimetres(0.4))
+        .layer(Constant::new(2.0, 1.3), Length::centimetres(0.3))
+        .left_termination(left)
+        .right_termination(right)
+        .finalise()
+}
 
 fn box_stack(left: Termination<f64>, right: Termination<f64>) -> Stack<Material, f64> {
     Stack::builder(Constant::dielectric(EPS), Constant::dielectric(EPS))
@@ -217,12 +202,10 @@ fn parallel_plate_zeros_follow_the_ladder() {
 
 #[test]
 fn closed_characteristic_is_even_and_continuous_across_cuts() {
-    let stack = Stack::builder(Constant::dielectric(1.5), Constant::dielectric(2.0))
-        .layer(Constant::dielectric(4.0), Length::centimetres(0.4))
-        .layer(Constant::new(2.0, 1.3), Length::centimetres(0.3))
-        .left_termination(wall(WallKind::PerfectMagnetic, -0.2))
-        .right_termination(wall(WallKind::PerfectElectric, 1.4))
-        .finalise();
+    let stack = lossy_stack(
+        wall(WallKind::PerfectMagnetic, -0.2),
+        wall(WallKind::PerfectElectric, 1.4),
+    );
     let k0 = c(K0);
     for polarisation in POLARISATIONS {
         for backend in BACKENDS {
@@ -631,30 +614,21 @@ fn with_thickness(stack: &Stack<Material, f64>, thickness: f64) -> Stack<Materia
 #[test]
 fn derivatives_through_closed_sides_match_central_differences() {
     let stacks = [
-        Stack::builder(Constant::dielectric(1.5), Constant::dielectric(2.0))
-            .layer(Constant::dielectric(4.0), Length::centimetres(0.4))
-            .layer(Constant::new(2.0, 1.3), Length::centimetres(0.3))
-            .left_termination(wall(WallKind::PerfectMagnetic, -0.2))
-            .right_termination(wall(WallKind::PerfectElectric, 0.9))
-            .finalise(),
-        Stack::builder(Constant::dielectric(1.5), Constant::dielectric(2.0))
-            .layer(Constant::dielectric(4.0), Length::centimetres(0.4))
-            .layer(Constant::new(2.0, 1.3), Length::centimetres(0.3))
-            .left_termination(Termination::Open)
-            .right_termination(wall(WallKind::PerfectMagnetic, 1.4))
-            .finalise(),
+        lossy_stack(
+            wall(WallKind::PerfectMagnetic, -0.2),
+            wall(WallKind::PerfectElectric, 0.9),
+        ),
+        lossy_stack(Termination::Open, wall(WallKind::PerfectMagnetic, 1.4)),
     ];
-    let value = |stack: &Stack<Material, f64>, backend, k0: C, beta: C, polarisation| {
-        characteristic_canonical(compile(stack), backend, k0, beta, polarisation, true)
-            .unwrap()
-            .value()[()]
-    };
     let h = 1e-4;
     for stack in &stacks {
         for polarisation in POLARISATIONS {
             for backend in BACKENDS {
                 let (k0, beta) = (c(K0), C::new(3.3, 0.2));
-                let base = value(stack, backend, k0, beta, polarisation);
+                let value = |stack: &Stack<Material, f64>, k0: C, beta: C| {
+                    characteristic(stack, backend, k0, beta, polarisation).value()[()]
+                };
+                let base = value(stack, k0, beta);
                 let check = |jet: J, plus: C, minus: C| {
                     let first = (plus - minus) / (2.0 * h);
                     let second = (plus - 2.0 * base + minus) / (h * h);
@@ -670,31 +644,23 @@ fn derivatives_through_closed_sides_match_central_differences() {
                         jet.second()[()]
                     );
                 };
+                let determinant =
+                    |stack, k0, beta| determinant(stack, backend, k0, beta, polarisation).unwrap();
+                let constant = |value: C| J::constant(arr0(value));
                 // β
                 check(
-                    characteristic_canonical(compile(stack), backend, k0, beta, polarisation, true)
-                        .unwrap(),
-                    value(stack, backend, k0, beta + h, polarisation),
-                    value(stack, backend, k0, beta - h, polarisation),
+                    characteristic(stack, backend, k0, beta, polarisation),
+                    value(stack, k0, beta + h),
+                    value(stack, k0, beta - h),
                 );
                 // k0
                 check(
-                    characteristic_canonical(
-                        compile(stack),
-                        backend,
-                        k0,
-                        beta,
-                        polarisation,
-                        false,
-                    )
-                    .unwrap(),
-                    value(stack, backend, k0 + h, beta, polarisation),
-                    value(stack, backend, k0 - h, beta, polarisation),
+                    determinant(compile(stack), J::variable(arr0(k0)), constant(beta)),
+                    value(stack, k0 + h, beta),
+                    value(stack, k0 - h, beta),
                 );
                 // Thickness of layer 0 with the walls fixed in z; the thickness
                 // is the only seeded variable when k0 and β are constant.
-                let coordinates =
-                    CanonicalCoordinates::new(J::constant(arr0(k0)), J::constant(arr0(beta)));
                 let canonical = compile_canonical_thickness_stack::<_, J>(
                     stack,
                     Ix0(),
@@ -702,37 +668,10 @@ fn derivatives_through_closed_sides_match_central_differences() {
                     FiniteLayerIndex::new(0),
                 )
                 .unwrap();
-                let exterior = exterior(&canonical, &coordinates);
-                let thickness_jet = match backend {
-                    Backend::Transfer => {
-                        ComplexPlaneEvaluator::from_canonical_stack(canonical, Transfer2::new())
-                            .checked_determinant(&coordinates, &exterior, polarisation)
-                            .unwrap()
-                            .into_inner()
-                    }
-                    Backend::Scatter => {
-                        ComplexPlaneEvaluator::from_canonical_stack(canonical, Scatter2::new())
-                            .checked_determinant(&coordinates, &exterior, polarisation)
-                            .unwrap()
-                            .into_inner()
-                    }
-                };
                 check(
-                    thickness_jet,
-                    value(
-                        &with_thickness(stack, 0.4 + h),
-                        backend,
-                        k0,
-                        beta,
-                        polarisation,
-                    ),
-                    value(
-                        &with_thickness(stack, 0.4 - h),
-                        backend,
-                        k0,
-                        beta,
-                        polarisation,
-                    ),
+                    determinant(canonical, constant(k0), constant(beta)),
+                    value(&with_thickness(stack, 0.4 + h), k0, beta),
+                    value(&with_thickness(stack, 0.4 - h), k0, beta),
                 );
             }
         }
@@ -845,27 +784,21 @@ fn plane_waves_come_only_from_an_open_side() {
         CoordinateInput::intrinsic(coordinates, array![600.0, 900.0], array![0.0, 4.0e4]).unwrap()
     };
     let sampling = FieldSampling::new().layer(0, LayerSampling::uniform(3));
-    let closures = [
-        wall(WallKind::PerfectElectric, 1.0e-4),
-        wall(WallKind::PerfectMagnetic, 0.9e-4),
-    ];
-    for closure in closures {
+    for (kind, right_position) in [
+        (WallKind::PerfectElectric, 1.0e-4),
+        (WallKind::PerfectMagnetic, 0.9e-4),
+    ] {
         for (open, closed) in [
             (IncidentSide::Left, IncidentSide::Right),
             (IncidentSide::Right, IncidentSide::Left),
         ] {
-            let mut stack = Stack::builder(Constant::dielectric(1.0), Constant::dielectric(1.0))
+            let stack = Stack::builder(Constant::dielectric(1.0), Constant::dielectric(1.0))
                 .layer(Constant::dielectric(2.25), Length::nanometres(500.0))
                 .layer(Constant::dielectric(1.7), Length::nanometres(250.0))
                 .finalise();
-            stack = match closed {
-                IncidentSide::Right => stack.with_right_termination(closure),
-                IncidentSide::Left => stack.with_left_termination(match closure {
-                    Termination::Wall(wall) => {
-                        Wall::new(wall.kind(), Length::centimetres(-0.1e-4)).into()
-                    }
-                    other => other,
-                }),
+            let stack = match closed {
+                IncidentSide::Right => stack.with_right_termination(wall(kind, right_position)),
+                IncidentSide::Left => stack.with_left_termination(wall(kind, -0.1e-4)),
             };
             for polarisation in POLARISATIONS {
                 macro_rules! check {
