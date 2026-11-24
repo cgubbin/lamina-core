@@ -332,44 +332,12 @@ impl<J> Transfer2ExteriorContext<J> {
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+        M: Clone,
     {
-        let left_kappa = exterior
-            .left()
-            .expect("an open stack has a left exterior wavevector")
-            .clone();
-        let right_kappa = exterior
-            .right()
-            .expect("an open stack has a right exterior wavevector")
-            .clone();
+        let stack = CanonicalStack::new(left_exterior.clone(), right_exterior.clone(), Vec::new());
 
-        let left_medium =
-            crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
-        let right_medium = crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(
-            right_exterior,
-            coordinates,
-        );
-
-        let left_admittance = left_medium.admittance_with_kappa(&left_kappa, polarisation);
-        let right_admittance = right_medium.admittance_with_kappa(&right_kappa, polarisation);
-
-        let (left_epsilon, left_mu, _) = left_medium.into_parts();
-        let (right_epsilon, right_mu, _) = right_medium.into_parts();
-
-        Self {
-            left_kappa,
-            right_kappa,
-            left_mu,
-            right_mu,
-            left_epsilon,
-            right_epsilon,
-            left_admittance,
-            right_admittance,
-            vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
-            parallel_angular_wavenumber: coordinates.parallel_angular_wavenumber().clone(),
-            polarisation,
-            left_closure: None,
-            right_closure: None,
-        }
+        Self::for_stack::<E, M>(coordinates, &stack, exterior, polarisation)
+            .expect("an open stack takes both exterior wavevectors")
     }
 
     /// Construct the context for `stack`, whose open sides take their
@@ -617,15 +585,14 @@ where
 /// side contributes `r_R = [1, −ξ_R]ᵀ` (a unit outgoing wave) and an open left
 /// side `ℓ_L = [ξ_L, −1]`; a closed side contributes the wall condition
 /// carried through its gap (see [`ClosedSide`]).
-pub(crate) fn right_gauged_mode_candidate<A, X>(
+pub(crate) fn right_gauged_mode_candidate<A>(
     entries: &Transfer2Entries<A>,
-    context: &X,
+    context: &Transfer2ExteriorContext<A>,
 ) -> PlaneWaveModeCandidate<A>
 where
     A: ScalarAlgebra + Clone,
     A::Scalar: ComplexScalar + One,
     A::Dimension: Dimension,
-    X: ExteriorContextProvider<Algebra = A>,
 {
     let one = A::filled_constant_like(entries.m11().value(), A::Scalar::one());
 
@@ -947,6 +914,7 @@ mod projection_tests {
     use crate::{
         RealAxis,
         algebra::{ArrayJet0, Jet0, RealParameter},
+        backend::IsotropicMediumQuantities,
         input::{CanonicalCoordinates, IncidentSide},
         test_support::materials::constant,
     };
@@ -1108,10 +1076,8 @@ mod projection_tests {
         let coordinates = coordinates();
 
         let ordinary = ExteriorWavevectors::new(
-            crate::backend::IsotropicMediumQuantities::real_axis(&left_exterior, &coordinates)
-                .into_kappa(),
-            crate::backend::IsotropicMediumQuantities::real_axis(&right_exterior, &coordinates)
-                .into_kappa(),
+            IsotropicMediumQuantities::real_axis(&left_exterior, &coordinates).into_kappa(),
+            IsotropicMediumQuantities::real_axis(&right_exterior, &coordinates).into_kappa(),
         );
 
         let flipped = ExteriorWavevectors::new(

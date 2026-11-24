@@ -7,9 +7,9 @@ use crate::{
     ComplexScalar, IncidentSide,
     algebra::{Jet, ScalarAlgebra},
     backend::{
-        ExteriorContextProvider, ModeReconstructionError, PlaneWaveEntries, PlaneWaveModeCandidate,
-        PlaneWaveSolutionSource, ReconstructExteriorModeWaves, ReconstructLayerModeWaves,
-        RetainedIsotropicLayers, TerminationError,
+        ClosedSide, ExteriorContextProvider, ModeReconstructionError, PlaneWaveEntries,
+        PlaneWaveModeCandidate, PlaneWaveSolutionSource, ReconstructExteriorModeWaves,
+        ReconstructLayerModeWaves, RetainedIsotropicLayers, TerminationError,
     },
     observable::{Amplitudes, ProjectAmplitudes},
     spatial::{CanonicalFieldPosition, CompiledFieldSampling},
@@ -195,24 +195,20 @@ where
     <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = A>,
 {
     let exterior_context = workspace.solution().context();
+    // A closed side's samples are clamped to its gap and refused beyond it.
+    let within = |closure: Option<&ClosedSide<A>>, side, distance| match closure {
+        Some(closure) => closure
+            .exterior_distance(distance)
+            .ok_or(WaveSamplingError::BeyondTermination { side }),
+        None => Ok(distance),
+    };
     match position {
         CanonicalFieldPosition::LeftExterior { distance } => {
-            match exterior_context.left_closure() {
-                None => Ok(exterior
-                    .left()
-                    .propagate(exterior_context.left_kappa(), -distance)),
-                Some(closure) => {
-                    let distance = closure.exterior_distance(distance).ok_or(
-                        WaveSamplingError::BeyondTermination {
-                            side: StackSide::Left,
-                        },
-                    )?;
+            let distance = within(exterior_context.left_closure(), StackSide::Left, distance)?;
 
-                    Ok(exterior
-                        .left()
-                        .propagate(exterior_context.left_kappa(), -distance))
-                }
-            }
+            Ok(exterior
+                .left()
+                .propagate(exterior_context.left_kappa(), -distance))
         }
 
         CanonicalFieldPosition::Layer { index, position } => {
@@ -236,22 +232,11 @@ where
         }
 
         CanonicalFieldPosition::RightExterior { distance } => {
-            match exterior_context.right_closure() {
-                None => Ok(exterior
-                    .right()
-                    .propagate(exterior_context.right_kappa(), distance)),
-                Some(closure) => {
-                    let distance = closure.exterior_distance(distance).ok_or(
-                        WaveSamplingError::BeyondTermination {
-                            side: StackSide::Right,
-                        },
-                    )?;
+            let distance = within(exterior_context.right_closure(), StackSide::Right, distance)?;
 
-                    Ok(exterior
-                        .right()
-                        .propagate(exterior_context.right_kappa(), distance))
-                }
-            }
+            Ok(exterior
+                .right()
+                .propagate(exterior_context.right_kappa(), distance))
         }
     }
 }

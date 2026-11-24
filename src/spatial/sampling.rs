@@ -487,8 +487,12 @@ impl<R> FieldSampling<R> {
             }
         }
 
+        // A sample on a wall, given in other units, may differ from the extent
+        // by round-off.
+        let tolerance = R::one() + R::from_f64(1.0e-12).expect("representable");
+
         for position in &positions {
-            let (side, distance, extent) = match position {
+            let (side, distance, Some(extent)) = (match position {
                 FieldPosition::LeftExterior { distance } => {
                     (StackSide::Left, distance, exterior_extents_cm[0])
                 }
@@ -496,17 +500,11 @@ impl<R> FieldSampling<R> {
                     (StackSide::Right, distance, exterior_extents_cm[1])
                 }
                 FieldPosition::Layer { .. } => continue,
-            };
-
-            let Some(extent) = extent else {
+            }) else {
                 continue;
             };
 
-            // A sample on the wall itself, given in other units, may differ
-            // from the extent by round-off.
-            let tolerance = R::from_f64(1.0e-12).expect("representable");
-
-            if distance.as_centimetres() > extent * (R::one() + tolerance) {
+            if distance.as_centimetres() > extent * tolerance {
                 return Err(FieldSamplingError::BeyondTermination {
                     side,
                     distance: *distance,

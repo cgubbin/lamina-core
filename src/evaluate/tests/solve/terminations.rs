@@ -337,11 +337,7 @@ fn exterior_wavevector_pattern_must_match_the_terminations() {
         ),
     ];
     for (stack, exterior, side, open) in cases {
-        let expected = TerminationError::ExteriorBranchMismatch {
-            side,
-            open,
-            supplied: !open,
-        };
+        let expected = TerminationError::ExteriorBranchMismatch { side, open };
         let transfer =
             ComplexPlaneEvaluator::from_canonical_stack(compile(stack), Transfer2::new())
                 .determinant(&coordinates, &exterior, TE)

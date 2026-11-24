@@ -401,10 +401,6 @@ where
         &self,
         incident_side: IncidentSide,
     ) -> Option<Vec<LayerBoundaryWaves<A>>> {
-        if self.has_closed_side() {
-            return None;
-        }
-
         let retained = self.retained.as_ref()?;
 
         let solution = self.solution();

@@ -38,15 +38,14 @@ pub enum TerminationError {
     /// The supplied exterior wavevectors do not match the terminations: open
     /// sides need a wavevector, closed sides take none.
     #[error(
-        "the {side:?} side is {}, but an exterior wavevector was {}",
-        if *open { "open" } else { "closed" },
-        if *supplied { "supplied" } else { "not supplied" }
+        "the {side:?} side is {}",
+        if *open {
+            "open, but no exterior wavevector was supplied"
+        } else {
+            "closed, but an exterior wavevector was supplied"
+        }
     )]
-    ExteriorBranchMismatch {
-        side: StackSide,
-        open: bool,
-        supplied: bool,
-    },
+    ExteriorBranchMismatch { side: StackSide, open: bool },
 
     /// A plane-wave excitation's internal fields were requested for a stack
     /// with a closed side.
@@ -59,24 +58,18 @@ pub(crate) fn check_exterior_pattern<M, J, A>(
     stack: &CanonicalStack<M, J>,
     exterior: &ExteriorWavevectors<A>,
 ) -> Result<(), TerminationError> {
-    for (side, open, supplied) in [
-        (
-            StackSide::Left,
-            stack.left_termination().is_open(),
-            exterior.left().is_some(),
-        ),
+    for (side, termination, supplied) in [
+        (StackSide::Left, stack.left_termination(), exterior.left()),
         (
             StackSide::Right,
-            stack.right_termination().is_open(),
-            exterior.right().is_some(),
+            stack.right_termination(),
+            exterior.right(),
         ),
     ] {
-        if open != supplied {
-            return Err(TerminationError::ExteriorBranchMismatch {
-                side,
-                open,
-                supplied,
-            });
+        let open = termination.is_open();
+
+        if open != supplied.is_some() {
+            return Err(TerminationError::ExteriorBranchMismatch { side, open });
         }
     }
 
@@ -97,11 +90,6 @@ pub struct ClosedSide<A> {
 }
 
 impl<A> ClosedSide<A> {
-    /// The exterior material's wavevector `κ̃` on this side.
-    pub(crate) fn kappa(&self) -> &A {
-        &self.kappa
-    }
-
     pub(crate) fn try_map<B, E>(
         &self,
         mut f: impl FnMut(&A) -> Result<B, E>,
@@ -126,54 +114,32 @@ where
 {
     /// Build the closed-side data for `termination`, or `None` for an open
     /// side.
-    pub(crate) fn new(
+    fn new(
         side: StackSide,
         termination: &CanonicalTermination<A>,
         medium: &IsotropicMediumQuantities<A>,
         coordinates: &CanonicalCoordinates<A>,
         polarisation: Polarisation,
-    ) -> Result<Option<Self>, TerminationError> {
-        let Some(kind) = termination.wall_kind() else {
-            return Ok(None);
-        };
-
-        let gap = termination
-            .gap_cm()
-            .expect("a closed termination has a gap")
-            .clone();
-
-        let k0 = coordinates.vacuum_angular_wavenumber();
-
-        let kappa_squared = medium.kappa_squared().clone();
-
-        let kappa = decaying_root(medium.kappa(), &gap);
+    ) -> Option<Self> {
+        let kind = termination.wall_kind()?;
+        let gap = termination.gap_cm()?.clone();
 
         let factor = match polarisation {
             Polarisation::TransverseElectric => medium.mu().clone(),
             Polarisation::TransverseMagnetic => medium.epsilon().clone(),
         };
 
-        let closed = Self {
+        Some(Self {
             side,
             condition: WallCondition::new(kind, polarisation),
-            kappa,
-            kappa_squared,
+            kappa: decaying_root(medium.kappa(), &gap),
+            kappa_squared: medium.kappa_squared().clone(),
             factor,
             gap,
-            reference_slope: k0.scale(-A::Scalar::i()),
-        };
-
-        Ok(Some(closed))
-    }
-
-    /// The exterior material's characteristic admittance `κ̃ / f`.
-    pub(crate) fn admittance(&self) -> A {
-        self.kappa.divide(&self.factor)
-    }
-
-    /// Length from the outermost interface to the wall.
-    pub(crate) fn length(&self) -> A {
-        self.gap.clone()
+            reference_slope: coordinates
+                .vacuum_angular_wavenumber()
+                .scale(-A::Scalar::i()),
+        })
     }
 
     /// Transfer matrix `[[cos, −f S], [q S / f, cos]]` of a homogeneous layer
@@ -255,7 +221,7 @@ where
         let two = A::Scalar::one() + A::Scalar::one();
 
         self.kappa
-            .multiply(&self.length())
+            .multiply(&self.gap)
             .scale(A::Scalar::i() * two)
             .exp()
             .scale(self.reflection())
@@ -264,14 +230,14 @@ where
     /// The exponent of this side's scale factor in the scattering form of the
     /// characteristic: `−iκ̃ℓ`.
     pub(crate) fn scale_exponent(&self) -> A {
-        self.kappa.multiply(&self.length()).scale(-A::Scalar::i())
+        self.kappa.multiply(&self.gap).scale(-A::Scalar::i())
     }
 
     /// The side coefficient `c` in the scattering form of the characteristic,
     /// in the exterior material's directional basis at the wall.
     pub(crate) fn coefficient(&self) -> A {
         let half = (A::Scalar::one() + A::Scalar::one()).recip();
-        let slope = self.admittance().scale(-A::Scalar::i());
+        let slope = self.kappa.divide(&self.factor).scale(-A::Scalar::i());
 
         match (self.side, self.condition) {
             (StackSide::Left, WallCondition::Dirichlet) => self.reference_slope.clone(),
@@ -297,7 +263,7 @@ where
             .copied()
             .expect("a sampled value")
             .real();
-        let tolerance = <A::Scalar as ComplexField>::RealField::one() + real::<A>(1.0e-12);
+        let tolerance = <A::Scalar as ComplexField>::RealField::one() + nalgebra::convert(1.0e-12);
 
         if distance > gap.clone() * tolerance {
             return None;
@@ -305,14 +271,6 @@ where
 
         Some(if distance > gap { gap } else { distance })
     }
-}
-
-fn real<A>(value: f64) -> <A::Scalar as ComplexField>::RealField
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-{
-    nalgebra::convert(value)
 }
 
 /// Return `κ` multiplied by `±1` per sample so that `Im(κ ℓ) ≥ 0`.
@@ -378,21 +336,18 @@ where
     let right_medium =
         IsotropicMediumQuantities::evaluate::<E, M>(stack.right_exterior(), coordinates);
 
-    let (left_closure, right_closure) = closed_sides(
-        stack.left_termination(),
-        stack.right_termination(),
-        &left_medium,
-        &right_medium,
-        coordinates,
-        polarisation,
-    )?;
+    let closure = |side, termination, medium| {
+        ClosedSide::new(side, termination, medium, coordinates, polarisation)
+    };
+    let left_closure = closure(StackSide::Left, stack.left_termination(), &left_medium);
+    let right_closure = closure(StackSide::Right, stack.right_termination(), &right_medium);
 
     let kappa = |supplied: Option<&A>, closure: &Option<ClosedSide<A>>| match supplied {
         Some(kappa) => kappa.clone(),
         None => closure
             .as_ref()
             .expect("the pattern check pairs every closed side with a closure")
-            .kappa()
+            .kappa
             .clone(),
     };
 
@@ -460,31 +415,4 @@ where
     let nan = A::filled_constant_like(source, A::Scalar::from_real(nalgebra::convert(f64::NAN)));
 
     crate::PlaneWaveAmplitudes::new(nan.clone(), nan)
-}
-
-/// Closed-side data for both sides of `stack`.
-#[allow(clippy::type_complexity)]
-pub(crate) fn closed_sides<A>(
-    stack_left: &CanonicalTermination<A>,
-    stack_right: &CanonicalTermination<A>,
-    left: &IsotropicMediumQuantities<A>,
-    right: &IsotropicMediumQuantities<A>,
-    coordinates: &CanonicalCoordinates<A>,
-    polarisation: Polarisation,
-) -> Result<(Option<ClosedSide<A>>, Option<ClosedSide<A>>), TerminationError>
-where
-    A: ScalarAlgebra + Clone,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
-    Ok((
-        ClosedSide::new(StackSide::Left, stack_left, left, coordinates, polarisation)?,
-        ClosedSide::new(
-            StackSide::Right,
-            stack_right,
-            right,
-            coordinates,
-            polarisation,
-        )?,
-    ))
 }

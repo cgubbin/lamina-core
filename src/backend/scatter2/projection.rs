@@ -213,31 +213,33 @@ where
         )
     }
 
-    /// The candidate of a stack with a closed side, gauged by the outgoing
-    /// right-port amplitude `n21`.
-    ///
-    /// A closed right side reflects the outgoing wave back with the load
-    /// `ρ̂_R`, so the projectively scaled left waves are
-    /// `forward = d − ρ̂_R n22` and `backward = n11 + ρ̂_R h`. A closed left side
-    /// requires `forward = ρ̂_L backward`.
-    fn closed_mode_candidate(
-        &self,
-        context: &Scatter2ExteriorContext<A>,
-        slope: &A,
-    ) -> PlaneWaveModeCandidate<A> {
+    /// The left port's waves `(forward, backward)`, projectively scaled by
+    /// the outgoing right-port amplitude `n21`: `(d, n11)`, or, with a closed
+    /// right side that reflects the outgoing wave back with its load `ρ̂_R`,
+    /// `(d − ρ̂_R n22, n11 + ρ̂_R h)`.
+    pub(crate) fn left_port_waves(&self, right_load: Option<&A>) -> (A, A) {
+        match right_load {
+            Some(load) => self.loaded_port(load, self.n11(), self.n22()),
+            None => (self.denominator().clone(), self.n11().clone()),
+        }
+    }
+
+    /// `(d − ρ̂ far, near + ρ̂ h)`: the projective waves at one port when the
+    /// other port carries the load `ρ̂`, with `near` and `far` the reflection
+    /// numerators of the two ports.
+    fn loaded_port(&self, load: &A, near: &A, far: &A) -> (A, A) {
+        (
+            self.denominator().subtract(&load.multiply(far)),
+            near.add(&load.multiply(self.complement())),
+        )
+    }
+
+    /// The left waves and the residual of a stack with a closed side. A
+    /// closed left side requires `forward = ρ̂_L backward`.
+    fn closed_left_waves(&self, context: &Scatter2ExteriorContext<A>, slope: &A) -> (A, A, A) {
         let right_load = context.right_closure().map(|closure| closure.load());
 
-        let (forward, backward) = match &right_load {
-            Some(load) => (
-                self.denominator().subtract(&load.multiply(self.n22())),
-                self.n11().add(&load.multiply(self.complement())),
-            ),
-            None => (self.denominator().clone(), self.n11().clone()),
-        };
-
-        let field = forward.add(&backward);
-
-        let secondary = backward.subtract(&forward).multiply(slope);
+        let (forward, backward) = self.left_port_waves(right_load.as_ref());
 
         let residual = match context.left_closure() {
             Some(closure) => closure
@@ -249,9 +251,25 @@ where
             }
         };
 
+        (forward, backward, residual)
+    }
+
+    /// The candidate of a stack with a closed side, gauged by `n21`.
+    fn closed_mode_candidate(
+        &self,
+        context: &Scatter2ExteriorContext<A>,
+        slope: &A,
+    ) -> PlaneWaveModeCandidate<A> {
+        let (forward, backward, residual) = self.closed_left_waves(context, slope);
+
+        let field = forward.add(&backward);
+
+        let secondary = backward.subtract(&forward).multiply(slope);
+
         let right_outgoing = self.n21().clone();
 
-        let right_closed_state = right_load.map(|load| {
+        let right_closed_state = context.right_closure().map(|closure| {
+            let load = closure.load();
             let right_slope = transfer_state_slope(context.right_admittance());
             let one = load.one_like();
 
@@ -280,56 +298,27 @@ where
     ///
     /// where an open left side has `c_L = 2ξ_L` and an open right side
     /// `c_R = 1`, without load or exponent, and each closed side contributes its
-    /// coefficient, its load `ρ̂ = ρ exp(2iκ̃ℓ)` and its exponent
-    /// `e = −iκ̃ℓ + iκ_ref τ`. The exponents are summed before exponentiating.
+    /// coefficient, its load `ρ̂ = ρ exp(2iκ̃ℓ)` and its exponent `e = −iκ̃ℓ`.
+    /// `c_L` times the bracket is the candidate's residual.
     fn closed_determinant(&self, context: &Scatter2ExteriorContext<A>) -> A {
-        let left = context.left_closure();
-        let right = context.right_closure();
+        let slope = transfer_state_slope(context.left_admittance());
 
-        let left_coefficient = match left {
-            Some(closure) => closure.coefficient(),
-            None => {
-                let two = A::Scalar::one() + A::Scalar::one();
-                transfer_state_slope(context.left_admittance()).scale(two)
-            }
-        };
+        let (_, _, residual) = self.closed_left_waves(context, &slope);
 
-        let right_coefficient = right.map(|closure| closure.coefficient());
+        let mut value = residual.divide(self.n21());
 
-        let left_load = left.map(|closure| closure.load());
-        let right_load = right.map(|closure| closure.load());
-
-        let mut bracket = self.denominator().clone();
-
-        if let Some(load) = &left_load {
-            bracket = bracket.subtract(&load.multiply(self.n11()));
+        if let Some(closure) = context.right_closure() {
+            value = value.multiply(&closure.coefficient());
         }
 
-        if let Some(load) = &right_load {
-            bracket = bracket.subtract(&load.multiply(self.n22()));
-        }
+        let exponent = [context.left_closure(), context.right_closure()]
+            .into_iter()
+            .flatten()
+            .map(|closure| closure.scale_exponent())
+            .reduce(|left, right| left.add(&right))
+            .expect("a closed side");
 
-        if let (Some(left_load), Some(right_load)) = (&left_load, &right_load) {
-            bracket = bracket.subtract(&left_load.multiply(right_load).multiply(self.complement()));
-        }
-
-        let exponent = match (left, right) {
-            (Some(left), Some(right)) => Some(left.scale_exponent().add(&right.scale_exponent())),
-            (Some(closure), None) | (None, Some(closure)) => Some(closure.scale_exponent()),
-            (None, None) => None,
-        };
-
-        let mut value = left_coefficient.multiply(&bracket).divide(self.n21());
-
-        if let Some(coefficient) = right_coefficient {
-            value = value.multiply(&coefficient);
-        }
-
-        if let Some(exponent) = exponent {
-            value = value.multiply(&exponent.exp());
-        }
-
-        value
+        value.multiply(&exponent.exp())
     }
 }
 
@@ -445,22 +434,14 @@ where
             exterior.right_closure(),
         ) {
             (IncidentSide::Left, None, Some(right)) => {
-                let load = right.load();
-                let reflection = self
-                    .n11()
-                    .add(&load.multiply(self.complement()))
-                    .divide(&self.denominator().subtract(&load.multiply(self.n22())));
+                let (forward, backward) = self.left_port_waves(Some(&right.load()));
 
-                PlaneWaveAmplitudes::new(reflection, zero)
+                PlaneWaveAmplitudes::new(backward.divide(&forward), zero)
             }
             (IncidentSide::Right, Some(left), None) => {
-                let load = left.load();
-                let reflection = self
-                    .n22()
-                    .add(&load.multiply(self.complement()))
-                    .divide(&self.denominator().subtract(&load.multiply(self.n11())));
+                let (forward, backward) = self.loaded_port(&left.load(), self.n22(), self.n11());
 
-                PlaneWaveAmplitudes::new(reflection, zero)
+                PlaneWaveAmplitudes::new(backward.divide(&forward), zero)
             }
             _ => undefined_amplitudes(self.sample_source()),
         }

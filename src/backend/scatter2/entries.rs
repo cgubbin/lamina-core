@@ -251,44 +251,12 @@ impl<J> Scatter2ExteriorContext<J> {
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+        M: Clone,
     {
-        let left_medium =
-            crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(left_exterior, coordinates);
-        let right_medium = crate::backend::IsotropicMediumQuantities::evaluate::<E, M>(
-            right_exterior,
-            coordinates,
-        );
+        let stack = CanonicalStack::new(left_exterior.clone(), right_exterior.clone(), Vec::new());
 
-        let left_kappa = exterior
-            .left()
-            .expect("an open stack has a left exterior wavevector")
-            .clone();
-        let right_kappa = exterior
-            .right()
-            .expect("an open stack has a right exterior wavevector")
-            .clone();
-
-        let left_admittance = left_medium.admittance_with_kappa(&left_kappa, polarisation);
-        let right_admittance = right_medium.admittance_with_kappa(&right_kappa, polarisation);
-
-        let (left_epsilon, left_mu, _) = left_medium.into_parts();
-        let (right_epsilon, right_mu, _) = right_medium.into_parts();
-
-        Self {
-            left_kappa,
-            right_kappa,
-            left_mu,
-            right_mu,
-            left_epsilon,
-            right_epsilon,
-            left_admittance,
-            right_admittance,
-            vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
-            parallel_angular_wavenumber: coordinates.parallel_angular_wavenumber().clone(),
-            polarisation,
-            left_closure: None,
-            right_closure: None,
-        }
+        Self::for_stack::<E, M>(coordinates, &stack, exterior, polarisation)
+            .expect("an open stack takes both exterior wavevectors")
     }
 
     /// Construct the context for `stack`, whose open sides take their

@@ -238,10 +238,6 @@ where
         &self,
         incident_side: IncidentSide,
     ) -> Option<Vec<LayerBoundaryWaves<A>>> {
-        if self.has_closed_side() {
-            return None;
-        }
-
         Some(
             self.retained
                 .as_ref()?
@@ -510,22 +506,8 @@ where
         let at_cut = |index: usize| {
             let suffix = &suffixes[index];
             let factor = candidate.right_outgoing().divide(suffix.n21());
-            let (forward, backward) = match &right_load {
-                Some(load) => (
-                    suffix
-                        .denominator()
-                        .subtract(&load.multiply(suffix.n22()))
-                        .multiply(&factor),
-                    suffix
-                        .n11()
-                        .add(&load.multiply(suffix.complement()))
-                        .multiply(&factor),
-                ),
-                None => (
-                    suffix.denominator().multiply(&factor),
-                    suffix.n11().multiply(&factor),
-                ),
-            };
+            let (forward, backward) = suffix.left_port_waves(right_load.as_ref());
+            let (forward, backward) = (forward.multiply(&factor), backward.multiply(&factor));
             if !forward.all_finite() || !backward.all_finite() {
                 return Err(ModeReconstructionError::NoUsableNullVector);
             }

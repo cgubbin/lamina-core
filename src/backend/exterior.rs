@@ -80,19 +80,11 @@ impl<A> ExteriorWavevectors<A> {
     }
 
     /// Return `true` when every supplied wavevector satisfies `predicate`.
-    pub fn all(&self, mut predicate: impl FnMut(&A) -> bool) -> bool {
+    pub(crate) fn all(&self, mut predicate: impl FnMut(&A) -> bool) -> bool {
         self.left
             .iter()
             .chain(self.right.iter())
             .all(&mut predicate)
-    }
-
-    /// Apply `f` to every supplied wavevector.
-    pub fn map<B>(&self, mut f: impl FnMut(&A) -> B) -> ExteriorWavevectors<B> {
-        ExteriorWavevectors {
-            left: self.left.as_ref().map(&mut f),
-            right: self.right.as_ref().map(&mut f),
-        }
     }
 }
 
