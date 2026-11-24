@@ -220,7 +220,7 @@ E* · E.
 For dispersive materials, the normalization includes the corresponding
 spectral constitutive derivatives.
 
-### Closing a stack with walls
+### Closing a stack
 
 Each side of a `Stack` carries a `Termination`. By default it is open:
 the exterior medium is semi-infinite and the characteristic imposes the
@@ -249,6 +249,29 @@ Derivatives with respect to `k₀`, `k∥`, layer thicknesses and materials keep
 the walls fixed in the stack frame, so thickening a layer narrows the right
 gap; with the right wall on the last interface only the derivative that
 thins the layer exists, and the other is reported as unavailable.
+
+### Perfectly matched layers
+
+A side may also be closed by a `Pml`: a layer of the exterior material
+starting at an absolute position, extending outward by a thickness `d` and
+backed by a PEC or PMC wall. With `ζ ∈ [0, d]` the outward distance into
+the layer, the frequency-independent stretch is
+
+```text
+s(ζ) = 1 + c (ζ/d)^m,    ζ̃(ζ) = ζ + c d/(m+1) (ζ/d)^(m+1)
+```
+
+with real order `m ≥ 0` and complex strength `c`, `Re c ≥ 0`, `Im c > 0`
+(both required, see `StretchProfile`). For the characteristic the PML is a
+homogeneous layer of the exterior material with complex thickness
+`τ = d (1 + c/(m+1))`; fields inside it are the exterior solution continued
+to `ζ̃`. Its matrix grows like `exp(|Im κτ|)`, so each PML side is normalised
+by the `k∥`-independent factor `exp(iκ_ref τ)`, `κ_ref = k₀ √(εμ)` the PML
+material's wavevector at `k∥ = 0`. The normalised characteristic has the
+same zeros, stays entire and even in `k∥`, and needs no wavevector for the
+PML side. Where its scale at an evaluation point would overflow or
+underflow, evaluation fails with `TerminationError::PmlScaleOutOfRange`.
+
 
 ### Canonical coordinates
 

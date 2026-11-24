@@ -17,6 +17,13 @@ Added:
   both backends; `FieldSamplingError::BeyondTermination`.
 - `SolveRequestError::ClosedIncidence` for a plane wave incident from a walled
   side.
+- `Pml` and `StretchProfile`: a side may be closed by a wall-backed perfectly
+  matched layer by complex coordinate stretching, `s(ζ) = 1 + c (ζ/d)^m`, with
+  order and strength required. It enters the characteristic as a layer of
+  complex thickness `τ = d (1 + c/(m+1))`, normalised by the
+  `k∥`-independent `exp(iκ_ref τ)`; fields inside it follow the stretched
+  coordinate. `TerminationError::PmlScaleOutOfRange` reports a scale that
+  cannot be represented.
 
 Changed (breaking):
 
