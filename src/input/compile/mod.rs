@@ -19,6 +19,7 @@ mod coordinates;
 mod error;
 mod layout;
 mod stack;
+pub(crate) mod termination;
 mod validation;
 
 pub use context::ProjectionConstraintError;
@@ -32,6 +33,8 @@ pub use stack::{
     StackCompileError, StackThicknessJet, compile_canonical_constant_stack,
     compile_canonical_thickness_stack,
 };
+pub(crate) use termination::validate_terminations;
+pub use termination::{TerminationField, TerminationValidationError};
 pub use validation::ValidationConfig;
 
 use coordinates::CoordinateCompileError;

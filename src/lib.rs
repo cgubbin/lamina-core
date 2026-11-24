@@ -360,8 +360,9 @@ pub use domain::{ComplexPlane, RealAxis};
 pub use input::{
     CanonicalCoordinates, CanonicalStack, CoordinateGrid, CoordinateInput, CoordinateReference,
     CoordinateSamples, Coordinates, InPlaneCoordinate, IncidentSide, Polarisation,
-    ProjectionConstraintError, StackCompileError, StackThicknessJet, ValidationConfig,
-    compile_canonical_constant_stack, compile_canonical_thickness_stack,
+    ProjectionConstraintError, StackCompileError, StackThicknessJet, TerminationField,
+    TerminationValidationError, ValidationConfig, compile_canonical_constant_stack,
+    compile_canonical_thickness_stack,
 };
 
 pub use lamina_units::SpectralCoordinate;
@@ -397,7 +398,7 @@ pub use scalar::ComplexScalar;
 
 pub use stack::{
     AnalyticalMaterialStack, DifferentiableMaterialStack, Layer, MaterialStack,
-    MeromorphicMaterialStack, Stack,
+    MeromorphicMaterialStack, Stack, StackSide, Termination, Wall, WallKind,
 };
 
 pub mod units {

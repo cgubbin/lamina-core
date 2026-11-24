@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-use super::{Layer, Stack};
+use super::{Layer, Stack, Termination};
 
 use lamina_units::Length;
 use num_traits::Float;
@@ -15,6 +15,8 @@ pub struct StackBuilder<M, F> {
     left_exterior: M,
     right_exterior: M,
     layers_left_to_right: Vec<Layer<M, F>>,
+    left_termination: Termination<F>,
+    right_termination: Termination<F>,
 }
 
 impl<M, F> StackBuilder<M, F> {
@@ -23,7 +25,21 @@ impl<M, F> StackBuilder<M, F> {
             left_exterior,
             right_exterior,
             layers_left_to_right: Vec::new(),
+            left_termination: Termination::Open,
+            right_termination: Termination::Open,
         }
+    }
+
+    /// Close the left side with a wall (open by default).
+    pub fn left_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
+        self.left_termination = termination.into();
+        self
+    }
+
+    /// Close the right side with a wall (open by default).
+    pub fn right_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
+        self.right_termination = termination.into();
+        self
     }
 
     pub fn layer(mut self, material: M, thickness: Length<F>) -> Self {
@@ -44,6 +60,8 @@ impl<M, F> StackBuilder<M, F> {
             left_exterior: self.left_exterior,
             right_exterior: self.right_exterior,
             layers_left_to_right: self.layers_left_to_right,
+            left_termination: self.left_termination,
+            right_termination: self.right_termination,
         }
     }
 }

@@ -1,8 +1,10 @@
 mod builder;
 mod layer;
+mod termination;
 
 pub use builder::StackBuilder;
 pub use layer::Layer;
+pub use termination::{StackSide, Termination, Wall, WallKind};
 
 use nalgebra::ComplexField;
 use num_traits::Float;
@@ -31,15 +33,22 @@ pub type MeromorphicMaterialStack<C> =
 pub type AnalyticalMaterialStack<C> =
     Stack<AnalyticalMaterialHandle<C>, <C as ComplexField>::RealField>;
 
-/// A planar stack bounded by two semi-infinite exterior media.
+/// A planar stack of finite layers between two exterior media.
 ///
 /// Finite layers are stored in geometric left-to-right order. The exterior
 /// media are not included in `len()` or layer iteration.
+///
+/// Each side carries a [`Termination`]: by default the exterior medium is
+/// semi-infinite ([`Termination::Open`]); a side may instead be closed by a
+/// [`Wall`] at an absolute position in the stack frame, with the exterior
+/// medium filling the gap.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stack<M, F> {
     left_exterior: M,
     right_exterior: M,
     layers_left_to_right: Vec<Layer<M, F>>,
+    left_termination: Termination<F>,
+    right_termination: Termination<F>,
 }
 
 impl<M, F> Stack<M, F> {
@@ -53,6 +62,8 @@ impl<M, F> Stack<M, F> {
             left_exterior,
             right_exterior,
             layers_left_to_right,
+            left_termination: Termination::Open,
+            right_termination: Termination::Open,
         }
     }
 
@@ -147,6 +158,41 @@ impl<M, F> Stack<M, F> {
     /// Return the finite layers in geometric left-to-right order.
     pub fn layers_left_to_right(&self) -> &[Layer<M, F>] {
         &self.layers_left_to_right
+    }
+
+    /// Return the termination on the left side (open by default).
+    pub fn left_termination(&self) -> &Termination<F> {
+        &self.left_termination
+    }
+
+    /// Return the termination on the right side (open by default).
+    pub fn right_termination(&self) -> &Termination<F> {
+        &self.right_termination
+    }
+
+    /// Return the termination on `side`.
+    pub fn termination(&self, side: StackSide) -> &Termination<F> {
+        match side {
+            StackSide::Left => &self.left_termination,
+            StackSide::Right => &self.right_termination,
+        }
+    }
+
+    /// Return `true` when both sides are open.
+    pub fn is_open(&self) -> bool {
+        self.left_termination.is_open() && self.right_termination.is_open()
+    }
+
+    /// Replace the left termination.
+    pub fn with_left_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
+        self.left_termination = termination.into();
+        self
+    }
+
+    /// Replace the right termination.
+    pub fn with_right_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
+        self.right_termination = termination.into();
+        self
     }
 
     /// Return the number of finite layers.

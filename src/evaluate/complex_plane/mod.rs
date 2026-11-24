@@ -106,7 +106,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
     ) -> Result<Self, StackCompileError<<J::Scalar as ComplexField>::RealField>>
     where
         J: Jet<Dimension = Ix0> + StackThicknessJet,
-        J::Scalar: ComplexField + Copy,
+        J::Scalar: ComplexScalar,
         <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
         J::Dimension: Dimension + Clone,
         M: Clone,
