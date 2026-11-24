@@ -1,18 +1,16 @@
 //! Validation and canonical compilation of stack terminations.
 
-use std::fmt::Debug;
-
 use lamina_units::{Length, LengthUnit};
 use nalgebra::ComplexField;
-use ndarray::{Array, ArrayBase, Dimension, OwnedRepr};
+use ndarray::Array;
 use num_traits::{Float, FromPrimitive, Zero};
 use thiserror::Error;
 
 use crate::{
-    ComplexScalar, SeedJet,
+    ComplexScalar, FiniteLayerIndex, SeedJet,
     input::{
-        StackThicknessJet,
-        canonical::{CanonicalTermination, CanonicalWall},
+        StackCompileError, StackThicknessJet,
+        canonical::{CanonicalLayer, CanonicalTermination},
     },
     stack::{Stack, StackSide, Termination, WallKind},
 };
@@ -55,9 +53,6 @@ pub enum TerminationValidationError<R> {
     },
 }
 
-/// The validated left and right terminations.
-pub(crate) type ValidatedTerminations<R> = (ValidatedTermination<R>, ValidatedTermination<R>);
-
 /// A validated termination with its lengths in centimetres.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ValidatedTermination<R> {
@@ -87,9 +82,10 @@ impl<R: Float> ValidatedTermination<R> {
 /// comparison are carried out in that unit, so that a position equal to the
 /// sum of the same values is recognised exactly as lying on the interface;
 /// otherwise both are compared in centimetres.
+#[allow(clippy::type_complexity)]
 pub(crate) fn validate_terminations<M, R>(
     stack: &Stack<M, R>,
-) -> Result<ValidatedTerminations<R>, TerminationValidationError<R>>
+) -> Result<(ValidatedTermination<R>, ValidatedTermination<R>), TerminationValidationError<R>>
 where
     R: Float + FromPrimitive,
 {
@@ -116,20 +112,11 @@ where
     match termination {
         Termination::Open => Ok(ValidatedTermination::Open),
 
-        Termination::Wall(wall) => {
-            let gap_cm = gap(
-                wall.position(),
-                side,
-                TerminationField::WallPosition,
-                thicknesses,
-            )?;
-
-            Ok(ValidatedTermination::Wall {
-                kind: wall.kind(),
-                position_cm: positive_zero(wall.position().as_centimetres()),
-                gap_cm,
-            })
-        }
+        Termination::Wall(wall) => Ok(ValidatedTermination::Wall {
+            kind: wall.kind(),
+            position_cm: positive_zero(wall.position().as_centimetres()),
+            gap_cm: gap(wall.position(), side, thicknesses)?,
+        }),
     }
 }
 
@@ -138,139 +125,128 @@ where
 fn gap<R>(
     position: Length<R>,
     side: StackSide,
-    field: TerminationField,
     thicknesses: &[Length<R>],
 ) -> Result<R, TerminationValidationError<R>>
 where
     R: Float + FromPrimitive,
 {
+    let field = TerminationField::WallPosition;
+
     if !position.value().is_finite() {
         return Err(TerminationValidationError::NonFinite { side, field });
     }
 
     let (value, unit) = position.into_parts();
 
-    match side {
-        StackSide::Left => {
-            if value > R::zero() {
-                return Err(TerminationValidationError::InsideLayers {
-                    side,
-                    field,
-                    position,
-                    interface: Length::new(R::zero(), unit),
-                });
-            }
+    let (interface, gap_cm) = match side {
+        StackSide::Left => (
+            Length::new(R::zero(), unit),
+            -value * unit.scale_to_centimetres::<R>(),
+        ),
 
-            Ok(positive_zero(-value * unit.scale_to_centimetres::<R>()))
+        StackSide::Right if thicknesses.iter().all(|thickness| thickness.unit() == unit) => {
+            let total = thicknesses
+                .iter()
+                .fold(R::zero(), |total, thickness| total + thickness.value());
+
+            (
+                Length::new(total, unit),
+                (value - total) * unit.scale_to_centimetres::<R>(),
+            )
         }
 
         StackSide::Right => {
-            let shared = thicknesses.iter().all(|thickness| thickness.unit() == unit);
+            let total = thicknesses.iter().fold(R::zero(), |total, thickness| {
+                total + thickness.as_centimetres()
+            });
 
-            let (interface, gap_cm) = if shared {
-                let total = thicknesses
-                    .iter()
-                    .fold(R::zero(), |total, thickness| total + thickness.value());
-
-                (
-                    Length::new(total, unit),
-                    (value - total) * unit.scale_to_centimetres::<R>(),
-                )
-            } else {
-                let total = thicknesses.iter().fold(R::zero(), |total, thickness| {
-                    total + thickness.as_centimetres()
-                });
-
-                (
-                    Length::new(total, LengthUnit::Centimetre),
-                    position.as_centimetres() - total,
-                )
-            };
-
-            if gap_cm < R::zero() {
-                return Err(TerminationValidationError::InsideLayers {
-                    side,
-                    field,
-                    position,
-                    interface,
-                });
-            }
-
-            Ok(positive_zero(gap_cm))
+            (
+                Length::new(total, LengthUnit::Centimetre),
+                position.as_centimetres() - total,
+            )
         }
+    };
+
+    if gap_cm < R::zero() {
+        return Err(TerminationValidationError::InsideLayers {
+            side,
+            field,
+            position,
+            interface,
+        });
     }
+
+    Ok(positive_zero(gap_cm))
 }
 
 fn positive_zero<R: Float>(value: R) -> R {
     if value == R::zero() { R::zero() } else { value }
 }
 
-/// Build canonical terminations from validated ones.
+/// Validate the terminations of `stack` and build their canonical form.
 ///
-/// `thicknesses_cm` are the canonical finite-layer thickness jets, from which
-/// the right gap inherits its derivatives: the right wall stays fixed in
-/// the stack frame, so `gap_R = z_R − Σ d_k`. The value of each gap is the
-/// validated one, so a termination exactly on the outermost interface has an
-/// exactly zero gap.
-pub(crate) fn canonical_terminations<J>(
-    validated: ValidatedTerminations<<J::Scalar as ComplexField>::RealField>,
-    thicknesses_cm: &[&J],
-    source: &ArrayBase<OwnedRepr<J::Scalar>, J::Dimension>,
-) -> (CanonicalTermination<J>, CanonicalTermination<J>)
+/// The right gap inherits the derivatives of the canonical finite-layer
+/// thicknesses of `layers`: the right wall stays fixed in the stack frame, so
+/// `gap_R = z_R − Σ d_k`. The value of each gap is the validated one, so a
+/// wall exactly on the outermost interface has an exactly zero gap. There no
+/// derivative that moves the last interface outward exists, and
+/// `outward_layer`, the first layer whose seeded thickness does so, is
+/// refused.
+#[allow(clippy::type_complexity)]
+pub(crate) fn compile_terminations<L, J>(
+    stack: &Stack<impl Sized, <J::Scalar as ComplexField>::RealField>,
+    layers: &[CanonicalLayer<L, J>],
+    sampled_shape: J::Dimension,
+    outward_layer: Option<usize>,
+) -> Result<
+    (CanonicalTermination<J>, CanonicalTermination<J>),
+    StackCompileError<<J::Scalar as ComplexField>::RealField>,
+>
 where
     J: StackThicknessJet,
     J::Scalar: ComplexScalar,
-    J::Dimension: Dimension,
-    <J::Scalar as ComplexField>::RealField: Float + Copy,
+    <J::Scalar as ComplexField>::RealField: Float + FromPrimitive,
+    J::Dimension: Clone,
 {
-    let (left, right) = validated;
+    let (left, right) = validate_terminations(stack)?;
 
-    let constant =
-        |value: J::Scalar| <J as SeedJet>::constant(Array::from_elem(source.raw_dim(), value));
-    let real =
-        |value: <J::Scalar as ComplexField>::RealField| constant(J::Scalar::from_real(value));
+    if let (Some(layer), Some(gap)) = (outward_layer, right.exterior_extent_cm()) {
+        if gap.is_zero() {
+            return Err(StackCompileError::OutwardThicknessDerivative {
+                layer: FiniteLayerIndex::new(layer),
+                side: StackSide::Right,
+            });
+        }
+    }
 
-    let left_gap = |gap: <J::Scalar as ComplexField>::RealField| real(gap);
-
-    let right_gap = |gap: <J::Scalar as ComplexField>::RealField| {
-        // The value is the validated gap; the derivatives are those of −Σ d_k.
-        let total = thicknesses_cm
-            .iter()
-            .fold(constant(J::Scalar::zero()), |total, d| total.add_jet(d));
-
-        let fluctuation = total.subtract_jet(&total.value_constant());
-
-        real(gap).subtract_jet(&fluctuation)
+    let constant = |value| {
+        <J as SeedJet>::constant(Array::from_elem(
+            sampled_shape.clone(),
+            J::Scalar::from_real(value),
+        ))
     };
 
-    (
-        canonical_side(left, &constant, left_gap),
-        canonical_side(right, &constant, right_gap),
-    )
-}
+    let right_gap = |gap| {
+        layers.iter().fold(constant(gap), |gap: J, layer| {
+            gap.subtract_derivatives(layer.thickness_cm())
+        })
+    };
 
-fn canonical_side<J>(
-    validated: ValidatedTermination<<J::Scalar as ComplexField>::RealField>,
-    constant: &impl Fn(J::Scalar) -> J,
-    gap: impl Fn(<J::Scalar as ComplexField>::RealField) -> J,
-) -> CanonicalTermination<J>
-where
-    J: StackThicknessJet,
-    J::Scalar: ComplexScalar,
-    J::Dimension: Dimension,
-    <J::Scalar as ComplexField>::RealField: Float + Copy,
-{
-    let real = |value| constant(J::Scalar::from_real(value));
-
-    match validated {
+    let canonical = |validated, gap: &dyn Fn(_) -> J| match validated {
         ValidatedTermination::Open => CanonicalTermination::Open,
 
         ValidatedTermination::Wall {
             kind,
             position_cm,
             gap_cm,
-        } => CanonicalTermination::Wall(CanonicalWall::new(kind, real(position_cm), gap(gap_cm))),
-    }
+        } => CanonicalTermination::Wall {
+            kind,
+            position_cm: constant(position_cm),
+            gap_cm: gap(gap_cm),
+        },
+    };
+
+    Ok((canonical(left, &constant), canonical(right, &right_gap)))
 }
 
 #[cfg(test)]

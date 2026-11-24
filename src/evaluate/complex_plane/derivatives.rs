@@ -8,7 +8,7 @@ use crate::{
     EvaluateMeromorphicMaterial, ExteriorWavevectors, ModeJet1, PlaneWaveDeterminant, Polarisation,
     Scalar, ScalarAlgebra,
     backend::{Backend, Scatter2, Transfer2},
-    input::{CanonicalStack, canonical::CanonicalLayer},
+    input::{CanonicalStack, canonical::CanonicalLayer, compile_terminations},
     material::{ConstitutiveEvaluator, ConstitutiveLift},
 };
 use crate::{ElectromagneticFields, FieldSampling, SpatialResponse, backend::ModalSolutionSource};
@@ -60,65 +60,26 @@ impl ConstitutiveLift<SeededConstitutive, SeededMaterial> for J {
 }
 
 impl ModalCharacteristicDirection<'_> {
-    /// The seeded canonical stack, with walls fixed in the stack
-    /// frame: the right gap changes by `−Σ thickness_rates`.
-    ///
-    /// When the right side is closed exactly on the last interface, a
-    /// direction that thickens the stack would move that interface past the
-    /// wall and fails with [`crate::StackCompileError::OutwardThicknessDerivative`].
+    /// The seeded canonical stack, with walls fixed in the stack frame: the
+    /// right gap changes by `−Σ thickness_rates`. A direction that thickens a
+    /// stack whose right wall lies on its last interface fails with
+    /// [`crate::StackCompileError::OutwardThicknessDerivative`].
     fn canonical_stack(
         &self,
     ) -> Result<CanonicalStack<SeededMaterial, J>, Arc<dyn Error + Send + Sync>> {
-        let layers = self.seeded_layers().map_err(super::shared_error)?;
-        let validated = crate::input::validate_terminations(self.stack)
-            .map_err(|error| super::shared_error(crate::StackCompileError::Termination(error)))?;
-
-        if let crate::input::compile_termination::ValidatedTermination::Wall { gap_cm, .. } =
-            &validated.1
-        {
-            let outward: f64 = self.thickness_rates.iter().sum();
-            if *gap_cm == 0.0 && outward > 0.0 {
-                let layer = self
-                    .thickness_rates
-                    .iter()
-                    .position(|rate| *rate > 0.0)
-                    .unwrap_or_default();
-                return Err(super::shared_error(
-                    crate::StackCompileError::<f64>::OutwardThicknessDerivative {
-                        layer: crate::FiniteLayerIndex::new(layer),
-                        side: crate::StackSide::Right,
-                    },
-                ));
-            }
-        }
-
-        let (left, right, layers) = layers;
-        let thicknesses = layers
+        let stack = self.open_canonical_stack().map_err(super::shared_error)?;
+        let thickening = self.thickness_rates.iter().sum::<f64>() > 0.0;
+        let outward_layer = self
+            .thickness_rates
             .iter()
-            .map(|layer| layer.thickness_cm())
-            .collect::<Vec<_>>();
-        let (left_termination, right_termination) =
-            crate::input::compile_termination::canonical_terminations::<J>(
-                validated,
-                &thicknesses,
-                &arr0(C::ZERO),
-            );
-
-        Ok(CanonicalStack::new(left, right, layers)
-            .with_terminations(left_termination, right_termination))
+            .position(|rate| *rate > 0.0)
+            .filter(|_| thickening);
+        let (left, right) = compile_terminations(self.stack, stack.layers(), Ix0(), outward_layer)
+            .map_err(super::shared_error)?;
+        Ok(stack.with_terminations(left, right))
     }
 
-    #[allow(clippy::type_complexity)]
-    fn seeded_layers(
-        &self,
-    ) -> Result<
-        (
-            SeededMaterial,
-            SeededMaterial,
-            Vec<CanonicalLayer<SeededMaterial, J>>,
-        ),
-        std::io::Error,
-    > {
+    fn open_canonical_stack(&self) -> Result<CanonicalStack<SeededMaterial, J>, std::io::Error> {
         let invalid = |message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
         if !self.coordinates.vacuum_angular_wavenumber().all_finite()
             || !self.coordinates.parallel_angular_wavenumber().all_finite()
@@ -168,7 +129,7 @@ impl ModalCharacteristicDirection<'_> {
                 ))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok((left, right, layers))
+        Ok(CanonicalStack::new(left, right, layers))
     }
 }
 

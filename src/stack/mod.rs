@@ -170,14 +170,6 @@ impl<M, F> Stack<M, F> {
         &self.right_termination
     }
 
-    /// Return the termination on `side`.
-    pub fn termination(&self, side: StackSide) -> &Termination<F> {
-        match side {
-            StackSide::Left => &self.left_termination,
-            StackSide::Right => &self.right_termination,
-        }
-    }
-
     /// Return `true` when both sides are open.
     pub fn is_open(&self) -> bool {
         self.left_termination.is_open() && self.right_termination.is_open()

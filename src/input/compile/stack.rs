@@ -29,10 +29,7 @@ use crate::{
 
 use super::{
     StackContext, ValidationConfig, ValidationError,
-    termination::{
-        TerminationValidationError, ValidatedTermination, ValidatedTerminations,
-        canonical_terminations, validate_terminations,
-    },
+    termination::{TerminationValidationError, compile_terminations},
 };
 
 /// Result of validating and compiling a public stack.
@@ -152,30 +149,18 @@ where
 
     validation.validate_thicknesses(&caller_thicknesses)?;
 
-    let validated = validate_terminations(stack)?;
+    let outward_layer =
+        (0..stack.len()).find(|layer| thickness_mapping.slot_for_layer(*layer).is_some());
 
-    if let ValidatedTermination::Wall { gap_cm, .. } = &validated.1 {
-        if *gap_cm == <<J::Scalar as ComplexField>::RealField as num_traits::Zero>::zero() {
-            if let Some(layer) =
-                (0..stack.len()).find(|layer| thickness_mapping.slot_for_layer(*layer).is_some())
-            {
-                return Err(StackCompileError::OutwardThicknessDerivative {
-                    layer: FiniteLayerIndex::new(layer),
-                    side: StackSide::Right,
-                });
-            }
-        }
-    }
+    let (left_termination, right_termination) =
+        compile_terminations(stack, &canonical_layers, sampled_shape, outward_layer)?;
 
-    let canonical = with_terminations::<M, J>(
-        CanonicalStack::new(
-            stack.left_exterior().clone(),
-            stack.right_exterior().clone(),
-            canonical_layers,
-        ),
-        validated,
-        sampled_shape,
-    );
+    let canonical = CanonicalStack::new(
+        stack.left_exterior().clone(),
+        stack.right_exterior().clone(),
+        canonical_layers,
+    )
+    .with_terminations(left_termination, right_termination);
 
     let context = StackContext::new(caller_thicknesses);
 
@@ -217,50 +202,15 @@ where
 
     validation.validate_thicknesses(&caller_thicknesses)?;
 
-    let validated = validate_terminations(stack)?;
+    let (left_termination, right_termination) =
+        compile_terminations(stack, &canonical_layers, sampled_shape, None)?;
 
-    Ok(with_terminations::<M, J>(
-        CanonicalStack::new(
-            stack.left_exterior().clone(),
-            stack.right_exterior().clone(),
-            canonical_layers,
-        ),
-        validated,
-        sampled_shape,
-    ))
-}
-
-fn with_terminations<M, J>(
-    canonical: CanonicalStack<M, J>,
-    validated: ValidatedTerminations<<J::Scalar as ComplexField>::RealField>,
-    sampled_shape: J::Dimension,
-) -> CanonicalStack<M, J>
-where
-    J: StackThicknessJet,
-    J::Scalar: ComplexScalar,
-    <J::Scalar as ComplexField>::RealField: Float + Copy,
-    J::Dimension: Dimension + Clone,
-{
-    if matches!(
-        validated,
-        (ValidatedTermination::Open, ValidatedTermination::Open)
-    ) {
-        return canonical;
-    }
-
-    let source = Array::from_elem(sampled_shape, <J::Scalar as num_traits::Zero>::zero());
-
-    let (left, right) = {
-        let thicknesses = canonical
-            .layers()
-            .iter()
-            .map(|layer| layer.thickness_cm())
-            .collect::<Vec<_>>();
-
-        canonical_terminations::<J>(validated, &thicknesses, &source)
-    };
-
-    canonical.with_terminations(left, right)
+    Ok(CanonicalStack::new(
+        stack.left_exterior().clone(),
+        stack.right_exterior().clone(),
+        canonical_layers,
+    )
+    .with_terminations(left_termination, right_termination))
 }
 
 /// Compile a canonical stack with one selected finite-layer thickness seeded
@@ -324,14 +274,8 @@ where
 {
     fn scale_real(&self, factor: <Self::Scalar as ComplexField>::RealField) -> Self;
 
-    /// Add two jets.
-    fn add_jet(&self, rhs: &Self) -> Self;
-
-    /// Subtract `rhs`.
-    fn subtract_jet(&self, rhs: &Self) -> Self;
-
-    /// The constant jet with this jet's value.
-    fn value_constant(&self) -> Self;
+    /// Subtract the derivatives of `rhs`, keeping this jet's value.
+    fn subtract_derivatives(&self, rhs: &Self) -> Self;
 }
 
 impl<C, D, P> StackThicknessJet for ArrayJet0<C, D, P>
@@ -344,16 +288,10 @@ where
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
 
-    fn add_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::add(self, rhs)
-    }
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
 
-    fn subtract_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::subtract(self, rhs)
-    }
-
-    fn value_constant(&self) -> Self {
-        <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(self).clone())
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -367,16 +305,10 @@ where
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
 
-    fn add_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::add(self, rhs)
-    }
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
 
-    fn subtract_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::subtract(self, rhs)
-    }
-
-    fn value_constant(&self) -> Self {
-        <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(self).clone())
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -390,16 +322,10 @@ where
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
 
-    fn add_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::add(self, rhs)
-    }
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
 
-    fn subtract_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::subtract(self, rhs)
-    }
-
-    fn value_constant(&self) -> Self {
-        <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(self).clone())
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -413,16 +339,10 @@ where
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
 
-    fn add_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::add(self, rhs)
-    }
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
 
-    fn subtract_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::subtract(self, rhs)
-    }
-
-    fn value_constant(&self) -> Self {
-        <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(self).clone())
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -436,16 +356,10 @@ where
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
 
-    fn add_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::add(self, rhs)
-    }
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
 
-    fn subtract_jet(&self, rhs: &Self) -> Self {
-        ScalarAlgebra::subtract(self, rhs)
-    }
-
-    fn value_constant(&self) -> Self {
-        <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(self).clone())
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -517,22 +431,11 @@ mod tests {
             }
         }
 
-        fn add_jet(&self, rhs: &Self) -> Self {
+        fn subtract_derivatives(&self, rhs: &Self) -> Self {
             Self {
-                value: &self.value + &rhs.value,
+                value: self.value.clone(),
                 slot: self.slot.or(rhs.slot),
             }
-        }
-
-        fn subtract_jet(&self, rhs: &Self) -> Self {
-            Self {
-                value: &self.value - &rhs.value,
-                slot: self.slot.or(rhs.slot),
-            }
-        }
-
-        fn value_constant(&self) -> Self {
-            Self::constant(self.value.clone())
         }
     }
 

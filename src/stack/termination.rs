@@ -1,10 +1,8 @@
 //! Terminations closing a planar stack on either side.
 //!
 //! By default a stack is bounded by two semi-infinite exterior media. Either
-//! side may instead be closed
-//!
-//! by a perfect electric (PEC) or perfect magnetic (PMC) [`Wall`] at an
-//! absolute position `z` in the stack's own frame.
+//! side may instead be closed by a perfect electric (PEC) or perfect magnetic
+//! (PMC) [`Wall`] at an absolute position `z` in the stack's own frame.
 //!
 //! The stack frame places `z = 0` at the first interface, with the layers
 //! running towards `+z` and ending at `z = L`, the sum of the finite-layer
@@ -93,11 +91,6 @@ impl<F> Termination<F> {
     /// Return `true` for the semi-infinite exterior.
     pub const fn is_open(&self) -> bool {
         matches!(self, Self::Open)
-    }
-
-    /// Return `true` for a closed side.
-    pub const fn is_closed(&self) -> bool {
-        !self.is_open()
     }
 }
 

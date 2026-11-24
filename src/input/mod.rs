@@ -24,10 +24,9 @@ mod coordinate_input;
 mod error;
 
 pub(crate) use canonical::CanonicalProblem;
-pub(crate) use compile::termination as compile_termination;
 pub(crate) use compile::{
     CompilationContext, CompileJet, CompilePlaneWaveError, CoordinateContext, JetMapping,
-    ProjectionConstraint, compile_real, validate_terminations,
+    ProjectionConstraint, compile_real, compile_terminations, validate_terminations,
 };
 pub(crate) use coordinate::ReferenceRequirement;
 pub(crate) use coordinate_input::CoordinateValues;

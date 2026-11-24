@@ -37,37 +37,6 @@ impl WallCondition {
     }
 }
 
-/// A wall in canonical units.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CanonicalWall<J> {
-    kind: WallKind,
-    position_cm: J,
-    gap_cm: J,
-}
-
-impl<J> CanonicalWall<J> {
-    pub(crate) const fn new(kind: WallKind, position_cm: J, gap_cm: J) -> Self {
-        Self {
-            kind,
-            position_cm,
-            gap_cm,
-        }
-    }
-
-    pub(crate) const fn kind(&self) -> WallKind {
-        self.kind
-    }
-
-    #[cfg(test)]
-    pub(crate) fn position_cm(&self) -> &J {
-        &self.position_cm
-    }
-
-    pub(crate) fn gap_cm(&self) -> &J {
-        &self.gap_cm
-    }
-}
-
 /// How one side of a canonical stack is terminated.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) enum CanonicalTermination<J> {
@@ -75,7 +44,11 @@ pub(crate) enum CanonicalTermination<J> {
     #[default]
     Open,
     /// A wall at a fixed position.
-    Wall(CanonicalWall<J>),
+    Wall {
+        kind: WallKind,
+        position_cm: J,
+        gap_cm: J,
+    },
 }
 
 impl<J> CanonicalTermination<J> {
@@ -87,7 +60,7 @@ impl<J> CanonicalTermination<J> {
     pub(crate) fn gap_cm(&self) -> Option<&J> {
         match self {
             Self::Open => None,
-            Self::Wall(wall) => Some(wall.gap_cm()),
+            Self::Wall { gap_cm, .. } => Some(gap_cm),
         }
     }
 
@@ -95,7 +68,7 @@ impl<J> CanonicalTermination<J> {
     pub(crate) fn wall_kind(&self) -> Option<WallKind> {
         match self {
             Self::Open => None,
-            Self::Wall(wall) => Some(wall.kind()),
+            Self::Wall { kind, .. } => Some(*kind),
         }
     }
 
@@ -105,11 +78,15 @@ impl<J> CanonicalTermination<J> {
     ) -> Result<CanonicalTermination<K>, E> {
         Ok(match self {
             Self::Open => CanonicalTermination::Open,
-            Self::Wall(wall) => CanonicalTermination::Wall(CanonicalWall::new(
-                wall.kind,
-                f(&wall.position_cm)?,
-                f(&wall.gap_cm)?,
-            )),
+            Self::Wall {
+                kind,
+                position_cm,
+                gap_cm,
+            } => CanonicalTermination::Wall {
+                kind: *kind,
+                position_cm: f(position_cm)?,
+                gap_cm: f(gap_cm)?,
+            },
         })
     }
 }

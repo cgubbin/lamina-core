@@ -787,21 +787,29 @@ fn canonical_terminations_carry_positions_and_gaps() {
         FiniteLayerIndex::new(0),
     )
     .unwrap();
-    let CanonicalTermination::Wall(left) = canonical.left_termination() else {
-        panic!("left wall expected");
+    let CanonicalTermination::Wall {
+        kind: WallKind::PerfectElectric,
+        position_cm,
+        gap_cm,
+    } = canonical.left_termination()
+    else {
+        panic!("left PEC wall expected");
     };
-    assert_eq!(left.kind(), WallKind::PerfectElectric);
-    assert!(relative(left.position_cm().value()[()], c(-0.2)) < 1e-15);
-    assert!(relative(left.gap_cm().value()[()], c(0.2)) < 1e-15);
-    assert_eq!(left.gap_cm().first()[()], c(0.0));
-    let CanonicalTermination::Wall(right) = canonical.right_termination() else {
-        panic!("right wall expected");
+    assert!(relative(position_cm.value()[()], c(-0.2)) < 1e-15);
+    assert!(relative(gap_cm.value()[()], c(0.2)) < 1e-15);
+    assert_eq!(gap_cm.first()[()], c(0.0));
+    let CanonicalTermination::Wall {
+        kind: WallKind::PerfectMagnetic,
+        position_cm,
+        gap_cm,
+    } = canonical.right_termination()
+    else {
+        panic!("right PMC wall expected");
     };
-    assert_eq!(right.kind(), WallKind::PerfectMagnetic);
-    assert!(relative(right.position_cm().value()[()], c(0.9)) < 1e-15);
-    assert!(relative(right.gap_cm().value()[()], c(0.2)) < 1e-14);
+    assert!(relative(position_cm.value()[()], c(0.9)) < 1e-15);
+    assert!(relative(gap_cm.value()[()], c(0.2)) < 1e-14);
     // The layer is given in millimetres: d gap / d(thickness in mm) = −0.1 cm/mm.
-    assert!(relative(right.gap_cm().first()[()], c(-0.1)) < 1e-15);
+    assert!(relative(gap_cm.first()[()], c(-0.1)) < 1e-15);
     // Finite layers are unchanged.
     assert_eq!(canonical.layer_count(), 2);
 }
