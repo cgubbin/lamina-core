@@ -6,3 +6,4 @@ mod modal_candidate_equivalence;
 mod modal_cutoff;
 mod real;
 mod scatter_continuation;
+mod terminations;
