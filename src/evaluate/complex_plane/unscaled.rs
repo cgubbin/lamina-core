@@ -1,5 +1,8 @@
 //! Owned primal homogeneous fields, independent of QNM normalization.
-use super::{ComplexPlaneEvaluator, mode::reconstruct_mode_fields};
+use super::{
+    ComplexPlaneEvaluator,
+    mode::{ExteriorWaves, reconstruct_mode_fields},
+};
 use crate::{
     AnalyticalMaterialStack, CanonicalCoordinates, ElectromagneticFields, ExteriorWavevectors,
     FieldSampling, Polarisation, SpatialResponse, VectorField,
@@ -140,8 +143,9 @@ macro_rules! implementation {
                     .resolve(stack)
                     .map_err(|e| UnscaledFieldError::Fields(e.into()))?;
                 let scaled = seed.scaled(&J::constant(arr0(amplitude)));
-                let fields = reconstruct_mode_fields(&state, &scaled, &resolved)
-                    .map_err(UnscaledFieldError::Fields)?;
+                let fields =
+                    reconstruct_mode_fields(&state, &scaled, &resolved, ExteriorWaves::Outgoing)
+                        .map_err(UnscaledFieldError::Fields)?;
                 let (e, h) = fields.into_parts();
                 let e = e.into_inner();
                 let h = h.into_inner();
