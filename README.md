@@ -332,4 +332,31 @@ backend representation.
 The current numerical backends implement isotropic 2×2 transfer and
 scattering formulations.
 
-License: MIT OR Apache-2.0
+### Boundary
+
+| lamina-core owns | lamina-core never owns |
+| --- | --- |
+| Stacks of homogeneous planar layers and their exterior media | Typed units and spectral quantities (`lamina-units`) |
+| Transfer- and scattering-matrix evaluation, on the real axis and in the complex plane | Concrete material models or material data (`lamina-materials`) |
+| Material capability traits that material models implement | Root searches, mode enumeration, continuation (`lamina-mode`) |
+| Fields, characteristic determinants and their derivatives | Geometry, layouts, devices, ports, optimisation |
+| Canonical coordinates: `k₀` and in-plane wavenumber in `cm⁻¹`, effective index, incidence angle | Choosing which mode, frequency or design to keep |
+
+lamina-core imports only `lamina-units`. A change that makes it depend on a
+crate further up, or that adds a search or a policy, crosses the boundary.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.

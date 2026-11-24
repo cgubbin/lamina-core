@@ -8,9 +8,10 @@ description = "Transfer- and scattering-matrix methods for planar electromagneti
 categories = ["science", "mathematics"]
 keywords = ["optics", "photonics", "electromagnetics", "transfer-matrix", "scattering-matrix"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/cgubbin/lamina-core/"
-homepage = "https://github.com/cgubbin/lamina-core/"
+repository = "https://github.com/cgubbin/lamina-core"
+homepage = "https://github.com/cgubbin/lamina-core"
 readme = "README.md"
+include = ["src/**/*.rs", "examples/**/*.rs", "tests/**/*.rs", "Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE*"]
 
 [lib]
 name = "lamina_core"
@@ -24,7 +25,7 @@ ndarray = "0.17.2"
 num-complex = "0.4.6"
 num-traits = "0.2.19"
 thiserror = "2.0.18"
-lamina-units = {path = "../lamina-units"}
+lamina-units = { version = "0.1.0", path = "../lamina-units" }
 
 [dev-dependencies]
 approx = { version = "0.5.1", features = ["num-complex"] }
