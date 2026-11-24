@@ -3,7 +3,7 @@
 //! A canonical termination stores every length in centimetres as a jet with
 //! the sampled shape of the canonical coordinates. Positions are absolute in
 //! the stack frame (`z = 0` at the first interface). The gap between the
-//! outermost interface and the wall is derived at compilation:
+//! outermost interface and the wall or PML start is derived at compilation:
 //!
 //! ```text
 //! gap_L = −z_L,        gap_R = z_R − Σ d_k.
@@ -11,7 +11,8 @@
 //!
 //! The right gap is a jet carrying the finite-layer thickness derivatives,
 //! because the walls stay fixed in the stack frame while a layer thickens.
-//! Positions are constant jets.
+//! Positions, the PML thickness and its complex optical thickness `τ` are
+//! constant jets.
 
 use crate::{Polarisation, stack::WallKind};
 
@@ -37,6 +38,38 @@ impl WallCondition {
     }
 }
 
+/// A wall-backed PML in canonical units.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CanonicalPml<J> {
+    pub(crate) start_cm: J,
+    pub(crate) thickness_cm: J,
+    pub(crate) gap_cm: J,
+    /// `τ = d (1 + c/(m+1))` in centimetres.
+    pub(crate) optical_thickness_cm: J,
+    /// The polynomial order `m` as a constant jet.
+    pub(crate) order: J,
+    /// The complex strength `c` as a constant jet.
+    pub(crate) strength: J,
+    pub(crate) backing: WallKind,
+}
+
+impl<J> CanonicalPml<J> {
+    pub(crate) fn try_map<K, E>(
+        &self,
+        mut f: impl FnMut(&J) -> Result<K, E>,
+    ) -> Result<CanonicalPml<K>, E> {
+        Ok(CanonicalPml {
+            start_cm: f(&self.start_cm)?,
+            thickness_cm: f(&self.thickness_cm)?,
+            gap_cm: f(&self.gap_cm)?,
+            optical_thickness_cm: f(&self.optical_thickness_cm)?,
+            order: f(&self.order)?,
+            strength: f(&self.strength)?,
+            backing: self.backing,
+        })
+    }
+}
+
 /// How one side of a canonical stack is terminated.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) enum CanonicalTermination<J> {
@@ -49,6 +82,8 @@ pub(crate) enum CanonicalTermination<J> {
         position_cm: J,
         gap_cm: J,
     },
+    /// A wall-backed PML.
+    Pml(CanonicalPml<J>),
 }
 
 impl<J> CanonicalTermination<J> {
@@ -56,19 +91,28 @@ impl<J> CanonicalTermination<J> {
         matches!(self, Self::Open)
     }
 
-    /// Return the gap between the outermost interface and the wall.
+    /// Return the gap between the outermost interface and the wall or PML.
     pub(crate) fn gap_cm(&self) -> Option<&J> {
         match self {
             Self::Open => None,
             Self::Wall { gap_cm, .. } => Some(gap_cm),
+            Self::Pml(pml) => Some(&pml.gap_cm),
         }
     }
 
-    /// Return the kind of the closing wall.
+    /// Return the kind of the closing wall (the PML's backing wall for a PML).
     pub(crate) fn wall_kind(&self) -> Option<WallKind> {
         match self {
             Self::Open => None,
             Self::Wall { kind, .. } => Some(*kind),
+            Self::Pml(pml) => Some(pml.backing),
+        }
+    }
+
+    pub(crate) fn pml(&self) -> Option<&CanonicalPml<J>> {
+        match self {
+            Self::Pml(pml) => Some(pml),
+            _ => None,
         }
     }
 
@@ -87,6 +131,7 @@ impl<J> CanonicalTermination<J> {
                 position_cm: f(position_cm)?,
                 gap_cm: f(gap_cm)?,
             },
+            Self::Pml(pml) => CanonicalTermination::Pml(pml.try_map(f)?),
         })
     }
 }

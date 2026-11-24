@@ -18,7 +18,7 @@ pub enum SolveRequestError {
     #[error(transparent)]
     ProjectionConstraint(#[from] ProjectionConstraintError),
 
-    /// A plane wave cannot be incident from a side closed by a wall.
+    /// A plane wave cannot be incident from a side closed by a wall or a PML.
     #[error("a plane wave cannot be incident from the {side:?} side: that side is closed")]
     ClosedIncidence { side: IncidentSide },
 }

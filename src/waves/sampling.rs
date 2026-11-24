@@ -195,20 +195,27 @@ where
     <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = A>,
 {
     let exterior_context = workspace.solution().context();
-    // A closed side's samples are clamped to its gap and refused beyond it.
-    let within = |closure: Option<&ClosedSide<A>>, side, distance| match closure {
-        Some(closure) => closure
-            .exterior_distance(distance)
-            .ok_or(WaveSamplingError::BeyondTermination { side }),
-        None => Ok(distance),
+    // A closed side's samples lie at a complex distance through its gap and
+    // PML, and are refused beyond its wall.
+    let within = |closure: Option<&ClosedSide<A>>, side, distance| {
+        closure
+            .map(|closure| {
+                closure
+                    .complex_distance(distance)
+                    .ok_or(WaveSamplingError::BeyondTermination { side })
+            })
+            .transpose()
     };
     match position {
         CanonicalFieldPosition::LeftExterior { distance } => {
-            let distance = within(exterior_context.left_closure(), StackSide::Left, distance)?;
-
-            Ok(exterior
-                .left()
-                .propagate(exterior_context.left_kappa(), -distance))
+            match within(exterior_context.left_closure(), StackSide::Left, distance)? {
+                None => Ok(exterior
+                    .left()
+                    .propagate(exterior_context.left_kappa(), -distance)),
+                Some(distance) => Ok(exterior
+                    .left()
+                    .propagate_complex(exterior_context.left_kappa(), -distance)),
+            }
         }
 
         CanonicalFieldPosition::Layer { index, position } => {
@@ -232,11 +239,14 @@ where
         }
 
         CanonicalFieldPosition::RightExterior { distance } => {
-            let distance = within(exterior_context.right_closure(), StackSide::Right, distance)?;
-
-            Ok(exterior
-                .right()
-                .propagate(exterior_context.right_kappa(), distance))
+            match within(exterior_context.right_closure(), StackSide::Right, distance)? {
+                None => Ok(exterior
+                    .right()
+                    .propagate(exterior_context.right_kappa(), distance)),
+                Some(distance) => Ok(exterior
+                    .right()
+                    .propagate_complex(exterior_context.right_kappa(), distance)),
+            }
         }
     }
 }

@@ -60,9 +60,9 @@ impl ConstitutiveLift<SeededConstitutive, SeededMaterial> for J {
 }
 
 impl ModalCharacteristicDirection<'_> {
-    /// The seeded canonical stack, with walls fixed in the stack frame: the
-    /// right gap changes by `−Σ thickness_rates`. A direction that thickens a
-    /// stack whose right wall lies on its last interface fails with
+    /// The seeded canonical stack, with walls and PMLs fixed in the stack
+    /// frame: the right gap changes by `−Σ thickness_rates`. A direction that
+    /// thickens a stack closed on its last interface fails with
     /// [`crate::StackCompileError::OutwardThicknessDerivative`].
     fn canonical_stack(
         &self,

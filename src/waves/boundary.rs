@@ -48,7 +48,7 @@ impl<A> BoundaryWaveSolution<A> {
     /// solutions that are accepted modes: away from a root the incoming waves
     /// are genuine and are needed for interface continuity.
     ///
-    /// A closed side holds a standing wave between the outermost
+    /// A closed side (wall or PML) holds a standing wave between the outermost
     /// interface and its wall; both of its waves are kept.
     pub(crate) fn outgoing_exteriors(self, left_closed: bool, right_closed: bool) -> Self
     where

@@ -64,7 +64,7 @@ pub trait ExteriorContextProvider {
     /// Return the closed-side data of the right side, if it is closed.
     fn right_closure(&self) -> Option<&ClosedSide<Self::Algebra>>;
 
-    /// Return `true` when either side is closed by a wall.
+    /// Return `true` when either side is closed by a wall or a PML.
     fn has_closure(&self) -> bool {
         self.left_closure().is_some() || self.right_closure().is_some()
     }
