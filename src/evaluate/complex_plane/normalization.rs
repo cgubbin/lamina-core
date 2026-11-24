@@ -194,7 +194,8 @@ macro_rules! implement {
                     recovered.fields.quantity().magnetic().y()
                 };
                 let evaluator = ComplexPlaneEvaluator::<J, _, _>::compile(stack, self.clone())
-                    .map_err(|e| PoleNormalizationError::Evaluation(std::sync::Arc::new(e)))?;
+                    .map_err(super::shared_error)
+                    .map_err(PoleNormalizationError::Evaluation)?;
                 let state = evaluator
                     .retain(
                         CanonicalCoordinates::new(J::constant(arr0(input.k0)), J::constant(arr0(input.beta))),
@@ -204,17 +205,20 @@ macro_rules! implement {
                         ),
                         input.polarisation,
                     )
-                    .map_err(|e| PoleNormalizationError::Evaluation(std::sync::Arc::new(e)))?;
+                    .map_err(super::shared_error)
+                    .map_err(PoleNormalizationError::Evaluation)?;
                 let seed = state
                     .workspace()
                     .modal_boundary_solution()
-                    .map_err(|e| PoleNormalizationError::Evaluation(std::sync::Arc::new(e)))?
+                    .map_err(super::shared_error)
+                    .map_err(PoleNormalizationError::Evaluation)?
                     .scaled(&J::constant(arr0(cfg.amplitude)));
                 let legacy_finite_maxwell = raw_qnm_normalisation_unchecked(&seed, &state)
                     .ok()
                     .map(|n| n.total().value()[()]);
                 let integrated = raw_layer_integration_inputs_unchecked(&seed, state.workspace())
-                    .map_err(|e| PoleNormalizationError::Evaluation(std::sync::Arc::new(e)))?
+                    .map_err(super::shared_error)
+                    .map_err(PoleNormalizationError::Evaluation)?
                     .integrate_bilinear()
                     .into_inner();
                 let spectral = input.variable == PoleVariable::K0AtFixedBeta;

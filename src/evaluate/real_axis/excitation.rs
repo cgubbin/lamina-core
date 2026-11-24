@@ -729,7 +729,7 @@ where
         W::Entries: ProjectAmplitudes,
         <W::Entries as ProjectAmplitudes>::Amplitudes: Amplitudes<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
-    {
+{
         let sampling = sampling.resolve(self.state.stack())?;
         let reconstructed = self
             .raw_electromagnetic_fields(&sampling)?
@@ -803,7 +803,7 @@ where
         W::Entries: ProjectAmplitudes,
         <W::Entries as ProjectAmplitudes>::Amplitudes: Amplitudes<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
-    {
+{
         let sampling = sampling.resolve(self.state.stack())?;
         let reconstructed = self
             .raw_electromagnetic_fields(&sampling)?
@@ -885,7 +885,7 @@ where
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
         <<<J as JetStack>::Stacked as ComplexJet>::RealJet as Jet>::Scalar: num_traits::Float,
         <<J as JetStack>::Stacked as ComplexJet>::RealJet: ScalarAlgebra,
-    {
+{
         let sampling = sampling.resolve(self.state.stack())?;
         let electromagnetic_intensities = self
             .raw_electromagnetic_fields(&sampling)?
@@ -952,7 +952,7 @@ where
         J: ConstitutiveSpectralFirstLift<RealAxis, M>,
         <<<J as JetStack>::Stacked as ComplexJet>::RealJet as Jet>::Scalar: num_traits::Float,
         <<J as JetStack>::Stacked as ComplexJet>::RealJet: ScalarAlgebra,
-    {
+{
         let sampling = sampling.resolve(self.state.stack())?;
         let electromagnetic_intensities = self
             .raw_electromagnetic_fields(&sampling)?
@@ -1029,7 +1029,7 @@ pub type PlaneWaveComplexPoyntingVectorResponse<J> = SpatialResponse<
 >;
 
 pub type PlaneWaveTimeAveragedPoyntingVectorResponse<J> = SpatialResponse<
-    DifferentialResponseFor<J, 
+    DifferentialResponseFor<J,
         <<<J as JetStack>::Stacked as CartesianScalarAlgebra>::Vector as RealCartesianVectorAlgebra>::RealVector
     >,
     <<J as Jet>::Scalar as ComplexField>::RealField,

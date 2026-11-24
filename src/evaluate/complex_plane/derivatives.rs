@@ -159,9 +159,7 @@ macro_rules! implementation {
                 &self,
                 direction: ModalCharacteristicDirection<'_>,
             ) -> Result<J, Arc<dyn Error + Send + Sync>> {
-                let stack = direction
-                    .canonical_stack()
-                    .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?;
+                let stack = direction.canonical_stack().map_err(super::shared_error)?;
                 let determinant = <Self as Backend<J, SeededConstitutive>>::solve(
                     self,
                     direction.coordinates,
@@ -169,7 +167,7 @@ macro_rules! implementation {
                     direction.exterior,
                     direction.polarisation,
                 )
-                .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?
+                .map_err(super::shared_error)?
                 .determinant()
                 .into_inner();
                 if !determinant.all_finite() {
@@ -192,9 +190,7 @@ macro_rules! implementation {
                         "invalid field amplitude",
                     )));
                 }
-                let stack = direction
-                    .canonical_stack()
-                    .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?;
+                let stack = direction.canonical_stack().map_err(super::shared_error)?;
                 let workspace = <Self as Backend<J, SeededConstitutive>>::retain(
                     self,
                     direction.coordinates,
@@ -202,7 +198,7 @@ macro_rules! implementation {
                     direction.exterior,
                     direction.polarisation,
                 )
-                .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?;
+                .map_err(super::shared_error)?;
                 let state = ComplexPlaneState::new(
                     direction.coordinates.clone(),
                     direction.exterior.clone(),
@@ -213,14 +209,14 @@ macro_rules! implementation {
                 let seed = state
                     .workspace()
                     .modal_boundary_solution()
-                    .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?
+                    .map_err(super::shared_error)?
                     .scaled(&J::constant(arr0(amplitude)));
                 let resolved = sampling
                     .resolve(direction.stack)
-                    .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?;
+                    .map_err(super::shared_error)?;
                 let (electric, magnetic) =
                     reconstruct_mode_fields(&state, &seed, &resolved, ExteriorWaves::Outgoing)
-                        .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?
+                        .map_err(super::shared_error)?
                         .into_parts();
                 let primal =
                     ElectromagneticFields::new(electric.value().clone(), magnetic.value().clone());

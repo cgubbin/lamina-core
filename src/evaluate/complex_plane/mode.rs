@@ -236,15 +236,16 @@ pub(super) enum ExteriorWaves {
     Outgoing,
 }
 
+/// Electric and magnetic fields in the stacked Cartesian form of `J`.
+type StackedModeFields<J> =
+    ElectromagneticFields<<<J as JetStack>::Stacked as CartesianScalarAlgebra>::Vector>;
+
 pub(super) fn reconstruct_mode_fields<'a, J, M, W>(
     state: &ComplexPlaneState<'a, J, M, W>,
     solution: &PlaneWaveModeCandidate<J>,
     sampling: &ResolvedFieldSampling<<J::Scalar as ComplexField>::RealField>,
     exterior: ExteriorWaves,
-) -> Result<
-    ElectromagneticFields<<<J as JetStack>::Stacked as CartesianScalarAlgebra>::Vector>,
-    FieldReconstructionError<<J::Scalar as ComplexField>::RealField>,
->
+) -> Result<StackedModeFields<J>, FieldReconstructionError<<J::Scalar as ComplexField>::RealField>>
 where
     J: Jet<Dimension = Ix0> + JetStack + ScalarAlgebra,
     J::Scalar: ComplexScalar,

@@ -119,7 +119,8 @@ macro_rules! implementation {
                         ),
                         polarisation,
                     )
-                    .map_err(|e| UnscaledFieldError::Backend(std::sync::Arc::new(e)))?;
+                    .map_err(super::shared_error)
+                    .map_err(UnscaledFieldError::Backend)?;
                 let characteristic = state.determinant().value().value()[()];
                 if !finite(characteristic) {
                     return Err(UnscaledFieldError::NonFiniteOutput);
