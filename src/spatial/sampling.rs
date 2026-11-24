@@ -406,7 +406,12 @@ impl<R> FieldSampling<R> {
         J::Scalar: ComplexField<RealField = R> + Copy,
     {
         let extent = |termination: &crate::input::canonical::CanonicalTermination<J>| {
-            Some(termination.gap_cm()?.value()[()].real())
+            let gap = termination.gap_cm()?.value()[()].real();
+
+            Some(match termination.pml() {
+                Some(pml) => gap + pml.thickness_cm.value()[()].real(),
+                None => gap,
+            })
         };
 
         self.resolve_with_stack(

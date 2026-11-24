@@ -46,7 +46,7 @@ pub enum UnscaledFieldError {
 /// Uses the backend's arbitrary seed gauge, then multiplies both E and H by
 /// `amplitude`. No energy integral or normalization factor is evaluated.
 /// Exterior roots are supplied in physical left/right order, in cm^-1, for
-/// open sides only: a side closed by a wall takes `None`, and its
+/// open sides only: a side closed by a wall or a PML takes `None`, and its
 /// fields are the standing wave between the outermost interface and the wall.
 pub trait ModalFieldBackend {
     #[allow(clippy::too_many_arguments)] // explicit physical data; no parallel device representation

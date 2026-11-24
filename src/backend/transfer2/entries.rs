@@ -584,7 +584,7 @@ where
 /// With `ξ = −iY`, the characteristic is `D = ℓ_L · M · r_R`: an open right
 /// side contributes `r_R = [1, −ξ_R]ᵀ` (a unit outgoing wave) and an open left
 /// side `ℓ_L = [ξ_L, −1]`; a closed side contributes the wall condition
-/// carried through its gap (see [`ClosedSide`]).
+/// carried through its gap and PML (see [`ClosedSide`]).
 pub(crate) fn right_gauged_mode_candidate<A>(
     entries: &Transfer2Entries<A>,
     context: &Transfer2ExteriorContext<A>,

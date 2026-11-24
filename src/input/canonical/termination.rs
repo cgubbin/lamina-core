@@ -54,7 +54,10 @@ pub(crate) struct CanonicalPml<J> {
 }
 
 impl<J> CanonicalPml<J> {
-    fn try_map<K, E>(&self, mut f: impl FnMut(&J) -> Result<K, E>) -> Result<CanonicalPml<K>, E> {
+    pub(crate) fn try_map<K, E>(
+        &self,
+        mut f: impl FnMut(&J) -> Result<K, E>,
+    ) -> Result<CanonicalPml<K>, E> {
         Ok(CanonicalPml {
             start_cm: f(&self.start_cm)?,
             thickness_cm: f(&self.thickness_cm)?,
@@ -103,6 +106,13 @@ impl<J> CanonicalTermination<J> {
             Self::Open => None,
             Self::Wall { kind, .. } => Some(*kind),
             Self::Pml(pml) => Some(pml.backing),
+        }
+    }
+
+    pub(crate) fn pml(&self) -> Option<&CanonicalPml<J>> {
+        match self {
+            Self::Pml(pml) => Some(pml),
+            _ => None,
         }
     }
 

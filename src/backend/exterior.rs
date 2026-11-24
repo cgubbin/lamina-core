@@ -12,7 +12,7 @@ use crate::{
 ///
 /// Each side holds the branch-selected out-of-plane angular wavevector `κ` of
 /// its semi-infinite exterior medium when that side is open, and nothing when
-/// the side is closed by a wall: a closed side's characteristic does
+/// the side is closed by a wall or a PML: a closed side's characteristic does
 /// not depend on a choice of exterior branch. A pattern that disagrees with
 /// the stack's terminations is rejected by the backends with
 /// [`TerminationError::ExteriorBranchMismatch`](crate::backend::TerminationError).

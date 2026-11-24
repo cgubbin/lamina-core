@@ -105,6 +105,18 @@ pub(crate) trait PropagateWaves<A> {
         A::Scalar: ComplexScalar,
         <A::Scalar as ComplexField>::RealField: Copy,
         A::Dimension: Dimension;
+
+    /// Propagate by a complex distance, as inside a PML, where the
+    /// stretched coordinate `ζ̃` replaces the real distance.
+    fn propagate_complex(
+        &self,
+        longitudinal_wavevector: &A,
+        distance: A::Scalar,
+    ) -> BidirectionalWaves<A>
+    where
+        A: ScalarAlgebra,
+        A::Scalar: ComplexScalar,
+        A::Dimension: Dimension;
 }
 
 /// Reconstruct directional waves at a position inside a finite layer.
@@ -144,6 +156,25 @@ where
     ) -> BidirectionalWaves<A> {
         let distance = A::Scalar::from_real(distance);
 
+        let forward_phase = longitudinal_wavevector
+            .scale(A::Scalar::i() * distance)
+            .exp();
+
+        let backward_phase = longitudinal_wavevector
+            .scale(-A::Scalar::i() * distance)
+            .exp();
+
+        BidirectionalWaves::new(
+            self.forward().multiply(&forward_phase),
+            self.backward().multiply(&backward_phase),
+        )
+    }
+
+    fn propagate_complex(
+        &self,
+        longitudinal_wavevector: &A,
+        distance: A::Scalar,
+    ) -> BidirectionalWaves<A> {
         let forward_phase = longitudinal_wavevector
             .scale(A::Scalar::i() * distance)
             .exp();

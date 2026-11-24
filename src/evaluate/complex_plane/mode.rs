@@ -32,8 +32,8 @@ pub enum QnmCreationError {
     #[error(transparent)]
     Normalisation(#[from] QnmNormalisationError),
 
-    /// The finite-layer quasinormal normalisation does not cover the
-    /// exterior region of a closed side.
+    /// The finite-layer quasinormal normalisation does not cover the gap and
+    /// PML regions of a closed side.
     #[error("quasinormal-mode normalisation needs a stack open on both sides")]
     ClosedStack,
 
