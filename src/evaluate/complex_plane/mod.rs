@@ -269,3 +269,15 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
 }
 
 pub(crate) type RawModeDeterminant<E> = <E as ProjectPlaneWaveModeDeterminant>::Determinant;
+
+/// Share a backend error behind a trait object.
+///
+/// A function rather than a closure: the macros that call it are expanded for
+/// Scatter2, whose error type is uninhabited, and a closure body calling
+/// `Arc::new(e)` on such a value is flagged as unreachable.
+pub(super) fn shared_error<E>(error: E) -> std::sync::Arc<dyn std::error::Error + Send + Sync>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    std::sync::Arc::new(error)
+}
