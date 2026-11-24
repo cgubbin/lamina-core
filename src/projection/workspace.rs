@@ -146,6 +146,12 @@ where
             self.vacuum_angular_wavenumber().project_point(index)?,
             self.parallel_angular_wavenumber().project_point(index)?,
             self.polarisation(),
+            self.left_closure()
+                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
+                .transpose()?,
+            self.right_closure()
+                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
+                .transpose()?,
         ))
     }
 }
@@ -193,6 +199,12 @@ where
             self.vacuum_angular_wavenumber().project_point(index)?,
             self.parallel_angular_wavenumber().project_point(index)?,
             self.polarisation(),
+            self.left_closure()
+                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
+                .transpose()?,
+            self.right_closure()
+                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
+                .transpose()?,
         ))
     }
 }
@@ -389,6 +401,8 @@ mod tests {
             jet(&[0.0, 0.0]),
             jet(&[0.0, 0.0]),
             Polarisation::TransverseElectric,
+            None,
+            None,
         );
 
         let point = context.project_point(&1).unwrap();
@@ -418,6 +432,8 @@ mod tests {
             jet(&[0.0, 0.0]),
             jet(&[0.0, 0.0]),
             Polarisation::TransverseElectric,
+            None,
+            None,
         );
 
         let point = context.project_point(&0).unwrap();
@@ -467,6 +483,8 @@ mod tests {
             jet(&[0.0, 0.0]),
             jet(&[0.0, 0.0]),
             Polarisation::TransverseElectric,
+            None,
+            None,
         );
 
         let point = context.project_point(&1).unwrap();

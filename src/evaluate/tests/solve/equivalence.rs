@@ -428,8 +428,8 @@ fn complex_plane_determinant_respects_explicit_exterior_branch() {
         principal_exterior_wavevectors(transfer.stack(), &transfer_coordinates);
 
     let transfer_exterior = ExteriorWavevectors::new(
-        transfer_principal.left().negate(),
-        transfer_principal.right().clone(),
+        transfer_principal.left().unwrap().negate(),
+        transfer_principal.right().unwrap().clone(),
     );
 
     let transfer_determinant = transfer
@@ -441,8 +441,8 @@ fn complex_plane_determinant_respects_explicit_exterior_branch() {
     let scatter_principal = principal_exterior_wavevectors(scatter.stack(), &scatter_coordinates);
 
     let scatter_exterior = ExteriorWavevectors::new(
-        scatter_principal.left().negate(),
-        scatter_principal.right().clone(),
+        scatter_principal.left().unwrap().negate(),
+        scatter_principal.right().unwrap().clone(),
     );
 
     let scatter_determinant = scatter

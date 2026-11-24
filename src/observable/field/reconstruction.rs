@@ -760,13 +760,15 @@ mod integration_tests {
             .kappa()
             .clone(),
         );
-        Scatter2::new().accumulate::<A, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior,
-            polarisation,
-            RunMode::InternalFields,
-        )
+        Scatter2::new()
+            .accumulate::<A, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior,
+                polarisation,
+                RunMode::InternalFields,
+            )
+            .unwrap()
     }
 
     fn assert_zero_component(values: impl IntoIterator<Item = C>) {

@@ -26,7 +26,7 @@ mod error;
 pub(crate) use canonical::CanonicalProblem;
 pub(crate) use compile::{
     CompilationContext, CompileJet, CompilePlaneWaveError, CoordinateContext, JetMapping,
-    ProjectionConstraint, compile_real,
+    ProjectionConstraint, compile_real, compile_terminations, validate_terminations,
 };
 pub(crate) use coordinate::ReferenceRequirement;
 pub(crate) use coordinate_input::CoordinateValues;
@@ -34,8 +34,8 @@ pub(crate) use coordinate_input::CoordinateValues;
 pub use canonical::{CanonicalCoordinates, CanonicalStack};
 pub use compile::ProjectionConstraintError;
 pub use compile::{
-    StackCompileError, StackThicknessJet, ValidationConfig, compile_canonical_constant_stack,
-    compile_canonical_thickness_stack,
+    StackCompileError, StackThicknessJet, TerminationField, TerminationValidationError,
+    ValidationConfig, compile_canonical_constant_stack, compile_canonical_thickness_stack,
 };
 pub use coordinate::{Coordinates, InPlaneCoordinate};
 pub use coordinate_input::{

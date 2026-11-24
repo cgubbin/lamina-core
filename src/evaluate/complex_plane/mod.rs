@@ -106,7 +106,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
     ) -> Result<Self, StackCompileError<<J::Scalar as ComplexField>::RealField>>
     where
         J: Jet<Dimension = Ix0> + StackThicknessJet,
-        J::Scalar: ComplexField + Copy,
+        J::Scalar: ComplexScalar,
         <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
         J::Dimension: Dimension + Clone,
         M: Clone,
@@ -227,8 +227,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
     {
         if !coordinates.vacuum_angular_wavenumber().all_finite()
             || !coordinates.parallel_angular_wavenumber().all_finite()
-            || !exterior.left().all_finite()
-            || !exterior.right().all_finite()
+            || !exterior.all(|kappa| kappa.all_finite())
         {
             return Err(DeterminantEvaluationError::NonFiniteInput);
         }

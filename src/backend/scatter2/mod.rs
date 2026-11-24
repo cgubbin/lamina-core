@@ -26,8 +26,6 @@ mod entries;
 mod projection;
 mod workspace;
 
-use std::convert::Infallible;
-
 use crate::{
     CanonicalCoordinates, ComplexScalar, Polarisation,
     algebra::ScalarAlgebra,
@@ -42,6 +40,16 @@ pub(crate) use projection::{Scatter2ProjectiveEntries, cascade_projection};
 
 use nalgebra::ComplexField;
 use ndarray::Dimension;
+
+/// Failure of the scattering backend.
+///
+/// Scattering composition itself does not fail; evaluation fails only when the
+/// stack's terminations reject the request.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Scatter2Error {
+    #[error(transparent)]
+    Termination(#[from] crate::backend::TerminationError),
+}
 
 /// Scalar-channel isotropic 2×2 scattering backend.
 #[derive(Copy, Clone, Debug, Default)]
@@ -61,7 +69,7 @@ where
     J::Dimension: Dimension,
     <J::Scalar as ComplexField>::RealField: Copy,
 {
-    type Error = Infallible;
+    type Error = Scatter2Error;
     type Entries = Scatter2ProjectiveEntries<J>;
     type Workspace = Scatter2Workspace<J>;
 
@@ -82,7 +90,7 @@ where
             exterior,
             polarisation,
             RunMode::ResponseOnly,
-        );
+        )?;
 
         Ok(workspace.into_solution())
     }
@@ -104,7 +112,7 @@ where
             exterior,
             polarisation,
             RunMode::InternalFields,
-        );
+        )?;
 
         Ok(workspace)
     }

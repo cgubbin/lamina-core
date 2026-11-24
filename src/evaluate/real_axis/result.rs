@@ -7,6 +7,7 @@ use crate::{
     backend::PlaneWaveSolutionSource,
     derivative_parts::DerivativePartsPolicy,
     differential::IntoDifferentialResponse,
+    evaluate::{SolveRequestError, error::check_open_incidence},
     input::{CompilationContext, JetMapping, ProjectionConstraint, ProjectionConstraintError},
     observable::{ProjectAmplitudes, ProjectPower},
 };
@@ -88,7 +89,7 @@ where
     pub fn amplitudes(
         &self,
         incident_side: IncidentSide,
-    ) -> Result<DifferentialResponseFor<J, RawAmplitudes<Self, J>>, ProjectionConstraintError>
+    ) -> Result<DifferentialResponseFor<J, RawAmplitudes<Self, J>>, SolveRequestError>
     where
         S::Entries: ProjectAmplitudes,
         J::Policy: DerivativePartsPolicy<RawAmplitudes<Self, J>>,
@@ -99,9 +100,12 @@ where
                 return Err(ProjectionConstraintError {
                     constraint: side,
                     requested: incident_side,
-                });
+                }
+                .into());
             }
         }
+
+        check_open_incidence(self.solution(), incident_side)?;
 
         Ok(self
             .raw_amplitudes(incident_side)
@@ -111,7 +115,7 @@ where
     pub fn power(
         &self,
         incident_side: IncidentSide,
-    ) -> Result<DifferentialResponseFor<J, RawPower<Self, J>>, ProjectionConstraintError>
+    ) -> Result<DifferentialResponseFor<J, RawPower<Self, J>>, SolveRequestError>
     where
         S::Entries: ProjectPower,
         J::Policy: DerivativePartsPolicy<RawPower<Self, J>>,
@@ -122,9 +126,12 @@ where
                 return Err(ProjectionConstraintError {
                     constraint: side,
                     requested: incident_side,
-                });
+                }
+                .into());
             }
         }
+
+        check_open_incidence(self.solution(), incident_side)?;
 
         Ok(self
             .raw_power(incident_side)

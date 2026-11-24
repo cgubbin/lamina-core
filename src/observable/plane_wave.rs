@@ -428,6 +428,8 @@ mod projection_tests {
             scalar(0.0),
             scalar(0.0),
             crate::Polarisation::TransverseElectric,
+            None,
+            None,
         )
 
         // If no constructor exists, use:

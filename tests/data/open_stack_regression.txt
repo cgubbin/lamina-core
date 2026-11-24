@@ -1,0 +1,144 @@
+7aea863d0ccf9565 scatter TransverseElectric Left amplitudes PlaneWaveAmplitudes
+5045a4ea3101171b scatter TransverseElectric Left power PlaneWavePower
+e98cecf7bc4770dd scatter TransverseElectric Left thickness derivative DifferentialResponse
+4f9d53a8dabed8a2 scatter TransverseElectric Left 0
+0bb72043401bb349 scatter TransverseElectric Left 1
+d10cab7c6d25e7b6 scatter TransverseElectric Left 2
+80483048967172a2 scatter TransverseElectric Right amplitudes PlaneWaveAmplitudes
+bb244e7014c0fa49 scatter TransverseElectric Right power PlaneWavePower
+4b3b69facdf5ebde scatter TransverseElectric Right thickness derivative DifferentialResponse
+a0c33179c80c8a4f scatter TransverseElectric Right 0
+0ad1be88268e514f scatter TransverseElectric Right 1
+da6a328133b21a33 scatter TransverseElectric Right 2
+1e16b7af155b420d scatter TransverseMagnetic Left amplitudes PlaneWaveAmplitudes
+1ed9209d72272d46 scatter TransverseMagnetic Left power PlaneWavePower
+31a2f6e1b7f6283b scatter TransverseMagnetic Left thickness derivative DifferentialResponse
+6f3c0e0228b44723 scatter TransverseMagnetic Left 0
+a611395d7efd3183 scatter TransverseMagnetic Left 1
+9ad33b3bc2206563 scatter TransverseMagnetic Left 2
+17f519aa6c043c18 scatter TransverseMagnetic Right amplitudes PlaneWaveAmplitudes
+aa3d896af3855dda scatter TransverseMagnetic Right power PlaneWavePower
+1748ed0613d8d32c scatter TransverseMagnetic Right thickness derivative DifferentialResponse
+74b133cedbf89f2d scatter TransverseMagnetic Right 0
+9ecc536adc2c7ed1 scatter TransverseMagnetic Right 1
+0e0e40b825fea347 scatter TransverseMagnetic Right 2
+3f6453b46b02cc0f transfer TransverseElectric Left amplitudes PlaneWaveAmplitudes
+305550711e8a5c4b transfer TransverseElectric Left power PlaneWavePower
+c228680781b46393 transfer TransverseElectric Left thickness derivative DifferentialResponse
+2c851e924957e145 transfer TransverseElectric Left 0
+2ab70da4525b0e2c transfer TransverseElectric Left 1
+703098163cb0cb16 transfer TransverseElectric Left 2
+88bc8a24ef12c47d transfer TransverseElectric Right amplitudes PlaneWaveAmplitudes
+b4905f4fc1298cba transfer TransverseElectric Right power PlaneWavePower
+91b029a5a117dbb6 transfer TransverseElectric Right thickness derivative DifferentialResponse
+e1a4cd9fa9ddb55e transfer TransverseElectric Right 0
+e7148ba3f60bb26a transfer TransverseElectric Right 1
+b9be7d981d812bd5 transfer TransverseElectric Right 2
+719474b932ac8b00 transfer TransverseMagnetic Left amplitudes PlaneWaveAmplitudes
+ba3d7bb69ddea742 transfer TransverseMagnetic Left power PlaneWavePower
+7988ac01164525b9 transfer TransverseMagnetic Left thickness derivative DifferentialResponse
+50b2b3575e143a10 transfer TransverseMagnetic Left 0
+b57020d1a8d3cb93 transfer TransverseMagnetic Left 1
+483358203979411d transfer TransverseMagnetic Left 2
+25ad2e89881b7b48 transfer TransverseMagnetic Right amplitudes PlaneWaveAmplitudes
+090fcfb4a74cf634 transfer TransverseMagnetic Right power PlaneWavePower
+65570658fe4e5a11 transfer TransverseMagnetic Right thickness derivative DifferentialResponse
+4ce619a81e0f2334 transfer TransverseMagnetic Right 0
+13ae568512d5afb1 transfer TransverseMagnetic Right 1
+70c2523b8c765122 transfer TransverseMagnetic Right 2
+5d24dfd569d9520a scatter TransverseElectric 9+0.01i principal
+4d9d7b875cd5eaca scatter TransverseElectric 9+0.01i principal characteristic
+7a89cb36c47ee5cf scatter TransverseElectric 9+0.01i principal directional
+3299537095ed19ce scatter TransverseElectric 9+0.01i flipped
+91f575129581c58f scatter TransverseElectric 9+0.01i flipped characteristic
+fee3e77bb9d47229 scatter TransverseElectric 9+0.01i flipped directional
+8f7ae85a5fd1b2db scatter TransverseElectric 11.5-0.2i principal
+dc9e0adbb7e2130f scatter TransverseElectric 11.5-0.2i principal characteristic
+0b3c67c9341cef0a scatter TransverseElectric 11.5-0.2i principal directional
+0aa751280863d2ea scatter TransverseElectric 11.5-0.2i flipped
+f7263388857903cf scatter TransverseElectric 11.5-0.2i flipped characteristic
+c3ae4226292ab602 scatter TransverseElectric 11.5-0.2i flipped directional
+385f1e3496a474ce scatter TransverseElectric 3+0.5i principal
+7687e34d9e541196 scatter TransverseElectric 3+0.5i principal characteristic
+4ebd48cad4210b04 scatter TransverseElectric 3+0.5i principal directional
+24da9bb2e83a7b91 scatter TransverseElectric 3+0.5i flipped
+08a7d2d8f3d4d442 scatter TransverseElectric 3+0.5i flipped characteristic
+661244165c509a7e scatter TransverseElectric 3+0.5i flipped directional
+bfcb6d00956477e6 scatter TransverseElectric 0+4i principal
+0eea7556ce08e12f scatter TransverseElectric 0+4i principal characteristic
+7dbc0ee2e4c67e93 scatter TransverseElectric 0+4i principal directional
+b2cfb378219c64fe scatter TransverseElectric 0+4i flipped
+b7f960a69b02753c scatter TransverseElectric 0+4i flipped characteristic
+616b0519db0f236f scatter TransverseElectric 0+4i flipped directional
+79156a5cff689e80 scatter TransverseMagnetic 9+0.01i principal
+1a3b9e4558ba83c9 scatter TransverseMagnetic 9+0.01i principal characteristic
+15e0eabfb63b81fc scatter TransverseMagnetic 9+0.01i principal directional
+0420fb1d6f4f974d scatter TransverseMagnetic 9+0.01i flipped
+c2353d4c13381689 scatter TransverseMagnetic 9+0.01i flipped characteristic
+1b09cce407154c51 scatter TransverseMagnetic 9+0.01i flipped directional
+7351ffd62ba31768 scatter TransverseMagnetic 11.5-0.2i principal
+ed7512256ed17170 scatter TransverseMagnetic 11.5-0.2i principal characteristic
+237f69355c91b7a8 scatter TransverseMagnetic 11.5-0.2i principal directional
+6f1a95c62f0922fa scatter TransverseMagnetic 11.5-0.2i flipped
+558982dcd7ed1f2e scatter TransverseMagnetic 11.5-0.2i flipped characteristic
+963772f00a7b0f22 scatter TransverseMagnetic 11.5-0.2i flipped directional
+27c685392b5e990b scatter TransverseMagnetic 3+0.5i principal
+fe455d65cd7e24fe scatter TransverseMagnetic 3+0.5i principal characteristic
+adcfd59536db7e04 scatter TransverseMagnetic 3+0.5i principal directional
+dd06940f0ab7969e scatter TransverseMagnetic 3+0.5i flipped
+cc65f1948396ab16 scatter TransverseMagnetic 3+0.5i flipped characteristic
+9afaf7b45a471cc8 scatter TransverseMagnetic 3+0.5i flipped directional
+c1deab85a69823f0 scatter TransverseMagnetic 0+4i principal
+6ba948fb5b822961 scatter TransverseMagnetic 0+4i principal characteristic
+a418909b1eb6b37b scatter TransverseMagnetic 0+4i principal directional
+3d1f52fa4476f6e2 scatter TransverseMagnetic 0+4i flipped
+47ae82d9fbf626b8 scatter TransverseMagnetic 0+4i flipped characteristic
+a3bc29b0ec30a7ce scatter TransverseMagnetic 0+4i flipped directional
+5258b377c9ad05b2 transfer TransverseElectric 9+0.01i principal
+c77318d6c55cb80f transfer TransverseElectric 9+0.01i principal characteristic
+c1f370f7a1861ba9 transfer TransverseElectric 9+0.01i principal directional
+810deac23ecb2749 transfer TransverseElectric 9+0.01i flipped
+bb20f051f46413ca transfer TransverseElectric 9+0.01i flipped characteristic
+82b681d995eb41ed transfer TransverseElectric 9+0.01i flipped directional
+69628df86a50b970 transfer TransverseElectric 11.5-0.2i principal
+340543569e714e6a transfer TransverseElectric 11.5-0.2i principal characteristic
+b634921a51fcec20 transfer TransverseElectric 11.5-0.2i principal directional
+213c9762745766e1 transfer TransverseElectric 11.5-0.2i flipped
+7e2f7313d98a49e8 transfer TransverseElectric 11.5-0.2i flipped characteristic
+fa424ebccb3f7f76 transfer TransverseElectric 11.5-0.2i flipped directional
+7c459cb94a5826cc transfer TransverseElectric 3+0.5i principal
+bac5c167541fab6c transfer TransverseElectric 3+0.5i principal characteristic
+ed52ef67192480b5 transfer TransverseElectric 3+0.5i principal directional
+3d29c499f3c17e3a transfer TransverseElectric 3+0.5i flipped
+2abd4247284684ca transfer TransverseElectric 3+0.5i flipped characteristic
+992e4ad700f516e3 transfer TransverseElectric 3+0.5i flipped directional
+7ef04e0ac832e57f transfer TransverseElectric 0+4i principal
+c1be3093971204c4 transfer TransverseElectric 0+4i principal characteristic
+e0dc2cf0cd45dc32 transfer TransverseElectric 0+4i principal directional
+269db705a4c5ce8d transfer TransverseElectric 0+4i flipped
+b19c4cac6e36c4cd transfer TransverseElectric 0+4i flipped characteristic
+ad7f535ab13d53fa transfer TransverseElectric 0+4i flipped directional
+dab2dde31da0bc3b transfer TransverseMagnetic 9+0.01i principal
+fa68533677c3227a transfer TransverseMagnetic 9+0.01i principal characteristic
+7e15f92406f02a94 transfer TransverseMagnetic 9+0.01i principal directional
+cd6ba7267f64542d transfer TransverseMagnetic 9+0.01i flipped
+231fa8619e6a00e7 transfer TransverseMagnetic 9+0.01i flipped characteristic
+5a8a9cc8e8214b6d transfer TransverseMagnetic 9+0.01i flipped directional
+8d1cb02457753605 transfer TransverseMagnetic 11.5-0.2i principal
+e179d51f36233cac transfer TransverseMagnetic 11.5-0.2i principal characteristic
+efd665d831c271ce transfer TransverseMagnetic 11.5-0.2i principal directional
+1339c9d9e2bd6c33 transfer TransverseMagnetic 11.5-0.2i flipped
+289de7f2e0b3d774 transfer TransverseMagnetic 11.5-0.2i flipped characteristic
+f92cd51aa15bb4d9 transfer TransverseMagnetic 11.5-0.2i flipped directional
+70ff6e518e39446b transfer TransverseMagnetic 3+0.5i principal
+71a082319a7d5e45 transfer TransverseMagnetic 3+0.5i principal characteristic
+a2c1d188a8bc8024 transfer TransverseMagnetic 3+0.5i principal directional
+110c13471031c6c4 transfer TransverseMagnetic 3+0.5i flipped
+f29cffe1c013086d transfer TransverseMagnetic 3+0.5i flipped characteristic
+fdf8086f99550435 transfer TransverseMagnetic 3+0.5i flipped directional
+e20866ee9b2efac5 transfer TransverseMagnetic 0+4i principal
+cc2e01d8d7c33de8 transfer TransverseMagnetic 0+4i principal characteristic
+8fcdeb74c2184b2a transfer TransverseMagnetic 0+4i principal directional
+f02cade906acb82b transfer TransverseMagnetic 0+4i flipped
+a8dbda61a9ddff27 transfer TransverseMagnetic 0+4i flipped characteristic
+f4426210479526c8 transfer TransverseMagnetic 0+4i flipped directional

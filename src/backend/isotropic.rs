@@ -121,6 +121,11 @@ impl<A> IsotropicMediumQuantities<A> {
         &self.kappa
     }
 
+    /// Return `κ² = εμk₀² − k∥²`, retained before the square root.
+    pub(crate) fn kappa_squared(&self) -> &A {
+        &self.kappa_squared
+    }
+
     /// Consume the quantities and return `(epsilon, mu, kappa)`.
     pub(crate) fn into_parts(self) -> (A, A, A) {
         (self.epsilon, self.mu, self.kappa)

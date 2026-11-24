@@ -26,11 +26,13 @@
 
 mod coordinate;
 mod stack;
+mod termination;
 
 pub use coordinate::CanonicalCoordinates;
 
 pub(crate) use stack::CanonicalLayer;
 pub use stack::CanonicalStack;
+pub(crate) use termination::{CanonicalTermination, WallCondition};
 
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]

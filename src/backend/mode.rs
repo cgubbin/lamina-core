@@ -45,6 +45,7 @@ pub struct PlaneWaveModeCandidate<A> {
     state: BoundaryState<A>,
     right_outgoing: A,
     residual: A,
+    right_closed_state: Option<BoundaryState<A>>,
 }
 
 impl<A> PlaneWaveModeCandidate<A> {
@@ -53,7 +54,22 @@ impl<A> PlaneWaveModeCandidate<A> {
             state,
             right_outgoing,
             residual,
+            right_closed_state: None,
         }
+    }
+
+    /// Attach the state at the outermost right interface of a closed right
+    /// side, where the exterior holds a standing wave rather than only an
+    /// outgoing one.
+    pub(crate) fn with_right_closed_state(mut self, state: Option<BoundaryState<A>>) -> Self {
+        self.right_closed_state = state;
+        self
+    }
+
+    /// Return the state at the outermost right interface when the right side
+    /// is closed.
+    pub(crate) fn right_closed_state(&self) -> Option<&BoundaryState<A>> {
+        self.right_closed_state.as_ref()
     }
 
     pub(crate) fn state(&self) -> &BoundaryState<A> {
@@ -80,6 +96,7 @@ impl<A> PlaneWaveModeCandidate<A> {
         self.right_outgoing = self.right_outgoing.multiply(factor);
         self.residual = self.residual.multiply(factor);
         self.state = self.state.scale_by(factor);
+        self.right_closed_state = self.right_closed_state.map(|state| state.scale_by(factor));
 
         self
     }

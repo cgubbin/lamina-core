@@ -17,16 +17,20 @@ use num_traits::{Float, FromPrimitive};
 use thiserror::Error;
 
 use crate::{
+    ComplexScalar,
     algebra::{
         ArrayJet0, ArrayJet1, ArrayJet2, ArrayJetBivariate1, ArrayJetBivariate2, ScalarAlgebra,
         SeedJet, UnsupportedDerivativeSlot,
     },
     input::canonical::{CanonicalLayer, CanonicalStack},
     parameter::{DerivativeMapping, FiniteLayerIndex, Parameter},
-    stack::Stack,
+    stack::{Stack, StackSide},
 };
 
-use super::{StackContext, ValidationConfig, ValidationError};
+use super::{
+    StackContext, ValidationConfig, ValidationError,
+    termination::{TerminationValidationError, compile_terminations},
+};
 
 /// Result of validating and compiling a public stack.
 #[derive(Clone, Debug, PartialEq)]
@@ -75,6 +79,19 @@ pub enum StackCompileError<R> {
         layer: FiniteLayerIndex,
         finite_layer_count: usize,
     },
+
+    #[error("invalid termination: {0}")]
+    Termination(#[from] TerminationValidationError<R>),
+
+    #[error(
+        "the thickness derivative of layer {layer:?} is unavailable: the {side:?} termination \
+         lies on the outermost interface, so thickening the layer would move the interface \
+         past it (only the one-sided derivative that thins the layer exists)"
+    )]
+    OutwardThicknessDerivative {
+        layer: FiniteLayerIndex,
+        side: StackSide,
+    },
 }
 
 #[allow(clippy::type_complexity)]
@@ -89,7 +106,7 @@ pub(crate) fn compile_stack<M, J>(
 >
 where
     J: StackThicknessJet,
-    J::Scalar: ComplexField,
+    J::Scalar: ComplexScalar,
     <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
     J::Dimension: Dimension + Clone,
     M: Clone,
@@ -132,11 +149,18 @@ where
 
     validation.validate_thicknesses(&caller_thicknesses)?;
 
+    let outward_layer =
+        (0..stack.len()).find(|layer| thickness_mapping.slot_for_layer(*layer).is_some());
+
+    let (left_termination, right_termination) =
+        compile_terminations(stack, &canonical_layers, sampled_shape, outward_layer)?;
+
     let canonical = CanonicalStack::new(
         stack.left_exterior().clone(),
         stack.right_exterior().clone(),
         canonical_layers,
-    );
+    )
+    .with_terminations(left_termination, right_termination);
 
     let context = StackContext::new(caller_thicknesses);
 
@@ -150,7 +174,7 @@ pub fn compile_canonical_constant_stack<M, J>(
 ) -> Result<CanonicalStack<M, J>, StackCompileError<<J::Scalar as ComplexField>::RealField>>
 where
     J: StackThicknessJet,
-    J::Scalar: ComplexField,
+    J::Scalar: ComplexScalar,
     <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
     J::Dimension: Dimension + Clone,
     M: Clone,
@@ -178,11 +202,15 @@ where
 
     validation.validate_thicknesses(&caller_thicknesses)?;
 
+    let (left_termination, right_termination) =
+        compile_terminations(stack, &canonical_layers, sampled_shape, None)?;
+
     Ok(CanonicalStack::new(
         stack.left_exterior().clone(),
         stack.right_exterior().clone(),
         canonical_layers,
-    ))
+    )
+    .with_terminations(left_termination, right_termination))
 }
 
 /// Compile a canonical stack with one selected finite-layer thickness seeded
@@ -200,7 +228,7 @@ pub fn compile_canonical_thickness_stack<M, J>(
 ) -> Result<CanonicalStack<M, J>, StackCompileError<<J::Scalar as ComplexField>::RealField>>
 where
     J: StackThicknessJet,
-    J::Scalar: ComplexField,
+    J::Scalar: ComplexScalar,
     <J::Scalar as ComplexField>::RealField: Float + FromPrimitive + Copy + Debug,
     J::Dimension: Dimension + Clone,
     M: Clone,
@@ -245,6 +273,9 @@ where
     Self::Scalar: ComplexField,
 {
     fn scale_real(&self, factor: <Self::Scalar as ComplexField>::RealField) -> Self;
+
+    /// Subtract the derivatives of `rhs`, keeping this jet's value.
+    fn subtract_derivatives(&self, rhs: &Self) -> Self;
 }
 
 impl<C, D, P> StackThicknessJet for ArrayJet0<C, D, P>
@@ -255,6 +286,12 @@ where
 {
     fn scale_real(&self, factor: <C>::RealField) -> Self {
         ScalarAlgebra::scale(self, C::from_real(factor))
+    }
+
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
+
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -267,6 +304,12 @@ where
     fn scale_real(&self, factor: <C>::RealField) -> Self {
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
+
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
+
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
+    }
 }
 
 impl<C, D, P> StackThicknessJet for ArrayJet2<C, D, P>
@@ -277,6 +320,12 @@ where
 {
     fn scale_real(&self, factor: <C>::RealField) -> Self {
         ScalarAlgebra::scale(self, C::from_real(factor))
+    }
+
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
+
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -289,6 +338,12 @@ where
     fn scale_real(&self, factor: <C>::RealField) -> Self {
         ScalarAlgebra::scale(self, C::from_real(factor))
     }
+
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
+
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
+    }
 }
 
 impl<C, D, P> StackThicknessJet for ArrayJetBivariate2<C, D, P>
@@ -299,6 +354,12 @@ where
 {
     fn scale_real(&self, factor: <C>::RealField) -> Self {
         ScalarAlgebra::scale(self, C::from_real(factor))
+    }
+
+    fn subtract_derivatives(&self, rhs: &Self) -> Self {
+        let value = <Self as ScalarAlgebra>::lift_constant(ScalarAlgebra::value(rhs).clone());
+
+        ScalarAlgebra::subtract(self, &ScalarAlgebra::subtract(rhs, &value))
     }
 }
 
@@ -367,6 +428,13 @@ mod tests {
             Self {
                 value: self.value.mapv(|value| value * Complex64::new(factor, 0.0)),
                 slot: self.slot,
+            }
+        }
+
+        fn subtract_derivatives(&self, rhs: &Self) -> Self {
+            Self {
+                value: self.value.clone(),
+                slot: self.slot.or(rhs.slot),
             }
         }
     }

@@ -19,6 +19,8 @@
 
 use crate::FiniteLayerIndex;
 
+use super::termination::CanonicalTermination;
+
 /// One finite layer prepared for backend evaluation.
 ///
 /// The layer thickness is expressed in centimetres and uses the same sampled
@@ -75,6 +77,8 @@ pub struct CanonicalStack<M, J> {
     left_exterior: M,
     right_exterior: M,
     layers_left_to_right: Vec<CanonicalLayer<M, J>>,
+    left_termination: CanonicalTermination<J>,
+    right_termination: CanonicalTermination<J>,
 }
 
 impl<M, J> CanonicalStack<M, J> {
@@ -88,7 +92,35 @@ impl<M, J> CanonicalStack<M, J> {
             left_exterior,
             right_exterior,
             layers_left_to_right,
+            left_termination: CanonicalTermination::Open,
+            right_termination: CanonicalTermination::Open,
         }
+    }
+
+    /// Attach validated canonical terminations.
+    pub(crate) fn with_terminations(
+        mut self,
+        left: CanonicalTermination<J>,
+        right: CanonicalTermination<J>,
+    ) -> Self {
+        self.left_termination = left;
+        self.right_termination = right;
+        self
+    }
+
+    /// Return the left termination.
+    pub(crate) fn left_termination(&self) -> &CanonicalTermination<J> {
+        &self.left_termination
+    }
+
+    /// Return the right termination.
+    pub(crate) fn right_termination(&self) -> &CanonicalTermination<J> {
+        &self.right_termination
+    }
+
+    /// Return `true` when both sides are open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.left_termination.is_open() && self.right_termination.is_open()
     }
 
     /// Return the material in the left exterior half-space.

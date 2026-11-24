@@ -31,21 +31,29 @@ mod isotropic;
 mod mode;
 pub(crate) mod scatter2;
 mod solution;
+mod termination;
 pub(crate) mod transfer2;
 mod workspace;
 
 pub use exterior::ExteriorWavevectors;
+#[cfg(test)]
 pub(crate) use exterior::evaluate_exterior_wavevectors;
+pub(crate) use exterior::evaluate_stack_exterior_wavevectors;
 pub(crate) use isotropic::{IsotropicLayerQuantities, IsotropicMediumQuantities};
 pub(crate) use mode::{
     ModalSolutionSource, ModeReconstructionError, PlaneWaveModeCandidate,
     ReconstructExteriorModeWaves, ReconstructLayerModeWaves,
 };
 pub use scatter2::Scatter2;
+pub use scatter2::Scatter2Error;
 pub(crate) use solution::{
     ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolution, PlaneWaveSolutionSource,
     PlaneWaveSolutionView,
 };
+#[doc(hidden)]
+pub use termination::ClosedSide;
+pub use termination::TerminationError;
+pub(crate) use termination::{exterior_parts, right_exterior_mode_waves, undefined_amplitudes};
 pub use transfer2::{Transfer2, Transfer2Error};
 pub(crate) use workspace::{RetainedIsotropicLayers, SolutionWorkspace};
 

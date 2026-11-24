@@ -19,6 +19,7 @@ use crate::{
     backend::{
         ExteriorContextProvider, PlaneWaveEntries, PlaneWaveModeCandidate,
         scatter2::{Scatter2ExteriorContext, entries::transfer_state_slope},
+        undefined_amplitudes,
     },
     observable::{BoundaryState, ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
@@ -175,15 +176,19 @@ where
 
 impl<A> Scatter2ProjectiveEntries<A>
 where
-    A: ScalarAlgebra,
+    A: ScalarAlgebra + Clone,
     A::Scalar: ComplexScalar + One,
     A::Dimension: Dimension,
 {
     pub(crate) fn right_gauged_mode_candidate(
         &self,
-        left_admittance: &A,
+        context: &Scatter2ExteriorContext<A>,
     ) -> PlaneWaveModeCandidate<A> {
-        let slope = transfer_state_slope(left_admittance);
+        let slope = transfer_state_slope(context.left_admittance());
+
+        if context.has_closure() {
+            return self.closed_mode_candidate(context, &slope);
+        }
 
         /*
          * Projectively scaled left waves:
@@ -206,6 +211,114 @@ where
             right_outgoing,
             residual,
         )
+    }
+
+    /// The left port's waves `(forward, backward)`, projectively scaled by
+    /// the outgoing right-port amplitude `n21`: `(d, n11)`, or, with a closed
+    /// right side that reflects the outgoing wave back with its load `ρ̂_R`,
+    /// `(d − ρ̂_R n22, n11 + ρ̂_R h)`.
+    pub(crate) fn left_port_waves(&self, right_load: Option<&A>) -> (A, A) {
+        match right_load {
+            Some(load) => self.loaded_port(load, self.n11(), self.n22()),
+            None => (self.denominator().clone(), self.n11().clone()),
+        }
+    }
+
+    /// `(d − ρ̂ far, near + ρ̂ h)`: the projective waves at one port when the
+    /// other port carries the load `ρ̂`, with `near` and `far` the reflection
+    /// numerators of the two ports.
+    fn loaded_port(&self, load: &A, near: &A, far: &A) -> (A, A) {
+        (
+            self.denominator().subtract(&load.multiply(far)),
+            near.add(&load.multiply(self.complement())),
+        )
+    }
+
+    /// The left waves and the residual of a stack with a closed side. A
+    /// closed left side requires `forward = ρ̂_L backward`.
+    fn closed_left_waves(&self, context: &Scatter2ExteriorContext<A>, slope: &A) -> (A, A, A) {
+        let right_load = context.right_closure().map(|closure| closure.load());
+
+        let (forward, backward) = self.left_port_waves(right_load.as_ref());
+
+        let residual = match context.left_closure() {
+            Some(closure) => closure
+                .coefficient()
+                .multiply(&forward.subtract(&closure.load().multiply(&backward))),
+            None => {
+                let two = A::Scalar::one() + A::Scalar::one();
+                slope.multiply(&forward).scale(two)
+            }
+        };
+
+        (forward, backward, residual)
+    }
+
+    /// The candidate of a stack with a closed side, gauged by `n21`.
+    fn closed_mode_candidate(
+        &self,
+        context: &Scatter2ExteriorContext<A>,
+        slope: &A,
+    ) -> PlaneWaveModeCandidate<A> {
+        let (forward, backward, residual) = self.closed_left_waves(context, slope);
+
+        let field = forward.add(&backward);
+
+        let secondary = backward.subtract(&forward).multiply(slope);
+
+        let right_outgoing = self.n21().clone();
+
+        let right_closed_state = context.right_closure().map(|closure| {
+            let load = closure.load();
+            let right_slope = transfer_state_slope(context.right_admittance());
+            let one = load.one_like();
+
+            BoundaryState::new(
+                right_outgoing.multiply(&one.add(&load)),
+                right_slope
+                    .multiply(&right_outgoing)
+                    .multiply(&load.subtract(&one)),
+            )
+        });
+
+        PlaneWaveModeCandidate::new(
+            BoundaryState::new(field, secondary),
+            right_outgoing,
+            residual,
+        )
+        .with_right_closed_state(right_closed_state)
+    }
+
+    /// The characteristic of a stack with a closed side, in the transfer
+    /// gauge `D = ℓ_L · M · r_R`:
+    ///
+    /// ```text
+    /// D̂ = c_L c_R / n21 · exp(Σ e) · [d − ρ̂_L n11 − ρ̂_R n22 − ρ̂_L ρ̂_R h]
+    /// ```
+    ///
+    /// where an open left side has `c_L = 2ξ_L` and an open right side
+    /// `c_R = 1`, without load or exponent, and each closed side contributes its
+    /// coefficient, its load `ρ̂ = ρ exp(2iκ̃ℓ)` and its exponent `e = −iκ̃ℓ`.
+    /// `c_L` times the bracket is the candidate's residual.
+    fn closed_determinant(&self, context: &Scatter2ExteriorContext<A>) -> A {
+        let slope = transfer_state_slope(context.left_admittance());
+
+        let (_, _, residual) = self.closed_left_waves(context, &slope);
+
+        let mut value = residual.divide(self.n21());
+
+        if let Some(closure) = context.right_closure() {
+            value = value.multiply(&closure.coefficient());
+        }
+
+        let exponent = [context.left_closure(), context.right_closure()]
+            .into_iter()
+            .flatten()
+            .map(|closure| closure.scale_exponent())
+            .reduce(|left, right| left.add(&right))
+            .expect("a closed side");
+
+        value.multiply(&exponent.exp())
     }
 }
 
@@ -241,7 +354,9 @@ where
 
 impl<J> ProjectAmplitudes for Scatter2ProjectiveEntries<J>
 where
-    J: ScalarAlgebra,
+    J: ScalarAlgebra + Clone,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
 {
     type Amplitudes = PlaneWaveAmplitudes<J>;
 
@@ -250,6 +365,10 @@ where
         exterior: &Self::ExteriorContext,
         incident_side: IncidentSide,
     ) -> Self::Amplitudes {
+        if exterior.has_closure() {
+            return self.closed_amplitudes(exterior, incident_side);
+        }
+
         self.entries().project_amplitudes(exterior, incident_side)
     }
 }
@@ -257,6 +376,8 @@ where
 impl<J> ProjectPower for Scatter2ProjectiveEntries<J>
 where
     J: Clone + RealScalarAlgebra,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
     J::RealJet: ScalarAlgebra,
     <J::RealJet as Jet>::Scalar: One,
 {
@@ -267,7 +388,63 @@ where
         exterior: &Self::ExteriorContext,
         incident_side: IncidentSide,
     ) -> Self::Power {
+        if exterior.has_closure() {
+            let (reflection, transmission) =
+                self.closed_amplitudes(exterior, incident_side).into_parts();
+
+            let admittance = match incident_side {
+                IncidentSide::Left => exterior.left_admittance(),
+                IncidentSide::Right => exterior.right_admittance(),
+            };
+
+            return PlaneWavePower::from_amplitudes_and_admittance(
+                &reflection,
+                &transmission,
+                admittance,
+                admittance,
+            );
+        }
+
         self.entries().project_power(exterior, incident_side)
+    }
+}
+
+impl<J> Scatter2ProjectiveEntries<J>
+where
+    J: ScalarAlgebra + Clone,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+{
+    /// Plane-wave amplitudes of a stack with a closed side: the closed side
+    /// is a load `ρ̂` at its outermost interface, so nothing is transmitted and
+    /// the reflection from the open side is `(n11 + ρ̂_R h)/(d − ρ̂_R n22)`
+    /// (left incidence) or `(n22 + ρ̂_L h)/(d − ρ̂_L n11)` (right incidence).
+    /// Incidence from a closed side gives non-finite amplitudes; the
+    /// evaluators refuse it before projecting.
+    fn closed_amplitudes(
+        &self,
+        exterior: &Scatter2ExteriorContext<J>,
+        incident_side: IncidentSide,
+    ) -> PlaneWaveAmplitudes<J> {
+        let zero = self.denominator().zero_like();
+
+        match (
+            incident_side,
+            exterior.left_closure(),
+            exterior.right_closure(),
+        ) {
+            (IncidentSide::Left, None, Some(right)) => {
+                let (forward, backward) = self.left_port_waves(Some(&right.load()));
+
+                PlaneWaveAmplitudes::new(backward.divide(&forward), zero)
+            }
+            (IncidentSide::Right, Some(left), None) => {
+                let (forward, backward) = self.loaded_port(&left.load(), self.n22(), self.n11());
+
+                PlaneWaveAmplitudes::new(backward.divide(&forward), zero)
+            }
+            _ => undefined_amplitudes(self.sample_source()),
+        }
     }
 }
 
@@ -276,13 +453,17 @@ where
 /// by `denominator = 0`.
 impl<J> ProjectPlaneWaveModeDeterminant for Scatter2ProjectiveEntries<J>
 where
-    J: ScalarAlgebra,
+    J: ScalarAlgebra + Clone,
     J::Scalar: ComplexScalar + One,
     J::Dimension: Dimension,
 {
     type Determinant = PlaneWaveDeterminant<J>;
 
     fn project_determinant(&self, exterior: &Self::ExteriorContext) -> Self::Determinant {
+        if exterior.has_closure() {
+            return PlaneWaveDeterminant::new(self.closed_determinant(exterior));
+        }
+
         let left_slope = transfer_state_slope(exterior.left_admittance());
 
         let two = J::Scalar::one() + J::Scalar::one();
@@ -530,7 +711,7 @@ mod tests {
 
         let context = make_context();
 
-        let candidate = data.right_gauged_mode_candidate(context.left_admittance());
+        let candidate = data.right_gauged_mode_candidate(&context);
 
         let slope = transfer_state_slope(context.left_admittance());
 
@@ -557,7 +738,7 @@ mod tests {
 
         let context = make_context();
 
-        let candidate = data.right_gauged_mode_candidate(context.left_admittance());
+        let candidate = data.right_gauged_mode_candidate(&context);
 
         let slope = transfer_state_slope(context.left_admittance());
 
@@ -574,7 +755,7 @@ mod tests {
 
         let context = make_context();
 
-        let candidate = data.right_gauged_mode_candidate(context.left_admittance());
+        let candidate = data.right_gauged_mode_candidate(&context);
 
         let determinant = data.project_determinant(&context);
 
@@ -597,9 +778,9 @@ mod tests {
 
         let context = make_context();
 
-        let base = data.right_gauged_mode_candidate(context.left_admittance());
+        let base = data.right_gauged_mode_candidate(&context);
 
-        let scaled = scaled.right_gauged_mode_candidate(context.left_admittance());
+        let scaled = scaled.right_gauged_mode_candidate(&context);
 
         assert_state_scaled(scaled.state(), base.state(), scale);
 
@@ -616,7 +797,7 @@ mod tests {
 
         let context = make_context();
 
-        let candidate = data.right_gauged_mode_candidate(context.left_admittance());
+        let candidate = data.right_gauged_mode_candidate(&context);
 
         assert!(scalar(candidate.state().field()).re.is_finite(),);
 
@@ -639,7 +820,7 @@ mod tests {
 
         let context = make_context();
 
-        let regularized = data.right_gauged_mode_candidate(context.left_admittance());
+        let regularized = data.right_gauged_mode_candidate(&context);
 
         let entries = data.entries();
 

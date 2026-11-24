@@ -100,6 +100,8 @@ pub enum PoleNormalizationError {
     Unavailable {
         evidence: Box<PoleNormalizationData>,
     },
+    #[error("pole normalization with outgoing exterior terms needs a stack open on both sides")]
+    ClosedStack,
 }
 pub trait ModalNormalizationBackend: ModalFieldBackend {
     fn pole_normalization(
@@ -152,6 +154,9 @@ macro_rules! implement {
                 input: PoleNormalizationInput,
                 settings: PoleNormalizationSettings,
             ) -> Result<PoleNormalizationData, PoleNormalizationError> {
+                if !stack.is_open() {
+                    return Err(PoleNormalizationError::ClosedStack);
+                }
                 let cfg = settings;
                 if !finite(cfg.amplitude)
                     || cfg.amplitude.norm() == 0.
@@ -182,7 +187,7 @@ macro_rules! implement {
                         stack,
                         input.k0,
                         input.beta,
-                        input.kappa,
+                        input.kappa.map(Some),
                         input.polarisation,
                         &sampling,
                         cfg.amplitude,

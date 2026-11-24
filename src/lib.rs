@@ -220,6 +220,36 @@
 //! For dispersive materials, the normalization includes the corresponding
 //! spectral constitutive derivatives.
 //!
+//! ## Closing a stack with walls
+//!
+//! Each side of a [`Stack`] carries a [`Termination`]. By default it is open:
+//! the exterior medium is semi-infinite and the characteristic imposes the
+//! outgoing radiation condition there. A side may instead be closed by a
+//! perfect electric or perfect magnetic [`Wall`] at an absolute position in
+//! the stack frame, where `z = 0` is the first interface and `z = L`, the
+//! left-to-right sum of the layer thicknesses, the last. A left wall lies at
+//! or below `z = 0`, a right wall at or above `z = L`; the exterior medium
+//! fills the gap.
+//!
+//! A PEC wall makes the tangential electric field vanish and a PMC wall the
+//! tangential magnetic field: `E_y = 0` (TE) or `E_x = 0` (TM) at a PEC wall,
+//! `H_x = 0` (TE) or `H_y = 0` (TM) at a PMC wall. With the transfer matrix `M`
+//! between the two boundary planes and `ξ = −iY`, the characteristic is
+//! `D = ℓ_L · M · r_R`, where an open side contributes `[ξ_L, −1]` or
+//! `[1, −ξ_R]ᵀ` as before, a Dirichlet wall `[−ik₀, 0]` or `[0, ik₀]ᵀ` and a
+//! Neumann wall `[0, −1]` or `[1, 0]ᵀ`, carried through the gap. A wall side
+//! needs no exterior wavevector, so [`ExteriorWavevectors`] holds one for open
+//! sides only, and a stack closed on both sides has a characteristic that is
+//! single-valued, entire and even in `k∥`: its spectrum is discrete.
+//!
+//! Modal fields are reconstructed up to the walls, as standing waves in the
+//! gaps; samples beyond a wall are refused. A plane wave may be incident only
+//! from an open side: a stack closed on the other side transmits nothing.
+//! Derivatives with respect to `k₀`, `k∥`, layer thicknesses and materials keep
+//! the walls fixed in the stack frame, so thickening a layer narrows the right
+//! gap; with the right wall on the last interface only the derivative that
+//! thins the layer exists, and the other is reported as unavailable.
+//!
 //! ## Canonical coordinates
 //!
 //! Backend calculations use canonical angular-wavenumber coordinates:
@@ -360,8 +390,9 @@ pub use domain::{ComplexPlane, RealAxis};
 pub use input::{
     CanonicalCoordinates, CanonicalStack, CoordinateGrid, CoordinateInput, CoordinateReference,
     CoordinateSamples, Coordinates, InPlaneCoordinate, IncidentSide, Polarisation,
-    ProjectionConstraintError, StackCompileError, StackThicknessJet, ValidationConfig,
-    compile_canonical_constant_stack, compile_canonical_thickness_stack,
+    ProjectionConstraintError, StackCompileError, StackThicknessJet, TerminationField,
+    TerminationValidationError, ValidationConfig, compile_canonical_constant_stack,
+    compile_canonical_thickness_stack,
 };
 
 pub use lamina_units::SpectralCoordinate;
@@ -397,7 +428,7 @@ pub use scalar::ComplexScalar;
 
 pub use stack::{
     AnalyticalMaterialStack, DifferentiableMaterialStack, Layer, MaterialStack,
-    MeromorphicMaterialStack, Stack,
+    MeromorphicMaterialStack, Stack, StackSide, Termination, Wall, WallKind,
 };
 
 pub mod units {

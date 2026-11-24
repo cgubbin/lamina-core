@@ -2,9 +2,9 @@ use crate::{
     ComplexScalar, Polarisation,
     algebra::ScalarAlgebra,
     backend::{
-        ExteriorWavevectors, RunMode,
-        isotropic::{IsotropicLayerQuantities, IsotropicMediumQuantities},
-        scatter2::Scatter2ExteriorContext,
+        ExteriorContextProvider, ExteriorWavevectors, RunMode,
+        isotropic::IsotropicLayerQuantities,
+        scatter2::{Scatter2Error, Scatter2ExteriorContext},
     },
     input::{CanonicalCoordinates, CanonicalStack},
     material::{ConstitutiveEvaluator, ConstitutiveLift},
@@ -63,7 +63,7 @@ impl Scatter2 {
         exterior: &ExteriorWavevectors<J>,
         polarisation: Polarisation,
         request: RunMode,
-    ) -> Scatter2Workspace<J>
+    ) -> Result<Scatter2Workspace<J>, Scatter2Error>
     where
         J: ScalarAlgebra + ConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,
@@ -71,13 +71,11 @@ impl Scatter2 {
         J::Dimension: Dimension,
         E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let context = Scatter2ExteriorContext::new(
-            coordinates,
-            stack.left_exterior(),
-            stack.right_exterior(),
-            exterior,
-            polarisation,
-        );
+        let context =
+            Scatter2ExteriorContext::for_stack::<E, M>(coordinates, stack, exterior, polarisation)?;
+
+        let mut current_admittance = context.left_admittance().clone();
+        let right_admittance = context.right_admittance().clone();
 
         let mut workspace = Scatter2Workspace::new(
             coordinates.vacuum_angular_wavenumber().value(),
@@ -85,10 +83,6 @@ impl Scatter2 {
             request,
             stack.layer_count(),
         );
-
-        let mut current_admittance =
-            IsotropicMediumQuantities::evaluate::<E, M>(stack.left_exterior(), coordinates)
-                .admittance_with_kappa(exterior.left(), polarisation);
 
         for layer in stack.layers() {
             let quantities = IsotropicLayerQuantities::evaluate::<E, M>(
@@ -118,15 +112,11 @@ impl Scatter2 {
             current_admittance = layer_admittance;
         }
 
-        let right_admittance =
-            IsotropicMediumQuantities::evaluate::<E, M>(stack.right_exterior(), coordinates)
-                .admittance_with_kappa(exterior.right(), polarisation);
-
         let final_interface = interface_projection(&current_admittance, &right_admittance);
 
         workspace.append(final_interface);
 
-        workspace
+        Ok(workspace)
     }
 }
 
@@ -1093,13 +1083,15 @@ mod accumulate_tests {
         let coordinates = test_coordinates();
         let stack = canonical_empty_stack();
 
-        let workspace = backend.accumulate::<_, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior_wavevectors(&coordinates, &stack),
-            Polarisation::TransverseElectric,
-            RunMode::ResponseOnly,
-        );
+        let workspace = backend
+            .accumulate::<_, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior_wavevectors(&coordinates, &stack),
+                Polarisation::TransverseElectric,
+                RunMode::ResponseOnly,
+            )
+            .unwrap();
 
         let (_, retained) = workspace.into_parts();
 
@@ -1113,13 +1105,15 @@ mod accumulate_tests {
         let coordinates = test_coordinates();
         let stack = canonical_empty_stack();
 
-        let workspace = backend.accumulate::<_, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior_wavevectors(&coordinates, &stack),
-            Polarisation::TransverseElectric,
-            RunMode::InternalFields,
-        );
+        let workspace = backend
+            .accumulate::<_, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior_wavevectors(&coordinates, &stack),
+                Polarisation::TransverseElectric,
+                RunMode::InternalFields,
+            )
+            .unwrap();
 
         let (_, retained) = workspace.into_parts();
 
@@ -1136,13 +1130,15 @@ mod accumulate_tests {
         let coordinates = test_coordinates();
         let stack = canonical_single_layer_stack();
 
-        let workspace = backend.accumulate::<_, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior_wavevectors(&coordinates, &stack),
-            Polarisation::TransverseElectric,
-            RunMode::InternalFields,
-        );
+        let workspace = backend
+            .accumulate::<_, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior_wavevectors(&coordinates, &stack),
+                Polarisation::TransverseElectric,
+                RunMode::InternalFields,
+            )
+            .unwrap();
 
         let (_, retained) = workspace.into_parts();
 
@@ -1168,13 +1164,15 @@ mod accumulate_tests {
         let coordinates = test_coordinates();
         let stack = canonical_two_layer_stack();
 
-        let workspace = backend.accumulate::<_, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior_wavevectors(&coordinates, &stack),
-            Polarisation::TransverseElectric,
-            RunMode::InternalFields,
-        );
+        let workspace = backend
+            .accumulate::<_, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior_wavevectors(&coordinates, &stack),
+                Polarisation::TransverseElectric,
+                RunMode::InternalFields,
+            )
+            .unwrap();
 
         let (_, retained) = workspace.into_parts();
 
@@ -1200,13 +1198,15 @@ mod accumulate_tests {
             let coordinates = test_coordinates();
             let stack = canonical_stack_with_layers(layer_count);
 
-            let workspace = backend.accumulate::<_, RealAxis, _>(
-                &coordinates,
-                &stack,
-                &exterior_wavevectors(&coordinates, &stack),
-                Polarisation::TransverseElectric,
-                RunMode::InternalFields,
-            );
+            let workspace = backend
+                .accumulate::<_, RealAxis, _>(
+                    &coordinates,
+                    &stack,
+                    &exterior_wavevectors(&coordinates, &stack),
+                    Polarisation::TransverseElectric,
+                    RunMode::InternalFields,
+                )
+                .unwrap();
 
             let (_, retained) = workspace.into_parts();
 
@@ -1251,13 +1251,15 @@ mod accumulate_tests {
             right_quantities.kappa().clone(),
         );
 
-        let workspace = backend.accumulate::<_, RealAxis, _>(
-            &coordinates,
-            &stack,
-            &exterior,
-            Polarisation::TransverseElectric,
-            RunMode::ResponseOnly,
-        );
+        let workspace = backend
+            .accumulate::<_, RealAxis, _>(
+                &coordinates,
+                &stack,
+                &exterior,
+                Polarisation::TransverseElectric,
+                RunMode::ResponseOnly,
+            )
+            .unwrap();
 
         let solution = workspace.into_solution();
 

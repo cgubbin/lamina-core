@@ -26,6 +26,7 @@ use crate::{
         PlaneWaveModeCandidate, PlaneWaveSolution, PlaneWaveSolutionSource,
         ReconstructExteriorModeWaves, ReconstructLayerModeWaves, RunMode, SolutionWorkspace,
         isotropic::IsotropicLayerQuantities,
+        right_exterior_mode_waves,
         solution::PlaneWaveSolutionView,
         transfer2::{entries::right_gauged_mode_candidate, state::right_outgoing_transfer_state},
         workspace::RetainedIsotropicLayers,
@@ -392,6 +393,10 @@ where
 {
     type Algebra = A;
 
+    fn has_closed_side(&self) -> bool {
+        self.solution().context().has_closure()
+    }
+
     fn reconstruct_layer_boundary_waves(
         &self,
         incident_side: IncidentSide,
@@ -473,7 +478,7 @@ impl<A> Transfer2Entries<A> {
 
 impl<A> ModalSolutionSource for Transfer2Workspace<A>
 where
-    A: ScalarAlgebra,
+    A: ScalarAlgebra + Clone,
     A::Scalar: ComplexScalar + One,
     A::Dimension: Dimension,
 {
@@ -486,8 +491,7 @@ where
 
         Ok(right_gauged_mode_candidate(
             solution.entries(),
-            solution.context().left_admittance(),
-            solution.context().right_admittance(),
+            solution.context(),
         ))
     }
 }
@@ -531,9 +535,7 @@ where
             self.solution().context().left_admittance(),
         );
 
-        let zero = seed.right_outgoing().zero_like();
-
-        let right = BidirectionalWaves::new(seed.right_outgoing().clone(), zero);
+        let right = right_exterior_mode_waves(seed, self.solution().context().right_admittance());
 
         Ok(ExteriorBoundaryWaves::new(left, right))
     }
@@ -555,10 +557,13 @@ where
             .retained()
             .ok_or(ModeReconstructionError::ModeDataNotRetained)?;
 
-        let right_state = right_outgoing_transfer_state(
-            candidate.right_outgoing(),
-            self.solution().context().right_admittance(),
-        );
+        let right_state = match candidate.right_closed_state() {
+            Some(state) => TransferState::new(state.field().clone(), state.secondary().clone()),
+            None => right_outgoing_transfer_state(
+                candidate.right_outgoing(),
+                self.solution().context().right_admittance(),
+            ),
+        };
 
         Ok(retained.reconstruct_layer_boundary_waves(right_state))
     }
