@@ -323,13 +323,26 @@ observable being computed.
 
 ### Scope
 
-`lamina-core` supplies the electromagnetic primitives needed to analyse
-planar systems. Higher-level tasks such as mode searches, branch tracking,
-continuation, optimization, plotting, and experiment-facing parameterization
-can be implemented by other crates without being coupled to a particular
-backend representation.
+`lamina-core` evaluates stacks of homogeneous planar layers by transfer and
+scattering matrices, on the real axis and in the complex plane. It provides
+plane-wave responses, fields, characteristic determinants and outgoing-mode
+reconstruction, the constitutive traits that material models implement, and
+canonical coordinates, with derivatives of each with respect to spectral,
+in-plane, thickness and material parameters. The numerical backends
+implement isotropic 2×2 transfer and scattering formulations.
 
-The current numerical backends implement isotropic 2×2 transfer and
-scattering formulations.
+## License
 
-License: MIT OR Apache-2.0
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.

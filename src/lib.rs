@@ -323,14 +323,13 @@
 //!
 //! ## Scope
 //!
-//! `lamina-core` supplies the electromagnetic primitives needed to analyse
-//! planar systems. Higher-level tasks such as mode searches, branch tracking,
-//! continuation, optimization, plotting, and experiment-facing parameterization
-//! can be implemented by other crates without being coupled to a particular
-//! backend representation.
-//!
-//! The current numerical backends implement isotropic 2×2 transfer and
-//! scattering formulations.
+//! `lamina-core` evaluates stacks of homogeneous planar layers by transfer and
+//! scattering matrices, on the real axis and in the complex plane. It provides
+//! plane-wave responses, fields, characteristic determinants and outgoing-mode
+//! reconstruction, the constitutive traits that material models implement, and
+//! canonical coordinates, with derivatives of each with respect to spectral,
+//! in-plane, thickness and material parameters. The numerical backends
+//! implement isotropic 2×2 transfer and scattering formulations.
 
 pub(crate) mod algebra;
 pub mod backend;
