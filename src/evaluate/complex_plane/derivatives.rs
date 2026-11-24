@@ -1,6 +1,7 @@
 //! Narrow supported-backend characteristic evaluation for local derivatives.
 use super::{
-    ComplexPlaneEvaluator, ComplexPlaneState, OwnedModeFields, mode::reconstruct_mode_fields,
+    ComplexPlaneEvaluator, ComplexPlaneState, OwnedModeFields,
+    mode::{ExteriorWaves, reconstruct_mode_fields},
 };
 use crate::{
     AnalyticalMaterialHandle, AnalyticalMaterialStack, CanonicalCoordinates,
@@ -217,9 +218,10 @@ macro_rules! implementation {
                 let resolved = sampling
                     .resolve(direction.stack)
                     .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?;
-                let (electric, magnetic) = reconstruct_mode_fields(&state, &seed, &resolved)
-                    .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?
-                    .into_parts();
+                let (electric, magnetic) =
+                    reconstruct_mode_fields(&state, &seed, &resolved, ExteriorWaves::Outgoing)
+                        .map_err(|e| Arc::new(e) as Arc<dyn Error + Send + Sync>)?
+                        .into_parts();
                 let primal =
                     ElectromagneticFields::new(electric.value().clone(), magnetic.value().clone());
                 let tangent =
@@ -334,7 +336,10 @@ mod tests {
                 {
                     for ((plus, minus), tangent) in plus.iter().zip(minus).zip(tangent) {
                         let fd = (*plus - *minus) / (2.0 * h);
-                        assert!((fd - *tangent).norm() < 1e-8, "{polarisation:?} {rates:?} fd={fd}, jet={tangent}");
+                        assert!(
+                            (fd - *tangent).norm() < 1e-8,
+                            "{polarisation:?} {rates:?} fd={fd}, jet={tangent}"
+                        );
                     }
                 }
             }

@@ -159,7 +159,12 @@ where
             + ReconstructExteriorModeWaves<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
-        reconstruct_mode_fields(self.state, self.solution(), sampling)
+        reconstruct_mode_fields(
+            self.state,
+            self.solution(),
+            sampling,
+            ExteriorWaves::Retained,
+        )
     }
 
     #[allow(clippy::type_complexity)]
@@ -220,10 +225,22 @@ where
 }
 
 #[allow(clippy::type_complexity)]
+/// Which exterior waves a mode-field reconstruction keeps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ExteriorWaves {
+    /// Both directional waves, as the boundary solution gives them. Valid at
+    /// any coordinates, including away from a root.
+    Retained,
+    /// Only the outgoing wave in each exterior. For accepted modes, so that
+    /// exterior samples follow the outgoing wave arbitrarily far out.
+    Outgoing,
+}
+
 pub(super) fn reconstruct_mode_fields<'a, J, M, W>(
     state: &ComplexPlaneState<'a, J, M, W>,
     solution: &PlaneWaveModeCandidate<J>,
     sampling: &ResolvedFieldSampling<<J::Scalar as ComplexField>::RealField>,
+    exterior: ExteriorWaves,
 ) -> Result<
     ElectromagneticFields<<<J as JetStack>::Stacked as CartesianScalarAlgebra>::Vector>,
     FieldReconstructionError<<J::Scalar as ComplexField>::RealField>,
@@ -242,6 +259,10 @@ where
     let wave_context = WaveSamplingContext::new(state.workspace());
 
     let boundary_waves = wave_context.modal_boundary_waves(solution)?;
+    let boundary_waves = match exterior {
+        ExteriorWaves::Retained => boundary_waves,
+        ExteriorWaves::Outgoing => boundary_waves.outgoing_exteriors(),
+    };
 
     let context = FieldSamplingContext::new(state.workspace());
 
