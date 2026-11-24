@@ -30,13 +30,13 @@ impl<M, F> StackBuilder<M, F> {
         }
     }
 
-    /// Close the left side with a wall (open by default).
+    /// Close the left side with a wall or PML (open by default).
     pub fn left_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
         self.left_termination = termination.into();
         self
     }
 
-    /// Close the right side with a wall (open by default).
+    /// Close the right side with a wall or PML (open by default).
     pub fn right_termination(mut self, termination: impl Into<Termination<F>>) -> Self {
         self.right_termination = termination.into();
         self

@@ -428,7 +428,7 @@ pub use scalar::ComplexScalar;
 
 pub use stack::{
     AnalyticalMaterialStack, DifferentiableMaterialStack, Layer, MaterialStack,
-    MeromorphicMaterialStack, Stack, StackSide, Termination, Wall, WallKind,
+    MeromorphicMaterialStack, Pml, Stack, StackSide, StretchProfile, Termination, Wall, WallKind,
 };
 
 pub mod units {

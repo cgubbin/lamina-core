@@ -4,7 +4,7 @@ mod termination;
 
 pub use builder::StackBuilder;
 pub use layer::Layer;
-pub use termination::{StackSide, Termination, Wall, WallKind};
+pub use termination::{Pml, StackSide, StretchProfile, Termination, Wall, WallKind};
 
 use nalgebra::ComplexField;
 use num_traits::Float;
@@ -40,8 +40,8 @@ pub type AnalyticalMaterialStack<C> =
 ///
 /// Each side carries a [`Termination`]: by default the exterior medium is
 /// semi-infinite ([`Termination::Open`]); a side may instead be closed by a
-/// [`Wall`] at an absolute position in the stack frame, with the exterior
-/// medium filling the gap.
+/// [`Wall`] or a wall-backed [`Pml`] at an absolute position in the stack
+/// frame, with the exterior medium filling the gap.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stack<M, F> {
     left_exterior: M,
