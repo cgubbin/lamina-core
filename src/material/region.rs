@@ -173,6 +173,29 @@ impl<J> ConstitutiveTensor<J> {
         }
     }
 
+    /// All nine entries, row-major, with the structural zeros of an
+    /// isotropic or diagonal tensor.
+    pub(crate) fn full(&self) -> [[J; 3]; 3]
+    where
+        J: ScalarAlgebra,
+    {
+        match self {
+            Self::Full(full) => full.clone(),
+            Self::Isotropic(value) => {
+                Self::Diagonal([value.clone(), value.clone(), value.clone()]).full()
+            }
+            Self::Diagonal(diagonal) => std::array::from_fn(|row| {
+                std::array::from_fn(|column| {
+                    if row == column {
+                        diagonal[row].clone()
+                    } else {
+                        diagonal[row].zero_like()
+                    }
+                })
+            }),
+        }
+    }
+
     /// Every stored entry.
     pub(crate) fn entries(&self) -> impl Iterator<Item = &J> {
         let entries: Vec<&J> = match self {
@@ -290,6 +313,11 @@ pub trait TensorConstitutiveLift<E, M>: ScalarAlgebra {
         material: &M,
         vacuum_angular_wavenumber: &Self,
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError>;
+
+    /// `true` when the material's class guarantees that its stack-frame ε
+    /// and μ have no `xy`, `yx`, `yz` or `zy` component, so that TE and TM
+    /// decouple in it.
+    fn is_separable(material: &M) -> bool;
 }
 
 /// `[∂ε/∂k0, ∂μ/∂k0]` of a region in the stack frame and its class, lifted
@@ -334,6 +362,10 @@ where
             validate(region, tensor)?;
         }
         Ok(tensors)
+    }
+
+    fn is_separable(_: &M) -> bool {
+        true
     }
 }
 
@@ -395,6 +427,10 @@ where
             validate(region, tensor)?;
         }
         Ok(tensors)
+    }
+
+    fn is_separable(material: &Region<S, T>) -> bool {
+        material.is_separable()
     }
 }
 

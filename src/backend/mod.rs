@@ -12,7 +12,10 @@
 //! - exterior-wavevector and per-polarisation medium quantities;
 //! - 2×2 transfer- and scattering-matrix backends for regions whose ε and μ
 //!   are isotropic or diagonal in the stack frame;
-//! - mode-reconstruction support shared by those backends.
+//! - mode-reconstruction support shared by those backends;
+//! - 4×4 (Berreman) transfer- and scattering-matrix backends for any
+//!   region, solving the coupled TE/TM channel, or TE and TM of a separable
+//!   stack.
 //!
 //! Callers normally select a concrete backend such as [`Scatter2`] or
 //! [`Transfer2`] through the evaluator API rather than invoking backend
@@ -26,21 +29,25 @@ use crate::{
 use ndarray::Dimension;
 
 mod channel;
+mod coupled;
 mod exterior;
 mod medium;
 mod mode;
 pub(crate) mod scatter2;
+mod scatter4;
 mod solution;
 mod termination;
 pub(crate) mod transfer2;
+mod transfer4;
 mod workspace;
 
 pub use channel::{Channel, ChannelError};
+pub use coupled::{CoupledContext, CoupledEntries, CoupledWorkspace};
 pub(crate) use exterior::ExteriorContext;
 #[cfg(test)]
 pub(crate) use exterior::evaluate_exterior_wavevectors;
 pub(crate) use exterior::evaluate_stack_exterior_wavevectors;
-pub use exterior::{ExteriorBranch, ExteriorWavevectors};
+pub use exterior::{ExteriorBranch, ExteriorSelectionError, ExteriorWavevectors};
 pub(crate) use medium::{ChannelEntries, LayerQuantities, PrincipalConstitutive};
 pub(crate) use mode::{
     ModalSolutionSource, ModeReconstructionError, PlaneWaveModeCandidate,
@@ -48,6 +55,7 @@ pub(crate) use mode::{
 };
 pub use scatter2::Scatter2;
 pub use scatter2::Scatter2Error;
+pub use scatter4::{Scatter4, Scatter4Error};
 pub(crate) use solution::{
     ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolution, PlaneWaveSolutionSource,
     PlaneWaveSolutionView,
@@ -57,6 +65,7 @@ pub use termination::ClosedSide;
 pub use termination::TerminationError;
 pub(crate) use termination::{right_exterior_mode_waves, undefined_amplitudes};
 pub use transfer2::{Transfer2, Transfer2Error};
+pub use transfer4::{Transfer4, Transfer4Error};
 pub(crate) use workspace::{RetainedIsotropicLayers, SolutionWorkspace};
 
 /// The polarisation of a scalar channel; the 2×2 backends refuse the coupled
@@ -93,8 +102,8 @@ impl RunMode {
 ///
 /// Exterior longitudinal wavevectors are supplied separately so callers such
 /// as mode solvers may control their complex-plane branch choices. `channel`
-/// selects the field subspace: a backend that does not solve it is refused
-/// with a [`ChannelError`].
+/// selects the field subspace: a backend that does not solve it, or a stack
+/// in which it is not invariant, is refused with a [`ChannelError`].
 ///
 /// This trait is public because it appears in bounds on public evaluator
 /// implementations. Backend implementations are supplied by `lamina-core`;

@@ -75,7 +75,7 @@ pub trait ExteriorContextProvider {
 }
 
 pub trait PlaneWaveEntries {
-    type ExteriorContext: ExteriorContextProvider<Algebra = Self::Algebra>;
+    type ExteriorContext;
     type Algebra;
 }
 

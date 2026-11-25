@@ -343,8 +343,7 @@ impl<B> RealAxisEvaluator<B> {
             canonical_problem.coordinates(),
             canonical_problem.stack(),
             channel,
-        )
-        .map_err(RealAxisEvaluationError::Constitutive)?;
+        )?;
 
         let solution = self
             .backend
@@ -389,8 +388,7 @@ impl<B> RealAxisEvaluator<B> {
             canonical_problem.coordinates(),
             canonical_problem.stack(),
             channel,
-        )
-        .map_err(RealAxisEvaluationError::Constitutive)?;
+        )?;
 
         let workspace = self
             .backend

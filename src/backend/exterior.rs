@@ -1,5 +1,7 @@
 use ndarray::Dimension;
 
+use thiserror::Error;
+
 use crate::{
     ComplexScalar, IncidentSide, Polarisation,
     algebra::ScalarAlgebra,
@@ -7,7 +9,7 @@ use crate::{
         Channel, ChannelError, ClosedSide, ExteriorContextProvider, TerminationError,
         medium::LayerQuantities, termination::check_exterior_pattern,
     },
-    input::{CanonicalCoordinates, CanonicalStack, canonical::CanonicalTermination},
+    input::{CanonicalCoordinates, CanonicalStack},
     material::{ConstitutiveError, TensorConstitutiveLift},
     stack::{StackRegion, StackSide},
 };
@@ -366,14 +368,35 @@ where
     )
 }
 
+/// Failure to select the principal exterior branches of a stack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum ExteriorSelectionError {
+    #[error(transparent)]
+    Constitutive(#[from] ConstitutiveError),
+
+    #[error(transparent)]
+    Channel(#[from] ChannelError),
+
+    /// An exterior's eigenvalues do not split into outgoing and incoming
+    /// waves at an evaluation point: an exterior branch point.
+    #[error("the {side:?} exterior's eigenvalues do not split into outgoing and incoming waves")]
+    BranchPoint { side: StackSide },
+}
+
 /// Principal exterior branches of `channel` for the open sides of `stack`:
-/// the principal root of each polarisation's `κ²`, one for TE or TM and
-/// `(κ_TE, κ_TM)` for the coupled channel.
+/// outgoing waves decay away from the stack (`Im κ > 0`) or, when real, carry
+/// flux away from it.
+///
+/// A TE or TM channel takes the principal root of its `κ²`, so an exterior
+/// must be isotropic or diagonal. The coupled channel takes `(κ_TE, κ_TM)` of
+/// an isotropic or diagonal exterior, and otherwise the outgoing roots of the
+/// exterior's Berreman generator.
 pub(crate) fn evaluate_stack_exterior_wavevectors<E, M, J>(
     coordinates: &CanonicalCoordinates<J>,
     stack: &CanonicalStack<M, J>,
     channel: Channel,
-) -> Result<ExteriorWavevectors<J>, ConstitutiveError>
+) -> Result<ExteriorWavevectors<J>, ExteriorSelectionError>
 where
     J: ScalarAlgebra + TensorConstitutiveLift<E, M> + Clone,
     J::Scalar: ComplexScalar,
@@ -383,30 +406,47 @@ where
         LayerQuantities::evaluate::<E, M>(region, material, coordinates, polarisation)
             .map(LayerQuantities::into_kappa)
     };
-    let branch = |region, material: &M| {
-        Ok(match channel.polarisation() {
-            Some(polarisation) => ExteriorBranch::Scalar(kappa(region, material, polarisation)?),
-            None => ExteriorBranch::Pair([
-                kappa(region, material, Polarisation::TransverseElectric)?,
-                kappa(region, material, Polarisation::TransverseMagnetic)?,
-            ]),
-        })
+    let branch = |side, region, material: &M| match channel.polarisation() {
+        Some(polarisation) => Ok(ExteriorBranch::Scalar(kappa(
+            region,
+            material,
+            polarisation,
+        )?)),
+        None => match (
+            kappa(region, material, Polarisation::TransverseElectric),
+            kappa(region, material, Polarisation::TransverseMagnetic),
+        ) {
+            (Ok(te), Ok(tm)) => Ok(ExteriorBranch::Pair([te, tm])),
+            (Err(ConstitutiveError::Unsupported { .. }), _) => {
+                crate::backend::coupled::principal_pair::<E, M, J>(
+                    side,
+                    region,
+                    material,
+                    coordinates,
+                )
+            }
+            (Err(error), _) | (_, Err(error)) => Err(error.into()),
+        },
     };
-    let open = |termination: &CanonicalTermination<J>, region, material| {
-        termination
-            .is_open()
-            .then(|| branch(region, material))
-            .transpose()
-    };
+
+    let open =
+        |termination: &crate::input::canonical::CanonicalTermination<J>, side, region, material| {
+            termination
+                .is_open()
+                .then(|| branch(side, region, material))
+                .transpose()
+        };
 
     Ok(ExteriorWavevectors::from_branches(
         open(
             stack.left_termination(),
+            StackSide::Left,
             StackRegion::LeftExterior,
             stack.left_exterior(),
         )?,
         open(
             stack.right_termination(),
+            StackSide::Right,
             StackRegion::RightExterior,
             stack.right_exterior(),
         )?,
