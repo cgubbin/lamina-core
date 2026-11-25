@@ -141,6 +141,23 @@ impl<A> PrincipalConstitutive<A> {
         }
     }
 
+    /// The stack-frame `[ε, μ]`.
+    pub(crate) fn tensors(&self) -> [ConstitutiveTensor<A>; 2]
+    where
+        A: Clone,
+    {
+        match self {
+            Self::Isotropic { epsilon, mu } => [
+                ConstitutiveTensor::Isotropic(epsilon.clone()),
+                ConstitutiveTensor::Isotropic(mu.clone()),
+            ],
+            Self::Diagonal { epsilon, mu } => [
+                ConstitutiveTensor::Diagonal(epsilon.clone()),
+                ConstitutiveTensor::Diagonal(mu.clone()),
+            ],
+        }
+    }
+
     /// `κ²/k₀²` at `k∥ = 0`: `ε μ`, or the canonical times the transverse
     /// entry.
     pub(crate) fn index_squared(&self, polarisation: Polarisation) -> A

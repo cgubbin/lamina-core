@@ -23,20 +23,20 @@ use crate::{
     },
 };
 
-type C = num_complex::Complex64;
-type Region = AnalyticalMaterialRegion<C>;
+pub(super) type C = num_complex::Complex64;
+pub(super) type Region = AnalyticalMaterialRegion<C>;
 
 const POLARISATIONS: [Polarisation; 2] = [
     Polarisation::TransverseElectric,
     Polarisation::TransverseMagnetic,
 ];
-const SIDES: [IncidentSide; 2] = [IncidentSide::Left, IncidentSide::Right];
+pub(super) const SIDES: [IncidentSide; 2] = [IncidentSide::Left, IncidentSide::Right];
 
-fn c(re: f64, im: f64) -> C {
+pub(super) fn c(re: f64, im: f64) -> C {
     C::new(re, im)
 }
 
-fn assert_close(actual: C, expected: C, tolerance: f64, label: &str) {
+pub(super) fn assert_close(actual: C, expected: C, tolerance: f64, label: &str) {
     let error = (actual - expected).norm();
     assert!(
         error <= tolerance * expected.norm().max(1.0),
@@ -44,31 +44,31 @@ fn assert_close(actual: C, expected: C, tolerance: f64, label: &str) {
     );
 }
 
-fn material(epsilon: C, mu: C) -> ComplexQuadratic {
+pub(super) fn material(epsilon: C, mu: C) -> ComplexQuadratic {
     ComplexQuadratic {
         epsilon: [epsilon, c(0.03, 0.01), c(-0.002, 0.001)],
         mu: [mu, c(-0.01, 0.004), C::default()],
     }
 }
 
-fn lossless(epsilon: f64) -> ComplexQuadratic {
+pub(super) fn lossless(epsilon: f64) -> ComplexQuadratic {
     ComplexQuadratic {
         epsilon: [c(epsilon, 0.0), C::default(), C::default()],
         mu: [c(1.0, 0.0), C::default(), C::default()],
     }
 }
 
-fn isotropic(material: ComplexQuadratic) -> Region {
+pub(super) fn isotropic(material: ComplexQuadratic) -> Region {
     AnalyticalMaterialHandle::new(material).into()
 }
 
-fn oriented(axes: [ComplexQuadratic; 3], rotation: Rotation<f64>) -> Region {
+pub(super) fn oriented(axes: [ComplexQuadratic; 3], rotation: Rotation<f64>) -> Region {
     principal_region(axes, rotation)
 }
 
 /// A lossy, dispersive, magnetic stack of a biaxial, an isotropic and a
 /// uniaxial layer (optic axis along z) between isotropic exteriors.
-fn diagonal_stack() -> AnalyticalTensorStack<C> {
+pub(super) fn diagonal_stack() -> AnalyticalTensorStack<C> {
     Stack::builder(
         isotropic(material(c(1.2, 0.0), c(1.0, 0.0))),
         isotropic(material(c(2.1, 0.02), c(1.1, 0.0))),

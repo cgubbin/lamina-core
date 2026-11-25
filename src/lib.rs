@@ -450,11 +450,12 @@ pub use material::{
 pub use field::VectorField;
 
 pub use observable::{
-    AggregateBilinearNormalization, ConstitutiveFields, DirectedPower, ElectromagneticDissipation,
-    ElectromagneticEnergy, ElectromagneticFields, ElectromagneticIntensities, FieldIndexError,
-    FieldReconstructionError, InterfacePower, JonesAmplitudes, LayerDissipation, LayerPower,
-    PlaneWaveAmplitudes, PlaneWaveDeterminant, PlaneWavePower, ProjectJonesAmplitudes,
-    ProjectPlaneWaveModeDeterminant,
+    AggregateBilinearNormalization, BilinearLayerOverlap, ConstitutiveFields, DirectedPower,
+    ElectromagneticDissipation, ElectromagneticEnergy, ElectromagneticFields,
+    ElectromagneticIntensities, EnergyConfinement, FieldIndexError, FieldReconstructionError,
+    HermitianLayerOverlap, InterfacePower, JonesAmplitudes, LayerDissipation, LayerEnergy,
+    LayerParticipation, LayerPower, Layers, PlaneWaveAmplitudes, PlaneWaveDeterminant,
+    PlaneWavePower, ProjectJonesAmplitudes, ProjectPlaneWaveModeDeterminant,
 };
 pub use parameter::{FiniteLayerIndex, Parameter};
 pub use scalar::ComplexScalar;

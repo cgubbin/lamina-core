@@ -29,8 +29,9 @@ use crate::{
         right_exterior_mode_waves,
         solution::PlaneWaveSolutionView,
         transfer2::{entries::right_gauged_mode_candidate, state::right_outgoing_transfer_state},
-        workspace::RetainedIsotropicLayers,
+        workspace::RetainedLayers,
     },
+    material::ConstitutiveTensor,
     observable::BoundaryState,
     waves::{
         BidirectionalWaves, ExteriorBoundaryWaves, LayerBoundaryWaves,
@@ -280,14 +281,20 @@ impl<A> SolutionWorkspace for Transfer2Workspace<A> {
     }
 }
 
-impl<A> RetainedIsotropicLayers for Transfer2Workspace<A> {
+impl<A: Clone> RetainedLayers for Transfer2Workspace<A> {
     type Algebra = A;
+    type Layer = LayerQuantities<A>;
+
     fn retained_layer_count(&self) -> Option<usize> {
         self.retained.as_ref().map(|x| x.len())
     }
 
-    fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>> {
+    fn layer(&self, index: usize) -> Option<&LayerQuantities<A>> {
         self.retained.as_ref()?.get_quantities(index)
+    }
+
+    fn layer_tensors(&self, index: usize) -> Option<[ConstitutiveTensor<A>; 2]> {
+        Some(self.layer(index)?.constitutive().tensors())
     }
 
     fn layer_thickness(&self, index: usize) -> Option<&Self::Algebra> {
@@ -567,6 +574,7 @@ mod tests {
     use num_complex::Complex64;
 
     use super::*;
+    use crate::backend::RetainedIsotropicLayers;
     use crate::{
         ComplexPlaneEvaluator, Constant, Polarisation, RealAxis,
         algebra::{ArrayJet0, RealParameter},

@@ -58,9 +58,9 @@ pub use interface::{
 };
 pub use layer::{
     AggregateBilinearNormalization, AggregateBilinearOverlap, AggregateEnergy,
-    AggregateHermitianOverlap, EnergyConfinement, LayerAggregateError, LayerConfinementError,
-    LayerDissipation, LayerEnergy, LayerEnergyError, LayerParticipation, LayerParticipationError,
-    LayerPower, LayerProjectionError, Layers,
+    AggregateHermitianOverlap, BilinearLayerOverlap, EnergyConfinement, HermitianLayerOverlap,
+    LayerAggregateError, LayerConfinementError, LayerDissipation, LayerEnergy, LayerEnergyError,
+    LayerParticipation, LayerParticipationError, LayerPower, LayerProjectionError, Layers,
 };
 pub use plane_wave::{
     JonesAmplitudes, PlaneWaveAmplitudes, PlaneWavePower, ProjectJonesAmplitudes,
@@ -79,8 +79,7 @@ pub(crate) use interface::{
     exterior_boundary_waves, project_layer_admittances,
 };
 pub(crate) use layer::{
-    BilinearLayerOverlap, HermitianLayerOverlap, HermitianLayerOverlapInput, LayerOverlapInput,
-    LayerOverlapOperand, OverlapError,
+    HermitianLayerOverlapInput, LayerOverlapInput, LayerOverlapOperand, OverlapError,
 };
 pub(crate) use layer::{LayerIntegrationInput, assemble_layer_integration_inputs};
 pub(crate) use plane_wave::{Amplitudes, ProjectAmplitudes, ProjectPower};

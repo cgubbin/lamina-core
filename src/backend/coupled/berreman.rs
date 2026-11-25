@@ -72,7 +72,7 @@ pub(crate) type Row<A> = [A; 4];
 
 /// The linear maps from `ψ` to the eliminated normal components.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Elimination<A> {
+pub struct Elimination<A> {
     pub(crate) electric: Row<A>,
     pub(crate) magnetic: Row<A>,
 }
@@ -80,9 +80,11 @@ pub(crate) struct Elimination<A> {
 /// One region's Berreman generator `K` restricted to a channel, with the
 /// elimination of the normal fields.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Region<A> {
+pub struct Region<A> {
     pub(crate) generator: Matrix<A>,
     pub(crate) elimination: Elimination<A>,
+    /// The stack-frame `[ε, μ]`.
+    pub(crate) tensors: [ConstitutiveTensor<A>; 2],
 }
 
 impl<A> Region<A>
@@ -119,18 +121,52 @@ where
 
     /// The region of stack-frame `[ε, μ]` at `k₀` and `k∥`.
     pub(crate) fn new(
-        [epsilon, mu]: &[ConstitutiveTensor<A>; 2],
+        tensors: &[ConstitutiveTensor<A>; 2],
         k0: &A,
         k_parallel: &A,
         channel: Channel,
     ) -> Self {
+        let [epsilon, mu] = tensors;
         let (generator, elimination) = generator(&epsilon.full(), &mu.full(), k0, k_parallel);
         let components = channel_components(channel);
 
         Self {
             generator: generator.select(components, components),
             elimination,
+            tensors: tensors.clone(),
         }
+    }
+}
+
+impl<A> Region<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: ComplexScalar,
+    A::Dimension: Dimension,
+{
+    /// The `6 × n` map from a channel's state to `(E_x, E_y, E_z, η_x, η_y,
+    /// η_z)`.
+    pub(crate) fn field_map(&self, channel: Channel) -> Matrix<A> {
+        let like = self.generator.get(0, 0);
+        let unit = |component: usize, sign: bool| -> Row<A> {
+            std::array::from_fn(|index| match (index == component, sign) {
+                (false, _) => like.zero_like(),
+                (true, true) => like.one_like(),
+                (true, false) => like.one_like().negate(),
+            })
+        };
+        let rows = [
+            unit(EX, true),
+            unit(EY, true),
+            self.elimination.electric.clone(),
+            unit(HX, false),
+            unit(HY, true),
+            self.elimination.magnetic.clone(),
+        ];
+        let components = channel_components(channel);
+        Matrix::from_fn(6, components.len(), |row, column| {
+            rows[row][components[column]].clone()
+        })
     }
 }
 
