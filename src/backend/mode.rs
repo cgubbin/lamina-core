@@ -146,9 +146,11 @@ pub trait ReconstructLayerModeWaves {
 pub trait ModalSolutionSource {
     type Algebra;
 
+    /// The unnormalised mode: a [`PlaneWaveModeCandidate`] for the 2×2
+    /// backends, the interface states for the 4×4 ones.
+    type Mode;
+
     /// Construct an arbitrary nonzero representative of the outgoing
     /// homogeneous boundary solution.
-    fn modal_boundary_solution(
-        &self,
-    ) -> Result<PlaneWaveModeCandidate<Self::Algebra>, ModeReconstructionError>;
+    fn modal_boundary_solution(&self) -> Result<Self::Mode, ModeReconstructionError>;
 }

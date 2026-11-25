@@ -10,8 +10,9 @@ use crate::{
         CartesianScalarAlgebra, ComplexJet, Jet, JetStack, ScalarAlgebra, ScalarAlgebraExpRelExt,
     },
     backend::{
-        ExteriorContextProvider, ModalSolutionSource, PlaneWaveEntries, PlaneWaveSolutionSource,
-        PlaneWaveSolutionView, ReconstructLayerModeWaves, RetainedIsotropicLayers,
+        ExteriorContextProvider, ModalSolutionSource, PlaneWaveEntries, PlaneWaveModeCandidate,
+        PlaneWaveSolutionSource, PlaneWaveSolutionView, ReconstructLayerModeWaves,
+        RetainedIsotropicLayers,
     },
     input::{CanonicalStack, JetMapping},
     material::TensorConstitutiveSpectralFirstLift,
@@ -99,7 +100,7 @@ where
         W: PlaneWaveSolutionSource
             + ReconstructLayerModeWaves<Algebra = J>
             + RetainedIsotropicLayers<Algebra = J>
-            + ModalSolutionSource<Algebra = J>,
+            + ModalSolutionSource<Algebra = J, Mode = PlaneWaveModeCandidate<J>>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         ComplexPlaneMode::new(self)
