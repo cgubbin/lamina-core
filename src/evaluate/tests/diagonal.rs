@@ -17,7 +17,7 @@ use crate::{
     test_support::{
         jet::{HoloJ0, HoloJ1, HoloJB2},
         materials::{ComplexQuadratic, principal_region},
-        planar::{principal_exterior_wavevectors, scalar_real_input},
+        planar::{principal_exterior_wavevectors, sampled_real_input, scalar_real_input},
     },
 };
 
@@ -1111,5 +1111,184 @@ fn scattering_backend_resolves_thick_evanescent_diagonal_layers() {
             );
             assert!(amplitudes.transmission()[()].norm() < 1e-100);
         }
+    }
+}
+
+/// diag(o, o, e) with the extraordinary ε and μ linearly interpolated between
+/// tabulated samples, and not finite outside them: real-axis values only.
+struct TabulatedExtraordinary {
+    ordinary: ComplexQuadratic,
+    wavenumbers: Vec<f64>,
+    extraordinary: Vec<[C; 2]>,
+}
+
+impl TabulatedExtraordinary {
+    /// Tabulate `extraordinary` at `wavenumbers`.
+    fn new(
+        ordinary: ComplexQuadratic,
+        extraordinary: ComplexQuadratic,
+        wavenumbers: &[f64],
+    ) -> Self {
+        use crate::Material;
+        let extraordinary = wavenumbers
+            .iter()
+            .map(|&k| {
+                [
+                    extraordinary.relative_permittivity(crate::Scalar(k)),
+                    extraordinary.relative_permeability(crate::Scalar(k)),
+                ]
+            })
+            .collect();
+        Self {
+            ordinary,
+            wavenumbers: wavenumbers.to_vec(),
+            extraordinary,
+        }
+    }
+
+    fn tensor<X>(&self, k: f64, quantity: usize) -> crate::Tensor3<X>
+    where
+        X: crate::ComplexScalar<RealField = f64>,
+    {
+        use crate::Material;
+        let ordinary: X = [
+            self.ordinary.relative_permittivity(crate::Scalar(k)),
+            self.ordinary.relative_permeability(crate::Scalar(k)),
+        ][quantity];
+        let extraordinary = self
+            .wavenumbers
+            .windows(2)
+            .zip(self.extraordinary.windows(2))
+            .find(|(nodes, _)| nodes[0] <= k && k <= nodes[1])
+            .map_or(C::new(f64::NAN, f64::NAN), |(nodes, values)| {
+                let t = (k - nodes[0]) / (nodes[1] - nodes[0]);
+                values[0][quantity] * (1.0 - t) + values[1][quantity] * t
+            });
+        let zero = X::zero();
+        [
+            [ordinary, zero, zero],
+            [zero, ordinary, zero],
+            [
+                zero,
+                zero,
+                X::from_parts(extraordinary.re, extraordinary.im),
+            ],
+        ]
+    }
+}
+
+impl crate::TensorMaterial for TabulatedExtraordinary {
+    type Real = f64;
+    const PRINCIPAL_AXES: bool = true;
+
+    fn relative_permittivity_tensor<I, X>(&self, k: I) -> I::Mapped<crate::Tensor3<X>>
+    where
+        X: crate::ComplexScalar<RealField = f64>,
+        I: crate::Sampled<Elem = f64>,
+    {
+        k.map(|k| self.tensor(k, 0))
+    }
+
+    fn relative_permeability_tensor<I, X>(&self, k: I) -> I::Mapped<crate::Tensor3<X>>
+    where
+        X: crate::ComplexScalar<RealField = f64>,
+        I: crate::Sampled<Elem = f64>,
+    {
+        k.map(|k| self.tensor(k, 1))
+    }
+}
+
+#[test]
+fn tabulated_tensor_regions_give_the_analytical_real_axis_response_at_the_samples() {
+    use crate::{MaterialRegion, TensorMaterialHandle, TensorStack, material::MaterialHandle};
+
+    let wavenumbers = [1.5, 1.8, 2.1, 2.4, 2.7];
+    let (ordinary, extraordinary) = (
+        dispersive(c(2.25, 0.05), c(1.05, 0.01)),
+        dispersive(c(4.0, 0.2), c(0.95, 0.02)),
+    );
+    let (vacuum, cladding) = (
+        constant(c(1.0, 0.0), c(1.0, 0.0)),
+        dispersive(c(1.9, 0.08), c(1.05, 0.02)),
+    );
+    // Optic axis along stack x and along stack z: both diagonal classes.
+    let rotations = [
+        Rotation::from_optic_axis(FRAC_PI_2, 0.0),
+        Rotation::identity(),
+    ];
+
+    let tabulated = |rotation| {
+        MaterialRegion::oriented(
+            TensorMaterialHandle::new(TabulatedExtraordinary::new(
+                ordinary,
+                extraordinary,
+                &wavenumbers,
+            )),
+            rotation,
+        )
+    };
+    let scalar = |material| MaterialRegion::from(MaterialHandle::new(material));
+    let real_axis: TensorStack<C> = Stack::builder(scalar(vacuum), tabulated(rotations[1]))
+        .layer(tabulated(rotations[0]), Length::centimetres(0.21))
+        .layer(scalar(cladding), Length::centimetres(0.17))
+        .finalise();
+    let analytical_region =
+        |rotation| principal_region([ordinary, ordinary, extraordinary], rotation);
+    let analytical: AnalyticalTensorStack<C> =
+        Stack::builder(isotropic(vacuum), analytical_region(rotations[1]))
+            .layer(analytical_region(rotations[0]), Length::centimetres(0.21))
+            .layer(isotropic(cladding), Length::centimetres(0.17))
+            .finalise();
+    assert_eq!(
+        real_axis.layers_left_to_right()[0].material().class(),
+        ConstitutiveClass::Diagonal
+    );
+    assert_eq!(
+        real_axis.right_exterior().class(),
+        ConstitutiveClass::Diagonal
+    );
+
+    let input = || sampled_real_input(&wavenumbers, &[0.9; 5]);
+    for polarisation in POLARISATIONS {
+        for_each_backend!(evaluator, {
+            let tabulated = evaluator
+                .evaluate(input(), &real_axis, polarisation)
+                .unwrap();
+            let expected = evaluator
+                .evaluate(input(), &analytical, polarisation)
+                .unwrap();
+            for side in [IncidentSide::Left, IncidentSide::Right] {
+                let (a, b) = (
+                    tabulated.amplitudes(side).unwrap(),
+                    expected.amplitudes(side).unwrap(),
+                );
+                assert_arrays_close(a.reflection(), b.reflection(), 1e-14, "reflection");
+                assert_arrays_close(a.transmission(), b.transmission(), 1e-14, "transmission");
+                let (p, q) = (
+                    tabulated.power(side).unwrap(),
+                    expected.power(side).unwrap(),
+                );
+                for (x, y) in [
+                    (p.reflectance(), q.reflectance()),
+                    (p.transmittance(), q.transmittance()),
+                    (p.absorptance(), q.absorptance()),
+                ] {
+                    assert_arrays_close(&x.mapv(C::from), &y.mapv(C::from), 1e-14, "power");
+                }
+            }
+        });
+    }
+
+    // Outside the table the tabulated entries are not finite: a typed refusal.
+    let non_finite = ConstitutiveError::NonFinite {
+        region: StackRegion::RightExterior,
+    };
+    for polarisation in POLARISATIONS {
+        for_each_backend!(evaluator, {
+            match evaluator.evaluate(scalar_real_input(3.0, 0.9), &real_axis, polarisation) {
+                Err(RealAxisEvaluationError::Constitutive(error)) => assert_eq!(error, non_finite),
+                other => panic!("unexpected {:?}", other.map(|_| ())),
+            }
+        });
     }
 }

@@ -199,12 +199,35 @@ scalar_as_isotropic!(DifferentiableMeromorphicTensorMaterial for DifferentiableM
     relative_permeability_tensor_complex_derivative => relative_permeability_complex_derivative(order);
 );
 
+/// Object-safe pointwise real-axis values of a [`TensorMaterial`],
+/// implemented for every such material and erased by
+/// [`TensorMaterialHandle`].
+#[doc(hidden)]
+pub trait TensorMaterialValuePoint<C: ComplexScalar>: Send + Sync {
+    fn permittivity_at(&self, k0: C::RealField) -> Tensor3<C>;
+    fn permeability_at(&self, k0: C::RealField) -> Tensor3<C>;
+}
+
+impl<M, C> TensorMaterialValuePoint<C> for M
+where
+    M: TensorMaterial<Real = C::RealField> + Send + Sync,
+    C: ComplexScalar,
+    C::RealField: Copy,
+{
+    fn permittivity_at(&self, k0: C::RealField) -> Tensor3<C> {
+        self.relative_permittivity_tensor(Scalar(k0))
+    }
+
+    fn permeability_at(&self, k0: C::RealField) -> Tensor3<C> {
+        self.relative_permeability_tensor(Scalar(k0))
+    }
+}
+
 /// Object-safe pointwise form of [`DifferentiableMeromorphicTensorMaterial`],
 /// implemented for every such material and erased by
 /// [`AnalyticalTensorMaterialHandle`].
-pub(crate) trait TensorMaterialPoint<C: ComplexScalar>: Send + Sync {
-    fn permittivity_at(&self, k0: C::RealField) -> Tensor3<C>;
-    fn permeability_at(&self, k0: C::RealField) -> Tensor3<C>;
+#[doc(hidden)]
+pub trait TensorMaterialPoint<C: ComplexScalar>: TensorMaterialValuePoint<C> {
     fn permittivity_derivative_at(&self, k0: C::RealField, order: DerivativeOrder) -> Tensor3<C>;
     fn permeability_derivative_at(&self, k0: C::RealField, order: DerivativeOrder) -> Tensor3<C>;
     fn permittivity_complex_at(&self, k0: C) -> Tensor3<C>;
@@ -219,14 +242,6 @@ where
     C: ComplexScalar,
     C::RealField: Copy,
 {
-    fn permittivity_at(&self, k0: C::RealField) -> Tensor3<C> {
-        self.relative_permittivity_tensor(Scalar(k0))
-    }
-
-    fn permeability_at(&self, k0: C::RealField) -> Tensor3<C> {
-        self.relative_permeability_tensor(Scalar(k0))
-    }
-
     fn permittivity_derivative_at(&self, k0: C::RealField, order: DerivativeOrder) -> Tensor3<C> {
         self.relative_permittivity_tensor_derivative(Scalar(k0), order)
     }
@@ -252,6 +267,34 @@ where
     }
 }
 
+/// An erased tensor handle as an oriented region sees it: the material's
+/// [`TensorMaterial::PRINCIPAL_AXES`] declaration and its pointwise
+/// evaluation, at the handle's capability level.
+///
+/// Public only to appear in bounds; it is not exported, so it is implemented
+/// by this crate's handles alone.
+#[doc(hidden)]
+pub trait TensorHandle: Clone {
+    type Scalar: ComplexScalar;
+    type Point: ?Sized + TensorMaterialValuePoint<Self::Scalar>;
+
+    fn principal_axes(&self) -> bool;
+    fn point(&self) -> &Self::Point;
+}
+
+/// Type-erased tensor material evaluated on the real spectral axis only.
+///
+/// Suitable for tabulated or interpolated models: a stack of its regions
+/// gives real-axis responses, and offers no derivatives or complex-plane
+/// evaluation. The handle records whether the material declared
+/// [`TensorMaterial::PRINCIPAL_AXES`]. Equality compares handle identity, as
+/// for the scalar handles.
+pub struct TensorMaterialHandle<C: ComplexScalar> {
+    type_name: &'static str,
+    principal_axes: bool,
+    inner: Arc<dyn TensorMaterialValuePoint<C>>,
+}
+
 /// Type-erased tensor material with a complex continuation and derivatives.
 ///
 /// The handle records whether the material declared
@@ -263,59 +306,73 @@ pub struct AnalyticalTensorMaterialHandle<C: ComplexScalar> {
     inner: Arc<dyn TensorMaterialPoint<C>>,
 }
 
-impl<C> AnalyticalTensorMaterialHandle<C>
-where
-    C: ComplexScalar + 'static,
-    C::RealField: Copy + 'static,
-{
-    /// Erase a concrete tensor material.
-    pub fn new<M>(material: M) -> Self
-    where
-        M: DifferentiableMeromorphicTensorMaterial<Real = C::RealField> + Send + Sync + 'static,
-    {
-        Self {
-            type_name: type_name::<M>(),
-            principal_axes: M::PRINCIPAL_AXES,
-            inner: Arc::new(material),
+/// Construction, [`TensorHandle`], `Clone`, `PartialEq` and `Debug` for each
+/// erased tensor handle, given its material bound and point trait.
+macro_rules! tensor_handles {
+    ($($handle:ident: $material:ident => $point:ident;)+) => {$(
+        impl<C> $handle<C>
+        where
+            C: ComplexScalar + 'static,
+            C::RealField: Copy + 'static,
+        {
+            /// Erase a concrete tensor material.
+            pub fn new<M>(material: M) -> Self
+            where
+                M: $material<Real = C::RealField> + Send + Sync + 'static,
+            {
+                Self {
+                    type_name: type_name::<M>(),
+                    principal_axes: M::PRINCIPAL_AXES,
+                    inner: Arc::new(material),
+                }
+            }
         }
-    }
-}
 
-impl<C: ComplexScalar> AnalyticalTensorMaterialHandle<C> {
-    pub(crate) fn principal_axes(&self) -> bool {
-        self.principal_axes
-    }
+        impl<C: ComplexScalar> TensorHandle for $handle<C> {
+            type Scalar = C;
+            type Point = dyn $point<C>;
 
-    pub(crate) fn point(&self) -> &dyn TensorMaterialPoint<C> {
-        &*self.inner
-    }
-}
+            fn principal_axes(&self) -> bool {
+                self.principal_axes
+            }
 
-impl<C: ComplexScalar> Clone for AnalyticalTensorMaterialHandle<C> {
-    fn clone(&self) -> Self {
-        Self {
-            type_name: self.type_name,
-            principal_axes: self.principal_axes,
-            inner: Arc::clone(&self.inner),
+            fn point(&self) -> &Self::Point {
+                &*self.inner
+            }
         }
-    }
+
+        impl<C: ComplexScalar> Clone for $handle<C> {
+            fn clone(&self) -> Self {
+                Self {
+                    type_name: self.type_name,
+                    principal_axes: self.principal_axes,
+                    inner: Arc::clone(&self.inner),
+                }
+            }
+        }
+
+        impl<C: ComplexScalar> PartialEq for $handle<C> {
+            fn eq(&self, other: &Self) -> bool {
+                self.type_name == other.type_name && Arc::ptr_eq(&self.inner, &other.inner)
+            }
+        }
+
+        impl<C: ComplexScalar> fmt::Debug for $handle<C> {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter
+                    .debug_struct(stringify!($handle))
+                    .field("type", &self.type_name)
+                    .field("principal_axes", &self.principal_axes)
+                    .finish_non_exhaustive()
+            }
+        }
+    )+};
 }
 
-impl<C: ComplexScalar> PartialEq for AnalyticalTensorMaterialHandle<C> {
-    fn eq(&self, other: &Self) -> bool {
-        self.type_name == other.type_name && Arc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-impl<C: ComplexScalar> fmt::Debug for AnalyticalTensorMaterialHandle<C> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("AnalyticalTensorMaterialHandle")
-            .field("type", &self.type_name)
-            .field("principal_axes", &self.principal_axes)
-            .finish_non_exhaustive()
-    }
-}
+tensor_handles!(
+    TensorMaterialHandle: TensorMaterial => TensorMaterialValuePoint;
+    AnalyticalTensorMaterialHandle: DifferentiableMeromorphicTensorMaterial => TensorMaterialPoint;
+);
 
 #[cfg(test)]
 mod tests {
@@ -431,5 +488,14 @@ mod tests {
             AnalyticalTensorMaterialHandle::<C>::new(Constant::dielectric(2.0))
         );
         assert_eq!(handle.point().permittivity_at(1.0), isotropic(C::from(2.0)));
+
+        let handle = TensorMaterialHandle::<C>::new(Constant::dielectric(3.0));
+        assert!(handle.principal_axes());
+        assert_eq!(handle.clone(), handle);
+        assert_ne!(
+            handle,
+            TensorMaterialHandle::<C>::new(Constant::dielectric(3.0))
+        );
+        assert_eq!(handle.point().permittivity_at(1.0), isotropic(C::from(3.0)));
     }
 }
