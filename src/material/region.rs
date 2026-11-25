@@ -275,8 +275,9 @@ rotated_entry!(EvaluateDifferentiableMeromorphicMaterial: TensorMaterialPoint, C
 /// jet algebra.
 ///
 /// A scalar material, or an isotropic region, evaluates exactly as through
-/// [`ConstitutiveLift`]. Diagonal and full regions are validated at every
-/// sampled point: every entry finite, and `ε_zz ≠ 0`, `μ_zz ≠ 0`.
+/// [`ConstitutiveLift`]. Every region is validated at every sampled point:
+/// every entry finite in its value and every derivative part, and, for
+/// diagonal and full regions, `ε_zz ≠ 0`, `μ_zz ≠ 0`.
 ///
 /// This is the bound for code generic over a stack's material: the
 /// determinant and field evaluators require `J: TensorConstitutiveLift<E, M>`,
@@ -321,14 +322,18 @@ where
     M: ScalarMaterial,
 {
     fn constitutive_tensors(
-        _: StackRegion,
+        region: StackRegion,
         material: &M,
         k0: &Self,
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
-        Ok([
+        let tensors = [
             ConstitutiveTensor::Isotropic(J::relative_permittivity(material, k0)),
             ConstitutiveTensor::Isotropic(J::relative_permeability(material, k0)),
-        ])
+        ];
+        for tensor in &tensors {
+            validate(region, tensor)?;
+        }
+        Ok(tensors)
     }
 }
 
@@ -473,24 +478,22 @@ fn unzip<J: Clone, const N: usize>(pairs: [[J; 2]; N]) -> [[J; N]; 2] {
     [0, 1].map(|half| pairs.each_ref().map(|pair| pair[half].clone()))
 }
 
-/// Every entry of a diagonal or full tensor finite, and its `zz` entry
-/// nonzero at every sample.
+/// Every entry of a tensor of any class finite, in its value and every
+/// derivative part, and the `zz` entry of a diagonal or full tensor nonzero at
+/// every sample.
 fn validate<J>(region: StackRegion, tensor: &ConstitutiveTensor<J>) -> Result<(), ConstitutiveError>
 where
     J: ScalarAlgebra,
     J::Scalar: ComplexScalar,
 {
+    if !tensor.entries().all(J::all_finite) {
+        return Err(ConstitutiveError::NonFinite { region });
+    }
     let zz = match tensor {
         ConstitutiveTensor::Isotropic(_) => return Ok(()),
         ConstitutiveTensor::Diagonal(diagonal) => &diagonal[2],
         ConstitutiveTensor::Full(full) => &full[2][2],
     };
-    if !tensor
-        .entries()
-        .all(|entry| entry.value().iter().all(|value| value.is_finite()))
-    {
-        return Err(ConstitutiveError::NonFinite { region });
-    }
     if zz.value().iter().any(|value| *value == J::Scalar::zero()) {
         return Err(ConstitutiveError::NormalComponentVanishes { region });
     }
@@ -922,6 +925,169 @@ mod tests {
         assert_eq!(
             at(f64::INFINITY).unwrap_err(),
             ConstitutiveError::NonFinite { region: layer }
+        );
+    }
+
+    /// ε = 2 and μ = 1 everywhere, with every spectral derivative NaN: a
+    /// finite value whose derivative parts are not.
+    #[derive(Clone, Copy, Debug)]
+    struct NanDerivative;
+
+    macro_rules! nan_derivative {
+        ($trait:ident, $k:ty { $($item:item)* } $($method:ident => $value:expr $(, $order:ident)?;)+) => {
+            impl $trait for NanDerivative {
+                $($item)*
+                $(
+                    fn $method<I, X>(&self, k: I $(, $order: DerivativeOrder)?) -> I::Mapped<X>
+                    where
+                        X: ComplexScalar<RealField = f64>,
+                        I: Sampled<Elem = $k>,
+                    {
+                        k.map(|_| X::from_real($value))
+                    }
+                )+
+            }
+        };
+    }
+
+    nan_derivative!(Material, f64 { type Real = f64; }
+        relative_permittivity => 2.0;
+        relative_permeability => 1.0;
+    );
+    nan_derivative!(DifferentiableMaterial, f64 {}
+        relative_permittivity_derivative => f64::NAN, _order;
+        relative_permeability_derivative => f64::NAN, _order;
+    );
+    nan_derivative!(MeromorphicMaterial, X {}
+        relative_permittivity_complex => 2.0;
+        relative_permeability_complex => 1.0;
+    );
+    nan_derivative!(DifferentiableMeromorphicMaterial, X {}
+        relative_permittivity_complex_derivative => f64::NAN, _order;
+        relative_permeability_complex_derivative => f64::NAN, _order;
+    );
+
+    #[test]
+    fn non_finite_isotropic_values_and_derivatives_are_refused_by_name() {
+        use crate::test_support::materials::ComplexQuadratic;
+
+        let layer = StackRegion::Layer(FiniteLayerIndex::new(1));
+        let refused = Err(ConstitutiveError::NonFinite { region: layer });
+        let nan_value = AnalyticalMaterialHandle::new(ComplexQuadratic {
+            epsilon: [C::new(f64::NAN, 0.0), C::zero(), C::zero()],
+            mu: [C::from(1.0), C::zero(), C::zero()],
+        });
+        let nan_mu = AnalyticalMaterialHandle::new(ComplexQuadratic {
+            epsilon: [C::from(2.0), C::zero(), C::zero()],
+            mu: [C::new(0.0, f64::INFINITY), C::zero(), C::zero()],
+        });
+        let nan_derivative = AnalyticalMaterialHandle::new(NanDerivative);
+
+        // `$expected` for the scalar handle and for its isotropic region.
+        macro_rules! check {
+            ($jet:ty, $domain:ty, $k0:expr, $handle:expr, $expected:expr) => {{
+                let (k0, handle) = ($k0, $handle);
+                let scalar = <$jet as TensorConstitutiveLift<$domain, _>>::constitutive_tensors(
+                    layer, &handle, &k0,
+                );
+                let region = <$jet as TensorConstitutiveLift<$domain, _>>::constitutive_tensors(
+                    layer,
+                    &Region::from(handle.clone()),
+                    &k0,
+                );
+                assert_eq!(scalar.map(|_| ()), $expected, "scalar");
+                assert_eq!(region.map(|_| ()), $expected, "region");
+            }};
+        }
+
+        let real = C::from(1.3);
+        let complex = C::new(1.3, -0.2);
+        for handle in [&nan_value, &nan_mu] {
+            check!(
+                RealJ0,
+                RealAxis,
+                RealJ0::new(arr0(real)),
+                handle.clone(),
+                refused
+            );
+            check!(
+                HoloJ0,
+                ComplexPlane,
+                HoloJ0::new(arr0(complex)),
+                handle.clone(),
+                refused
+            );
+        }
+        // Order 0 carries no derivative part: the finite value passes.
+        check!(
+            RealJ0,
+            RealAxis,
+            RealJ0::new(arr0(real)),
+            nan_derivative.clone(),
+            Ok(())
+        );
+        check!(
+            HoloJ0,
+            ComplexPlane,
+            HoloJ0::new(arr0(complex)),
+            nan_derivative.clone(),
+            Ok(())
+        );
+
+        for handle in [&nan_value, &nan_mu, &nan_derivative] {
+            let first = |k: C| ArrayJet1::<C, _, P>::from_parts(arr0(k), arr0(C::from(1.0)));
+            let second = |k: C| {
+                ArrayJet2::<C, _, P>::from_parts(arr0(k), arr0(C::from(1.0)), arr0(C::zero()))
+            };
+            check!(RealJ1, RealAxis, first(real), handle.clone(), refused);
+            check!(RealJ2, RealAxis, second(real), handle.clone(), refused);
+
+            let first = |k: C| ArrayJet1::<C, _, H>::from_parts(arr0(k), arr0(C::from(1.0)));
+            let second = |k: C| {
+                ArrayJet2::<C, _, H>::from_parts(arr0(k), arr0(C::from(1.0)), arr0(C::zero()))
+            };
+            check!(
+                HoloJ1,
+                ComplexPlane,
+                first(complex),
+                handle.clone(),
+                refused
+            );
+            check!(
+                HoloJ2,
+                ComplexPlane,
+                second(complex),
+                handle.clone(),
+                refused
+            );
+        }
+    }
+
+    #[test]
+    fn non_finite_tensor_derivative_parts_are_refused_by_name() {
+        let region = Region::oriented(
+            AnalyticalTensorMaterialHandle::new(crate::test_support::materials::Axes([
+                NanDerivative,
+                NanDerivative,
+                NanDerivative,
+            ])),
+            Rotation::identity(),
+        );
+        let layer = StackRegion::Layer(FiniteLayerIndex::new(0));
+        let k0 = ArrayJet1::<C, _, P>::from_parts(arr0(C::from(1.3)), arr0(C::from(1.0)));
+        assert_eq!(
+            <RealJ1 as TensorConstitutiveLift<RealAxis, _>>::constitutive_tensors(
+                layer, &region, &k0
+            )
+            .map(|_| ()),
+            Err(ConstitutiveError::NonFinite { region: layer })
+        );
+        let k0 = RealJ0::new(arr0(C::from(1.3)));
+        assert!(
+            <RealJ0 as TensorConstitutiveLift<RealAxis, _>>::constitutive_tensors(
+                layer, &region, &k0
+            )
+            .is_ok()
         );
     }
 }

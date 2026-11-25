@@ -44,8 +44,10 @@ pub enum Transfer2Error {
 
     #[error(
         "the completed transfer matrix contains non-finite entry {entry} at \
-         sampled index {index:?}; use the scattering-matrix backend for \
-         optically thick, strongly absorbing, or strongly evanescent stacks"
+         sampled index {index:?} although every region's permittivity and \
+         permeability were finite; the usual cause is overflow in optically \
+         thick, strongly absorbing, or strongly evanescent stacks, which the \
+         scattering-matrix backend handles"
     )]
     NonFiniteFinalMatrix {
         entry: Transfer2Entry,
