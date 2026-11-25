@@ -220,13 +220,34 @@ TM: κ² = ε_xx (μ_yy k0² − k∥²/ε_zz),   Y = κ / ε_xx
 
 Each polarisation sees a canonical entry (`ε_yy`, `μ_yy`) weighting the canonical field, a transverse entry (`μ_xx`, `ε_xx`) weighting the in-plane reconstructed component, and a normal entry (`μ_zz`, `ε_zz`) dividing the normal component. An isotropic region evaluates `κ² = εμk0² − k∥²` and `Y = κ/μ` or `κ/ε` by the same operations as a scalar material. Exterior wavevectors depend on the polarisation: the guided threshold is `k∥² = ε_yy μ_zz k0²` for TE and `ε_zz μ_yy k0²` for TM. A wall or PML in a diagonal exterior uses that exterior's per-polarisation `κ` and admittance in its gap and stretched layer, and the PML normalisation `κ_ref` is its `κ` at `k∥ = 0`. Field reconstruction takes each eliminated component from its own entry (`H_z = k∥ E_y/(k0 μ_zz)`, `E_z = −k∥ H_y/(k0 ε_zz)`), and `D = εE`, `B = μH` entry by entry.
 
-Both implement a shared backend interface:
+The 4×4 backends solve any stack, including regions whose tensors couple TE and TM:
+
+```text
+Transfer4
+Scatter4
+```
+
+They propagate the tangential state `ψ = (E_x, η_y, E_y, −η_x)`, `η = Z₀H`, continuous across interfaces, with `dψ/dz = i k0 Δ ψ`. `E_z` and `η_z` are eliminated through `ε_zz` and `μ_zz`:
+
+```text
+E_z = −(ξ η_y + ε_zx E_x + ε_zy E_y)/ε_zz
+η_z =  (ξ E_y − μ_zx η_x − μ_zy η_y)/μ_zz,          ξ = k∥/k0
+Δ ψ = ((μη)_y + ξ E_z, (εE)_x, −(μη)_x, (εE)_y − ξ η_z)
+```
+
+For Hermitian tensors and real `ξ`, `ΓΔ = Δ†Γ` with `Γ` pairing `(E_x, η_y)` and `(E_y, −η_x)`, so `S_z ∝ Re(ψ†Γψ)` is constant through a lossless layer; for symmetric tensors `Δ(ξ)ᵀJ + JΔ(−ξ) = 0`. A diagonal region keeps the TM block `(E_x, η_y)` and the TE block `(E_y, −η_x)` invariant, as does any separable region; the 4×4 backends then also solve TE or TM in that block, which is how they reduce to the 2×2 backends.
+
+Each open exterior contributes its outgoing subspace: the spectral projector `P = a(K)g(K)`, with `f` the monic polynomial of the supplied outgoing roots, `g = p/f` the rest of the characteristic polynomial and `a g + b f = 1`, applied to the reference vectors `E_y`, `η_y`. It is analytic where outgoing roots coincide (an isotropic exterior, whose basis is then its TE and TM waves) and singular where an outgoing root meets an incoming one. A wall contributes the states it admits (`span{η_y, −η_x}` electric, `span{E_x, E_y}` magnetic) carried through the gap and the PML by the exterior's entire propagator.
+
+`Transfer4` composes `exp(−i k0 d Δ)` by scaling and squaring on the jet-valued matrix and evaluates `det[V_L | M V_R]`. `Scatter4` splits each layer's eigenvalues into a forward and a backward pair (by `Im n`, or the sign of `S_z` for real `n`, at the real point `(Re k0, Re k∥)`, continued to the evaluation point by nearest-root matching), refined through the jets by Newton's method on the factorisation of the characteristic polynomial, and composes bounded eigen-wave amplitudes; its characteristic is the product of the pivot determinants of that elimination. A layer with no split (a cutoff) is refused, and `Transfer4` is authoritative there.
+
+All four implement a shared backend interface:
 
 ```rust
 Backend<J, Domain>
 ```
 
-`solve` and `retain` take a `Channel` (TE, TM or coupled) and branch-selected `ExteriorWavevectors` whose open sides hold an `ExteriorBranch`: one outward normal wavenumber for TE or TM, the outgoing pair for the coupled channel. The 2×2 backends refuse the coupled channel.
+and are selected the same way, by the evaluator's backend type. `solve` and `retain` take a `Channel` (TE, TM or coupled) and branch-selected `ExteriorWavevectors` whose open sides hold an `ExteriorBranch`: one outward wavenumber for TE or TM, the outgoing pair for the coupled channel. The 2×2 backends refuse the coupled channel; the 4×4 backends refuse TE or TM on a stack that couples them.
 
 The backend produces an entry representation and may optionally retain internal calculation data.
 
@@ -282,7 +303,7 @@ ProjectPower
 ProjectPlaneWaveModeDeterminant
 ```
 
-These traits allow `Transfer2Entries` and `Scatter2Entries` to implement the same public semantics despite using different internal matrix representations.
+These traits allow `Transfer2Entries` and `Scatter2Entries` to implement the same public semantics despite using different internal matrix representations. The 4×4 backends share `CoupledEntries`, which implements `ProjectPlaneWaveModeDeterminant`, `ProjectPower` (per incident eigen-wave) and `ProjectJonesAmplitudes` (Jones reflection and transmission matrices), but not the scalar `ProjectAmplitudes`: scalar amplitudes are available from the 2×2 backends only, at compile time.
 
 Retained workspaces similarly expose reconstruction capabilities through traits such as:
 
@@ -1236,6 +1257,8 @@ Current equivalence tests compare:
 * mode determinant;
 * retained layer boundary waves;
 * derivative branches.
+
+The 4×4 backends are compared with each other on full-tensor stacks (Jones matrices, power, characteristic zeros and their zero-free ratio, derivatives in `k0`, `k∥` and thickness), and with the 2×2 backends on separable stacks: their TE and TM channels give the scalar amplitudes and zeros, the coupled channel diagonal Jones matrices and a characteristic equal to a zero-free gauge times the TE and TM characteristics. Fields of the 4×4 backends are checked against Maxwell's equations directly.
 
 Once two backends produce equivalent raw boundary waves and retained isotropic quantities, higher observable projections need not be duplicated exhaustively for both backends.
 

@@ -75,13 +75,47 @@ Added:
   region stacks; a modal direction takes per-entry stack-frame rates
   `[ε', μ']` (`ConstitutiveRates`) as well as isotropic `(ε', μ')`.
 
+- `Transfer4` and `Scatter4`: 4×4 transfer- and scattering-matrix backends
+  for any region, including full ε and μ tensors that couple TE and TM. They
+  propagate the tangential state `ψ = (E_x, Z₀H_y, E_y, −Z₀H_x)` with
+  `dψ/dz = i k₀ Δ ψ`, `Δ` the Berreman matrix obtained by eliminating `E_z`
+  and `H_z` through `ε_zz` and `μ_zz`, and solve the coupled channel, or TE
+  and TM of a separable stack. `Transfer4` uses the entire propagator
+  `exp(i k₀ d Δ)` (scaling and squaring), exact through layer cutoffs and
+  degenerate or defective layer eigenvalues; `Scatter4` composes bounded
+  forward and backward eigen-wave amplitudes and refuses a layer whose
+  forward and backward eigenvalues meet (`Scatter4Error::DefectiveLayer`).
 - `Channel` (`TransverseElectric`, `TransverseMagnetic`, `Coupled`;
-  `From<Polarisation>`) and `ChannelError` (`Unsupported`, `BranchKind`).
-  The 2×2 backends refuse the coupled channel.
+  `From<Polarisation>`) and `ChannelError` (`Unsupported`, `NotInvariant`,
+  `BranchKind`). The 2×2 backends refuse the coupled channel; the 4×4
+  backends refuse TE and TM on a stack with a region that couples them.
 - `ExteriorBranch`: an open side's outward normal wavenumbers, `Scalar(κ)`
   for TE or TM and `Pair([κ₁, κ₂])` for the coupled channel (an outgoing wave
   varies as `exp(iκ|z|)` away from the stack, so an isotropic exterior gives
-  `(κ, κ)`). `ExteriorWavevectors::from_branches` builds them.
+  `(κ, κ)`). `ExteriorWavevectors::from_branches` builds them. Each
+  exterior's outgoing subspace is the spectral projector of the supplied
+  roots applied to `E_y` and `Z₀H_y`, analytic where two outgoing roots
+  coincide and singular where an outgoing root meets an incoming one; its
+  conditioning is reported by `CoupledContext::basis_conditioning`.
+- Coupled characteristic `det[V_L | M V_R]` of the two boundary subspaces
+  (`Transfer4`), and the product of the pivot determinants of the same
+  interface system in bounded amplitudes (`Scatter4`). For a separable stack
+  it is a nonvanishing gauge times the TE and TM characteristics, so mode
+  counts add. Walls close a side by the states they admit
+  (`span{Z₀H_y, Z₀H_x}` for a perfect electric wall, `span{E_x, E_y}` for a
+  perfect magnetic one), carried through the gap and the PML by the
+  exterior's propagator; the PML is normalised by its `k∥`-independent
+  reference phase.
+- `JonesAmplitudes`: reflection and transmission matrices between exterior
+  eigen-waves (TE then TM for an isotropic exterior), through
+  `ProjectJonesAmplitudes`; `ProjectPower` gives `PlaneWavePower` of one
+  value per incident eigen-wave. Scalar `PlaneWaveAmplitudes`
+  stay with the 2×2 backends.
+- `CoupledWorkspace::fields`: all six components of `E` and `Z₀H` in any
+  region for a driven 4×4 solution.
+- Real-axis evaluation of the coupled channel selects the principal
+  outgoing pair (decaying, or carrying flux away from the stack) of each open
+  exterior; `ExteriorSelectionError`, `RealAxisEvaluationError::Exterior`.
 
 Changed (breaking):
 
@@ -121,6 +155,9 @@ Changed (breaking):
   `ChannelMismatch`.
 - `ExteriorWavevectors::left`/`right` return `Option<&ExteriorBranch<A>>`
   (`ExteriorBranch::scalar` gives the TE/TM wavevector).
+- `PlaneWaveEntries::ExteriorContext` no longer requires
+  `ExteriorContextProvider`.
+- `TensorConstitutiveLift` gains `is_separable`.
 - `Transfer2Error` and `Scatter2Error` gain `Channel`.
 - Real-axis `amplitudes`, `power` and `excitation` return `SolveRequestError`,
   which now wraps `ProjectionConstraintError`.
