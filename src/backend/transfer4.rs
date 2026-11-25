@@ -74,6 +74,7 @@ impl Transfer4 {
     }
 
     fn accumulate<J, E, M>(
+        &self,
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,

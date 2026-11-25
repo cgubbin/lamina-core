@@ -967,3 +967,86 @@ fn derivatives_agree_between_backends_and_with_central_differences() {
         );
     }
 }
+
+#[test]
+fn continued_scatter4_split_counts_like_transfer4_away_from_the_real_axis() {
+    // A lossy rotated-uniaxial core: its hybrid modes lie well off the real
+    // axis. The rectangle stops short of the core's own branch points near
+    // β = k₀ √ε (about 7.65 + 0.84i and beyond).
+    let k0 = 4.0;
+    let lossy = |epsilon: f64| ComplexQuadratic {
+        epsilon: [c(epsilon, 0.8), C::default(), C::default()],
+        mu: [c(1.0, 0.0), C::default(), C::default()],
+    };
+    let stack = waveguide(
+        oriented(
+            [lossy(4.0), lossy(4.4), lossy(3.6)],
+            Rotation::from_euler(0.5, 0.6, 0.3),
+        ),
+        false,
+    );
+    let exteriors = waveguide_exteriors(false);
+    let (lo, hi) = (c(5.85, 0.1), c(7.3, 3.0));
+    let centre = (lo + hi) * 0.5;
+    let transfer = characteristic!(Transfer4::new(), &stack, k0, exteriors, Channel::Coupled);
+    let continued = characteristic!(
+        Scatter4::continued_from(c(k0, 0.0), centre),
+        &stack,
+        k0,
+        exteriors,
+        Channel::Coupled
+    );
+    let n = winding(&transfer, lo, hi);
+    assert!(
+        n.round() >= 2.0 && (n - n.round()).abs() < 1e-6,
+        "Transfer4 {n}"
+    );
+    assert!((winding(&continued, lo, hi) - n).abs() < 1e-6);
+    assert!(winding(|beta| continued(beta) / transfer(beta), lo, hi).abs() < 1e-6);
+}
+
+#[test]
+fn continuation_through_a_layer_cutoff_is_refused() {
+    // The layer's forward and backward eigenvalues meet at β = 1.5 k₀.
+    let stack = Stack::builder(isotropic(lossless(1.0)), isotropic(lossless(3.0)))
+        .layer(
+            oriented(
+                [lossless(2.25), lossless(2.25), lossless(2.25)],
+                Rotation::from_euler(0.3, 0.8, 0.1),
+            ),
+            Length::centimetres(0.3),
+        )
+        .finalise();
+    let k0 = 2.0;
+    let evaluator = ComplexPlaneEvaluator::<HoloJ0, _, _>::compile(
+        &stack,
+        Scatter4::continued_from(c(k0, 0.0), c(2.4, 0.0)),
+    )
+    .unwrap();
+    let at = |beta: C| {
+        let coordinates = CanonicalCoordinates::new(
+            <HoloJ0 as SeedJet>::constant(arr0(c(k0, 0.0))),
+            <HoloJ0 as SeedJet>::constant(arr0(beta)),
+        );
+        evaluator.checked_determinant(
+            &coordinates,
+            &evaluate_stack_exterior_wavevectors::<ComplexPlane, _, _>(
+                &coordinates,
+                evaluator.stack(),
+                Channel::Coupled,
+            )
+            .unwrap(),
+            Channel::Coupled,
+        )
+    };
+    assert!(at(c(2.6, 0.0)).is_ok());
+    match at(c(3.3, 0.0)) {
+        Err(crate::DeterminantEvaluationError::Backend { source }) => assert_eq!(
+            source,
+            Scatter4Error::Continuation {
+                layer: FiniteLayerIndex::new(0)
+            }
+        ),
+        other => panic!("unexpected {:?}", other.map(|_| ())),
+    }
+}

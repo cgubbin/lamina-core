@@ -174,9 +174,20 @@ where
         reference: &Matrix<A>,
         direction: Direction,
     ) -> Option<Self> {
+        let ordered = sample_matrices(generator)
+            .iter()
+            .zip(&sample_matrices(reference))
+            .map(|(sample, reference)| continued(sample, reference, direction))
+            .collect::<Option<Vec<_>>>()?;
+        Self::from_ordered(generator, &ordered)
+    }
+
+    /// The split of `generator` whose chosen roots are the first half of
+    /// each sample's `ordered` roots, refined through the jets.
+    pub(crate) fn from_ordered(generator: &Matrix<A>, ordered: &[Vec<A::Scalar>]) -> Option<Self> {
         let like = generator.get(0, 0);
         let characteristic = Monic::characteristic(generator);
-        let (mut outgoing, mut complement) = classified_factors(generator, reference, direction)?;
+        let (mut outgoing, mut complement) = factors(generator, ordered)?;
 
         for _ in 0..NEWTON_STEPS {
             let residual = outgoing.multiply(&complement, like);
@@ -248,35 +259,21 @@ where
     })
 }
 
-/// The factors of each sample's roots in `direction` and the others, with
-/// the roots lifted as constants.
-fn classified_factors<A>(
-    generator: &Matrix<A>,
-    reference: &Matrix<A>,
-    direction: Direction,
-) -> Option<(Monic<A>, Monic<A>)>
+/// The factors of the first and the second half of each sample's ordered
+/// roots, with the roots lifted as constants.
+fn factors<A>(generator: &Matrix<A>, ordered: &[Vec<A::Scalar>]) -> Option<(Monic<A>, Monic<A>)>
 where
     A: ScalarAlgebra,
     A::Scalar: ComplexScalar,
     A::Dimension: Dimension,
 {
-    // roots[k][sample]: the k-th root, chosen ones first.
-    let mut roots: Vec<Vec<A::Scalar>> = vec![Vec::new(); generator.rows()];
-    for (sample, reference) in sample_matrices(generator)
-        .iter()
-        .zip(&sample_matrices(reference))
-    {
-        for (k, root) in continued(sample, reference, direction)?
-            .into_iter()
-            .enumerate()
-        {
-            roots[k].push(root);
-        }
-    }
     let like = generator.get(0, 0);
-    let lifted = roots
-        .into_iter()
-        .map(|values| {
+    let lifted = (0..generator.rows())
+        .map(|k| {
+            let values = ordered
+                .iter()
+                .map(|roots| roots.get(k).copied())
+                .collect::<Option<Vec<_>>>()?;
             Array::from_shape_vec(like.value().raw_dim(), values)
                 .ok()
                 .map(A::lift_constant)
@@ -291,7 +288,10 @@ where
 
 /// The roots of one sample's generator, those in `direction` first, or
 /// `None` when they do not split evenly.
-fn classify<C: ComplexScalar>(generator: &DMatrix<C>, direction: Direction) -> Option<Vec<C>> {
+pub(crate) fn classify<C: ComplexScalar>(
+    generator: &DMatrix<C>,
+    direction: Direction,
+) -> Option<Vec<C>> {
     let roots = eigenvalues(generator)?;
     let scale = roots
         .iter()
@@ -330,11 +330,17 @@ fn continued<C: ComplexScalar>(
     direction: Direction,
 ) -> Option<Vec<C>> {
     let targets = classify(reference, direction)?;
+    matched(generator, &targets)
+}
+
+/// The roots of `generator` in the order of `targets`, by the assignment of
+/// least total distance.
+pub(crate) fn matched<C: ComplexScalar>(generator: &DMatrix<C>, targets: &[C]) -> Option<Vec<C>> {
     let roots = eigenvalues(generator)?;
     let cost = |order: &Vec<usize>| -> f64 {
         order
             .iter()
-            .zip(&targets)
+            .zip(targets)
             .map(|(&k, target)| try_f64((roots[k] - *target).modulus()))
             .sum()
     };
@@ -342,6 +348,16 @@ fn continued<C: ComplexScalar>(
         .into_iter()
         .min_by(|a, b| cost(a).total_cmp(&cost(b)))?;
     Some(best.into_iter().map(|k| roots[k]).collect())
+}
+
+/// The least distance between a root of the first half of `roots` and one
+/// of the second half.
+pub(crate) fn separation<C: ComplexScalar>(roots: &[C]) -> f64 {
+    let (chosen, rest) = roots.split_at(roots.len() / 2);
+    chosen
+        .iter()
+        .flat_map(|a| rest.iter().map(move |b| try_f64((*a - *b).modulus())))
+        .fold(f64::INFINITY, f64::min)
 }
 
 /// Every ordering of `0..n`.
@@ -382,7 +398,7 @@ fn flux<C: ComplexScalar>(generator: &DMatrix<C>, root: C, scale: f64) -> Option
     flux.is_finite().then_some(flux)
 }
 
-fn try_f64<R: nalgebra::RealField>(value: R) -> f64 {
+pub(crate) fn try_f64<R: nalgebra::RealField>(value: R) -> f64 {
     nalgebra::try_convert::<_, f64>(value).unwrap_or(f64::NAN)
 }
 
