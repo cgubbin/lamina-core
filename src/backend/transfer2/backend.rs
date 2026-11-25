@@ -450,8 +450,8 @@ mod tests {
         );
 
         let flipped = ExteriorWavevectors::new(
-            exterior.left().unwrap().negate(),
-            exterior.right().unwrap().negate(),
+            exterior.left().unwrap().scalar().unwrap().negate(),
+            exterior.right().unwrap().scalar().unwrap().negate(),
         );
 
         let ordinary = backend

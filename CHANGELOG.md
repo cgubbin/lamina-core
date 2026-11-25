@@ -75,6 +75,14 @@ Added:
   region stacks; a modal direction takes per-entry stack-frame rates
   `[ε', μ']` (`ConstitutiveRates`) as well as isotropic `(ε', μ')`.
 
+- `Channel` (`TransverseElectric`, `TransverseMagnetic`, `Coupled`;
+  `From<Polarisation>`) and `ChannelError` (`Unsupported`, `BranchKind`).
+  The 2×2 backends refuse the coupled channel.
+- `ExteriorBranch`: an open side's outward normal wavenumbers, `Scalar(κ)`
+  for TE or TM and `Pair([κ₁, κ₂])` for the coupled channel (an outgoing wave
+  varies as `exp(iκ|z|)` away from the stack, so an isotropic exterior gives
+  `(κ, κ)`). `ExteriorWavevectors::from_branches` builds them.
+
 Changed (breaking):
 
 - The determinant and field evaluators (`checked_determinant`, `determinant` and
@@ -105,6 +113,15 @@ Changed (breaking):
   amplitudes and `Transfer2` `NonFiniteFinalMatrix`. For every class the check
   now covers each derivative part of the lifted jet as well as its value.
   `Transfer2Error::NonFiniteFinalMatrix` now says the inputs were finite.
+- `Backend::solve` and `Backend::retain` take a `Channel` instead of a
+  `Polarisation`, and the real-axis and complex-plane evaluators take
+  `impl Into<Channel>`; a `Polarisation` argument still converts.
+  `RealAxisState::polarisation` and `ComplexPlaneState::polarisation` are
+  replaced by `channel`, and `RealAxisPairError::PolarisationMismatch` by
+  `ChannelMismatch`.
+- `ExteriorWavevectors::left`/`right` return `Option<&ExteriorBranch<A>>`
+  (`ExteriorBranch::scalar` gives the TE/TM wavevector).
+- `Transfer2Error` and `Scatter2Error` gain `Channel`.
 - Real-axis `amplitudes`, `power` and `excitation` return `SolveRequestError`,
   which now wraps `ProjectionConstraintError`.
 

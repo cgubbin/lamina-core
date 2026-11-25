@@ -75,7 +75,7 @@ fn determinant(
     let exterior = evaluate_stack_exterior_wavevectors::<ComplexPlane, _, J>(
         &coordinates,
         &stack,
-        polarisation,
+        polarisation.into(),
     )
     .unwrap();
     match backend {

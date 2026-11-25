@@ -408,7 +408,9 @@ mod test_support;
 
 pub use algebra::{Jet, ModeJet1, ScalarAlgebra, SeedJet};
 
-pub use backend::{Backend, ExteriorWavevectors, Scatter2, Transfer2};
+pub use backend::{
+    Backend, Channel, ChannelError, ExteriorBranch, ExteriorWavevectors, Scatter2, Transfer2,
+};
 
 pub use domain::{ComplexPlane, RealAxis};
 

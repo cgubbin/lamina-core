@@ -16,7 +16,7 @@ use num_traits::{Float, FloatConst, FromPrimitive};
 use std::fmt::Debug;
 
 use crate::{
-    Polarisation,
+    Channel,
     algebra::{
         ArrayJet0, ArrayJet1, ArrayJet2, ArrayJetBivariate1, ArrayJetBivariate2, Jet, RealParameter,
     },
@@ -73,7 +73,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> SolvedRealResult<B, ValueJet<Complex<R>, D>>
     where
         Complex<R>: ComplexScalar<RealField = R>,
@@ -85,14 +85,14 @@ impl<B> RealAxisEvaluator<B> {
     {
         let mapping = DerivativeMapping::none();
 
-        self._solve::<ValueJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._solve::<ValueJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 
     pub fn retain<M, R, D>(
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> RetainedRealResult<B, ValueJet<Complex<R>, D>, M>
     where
         Complex<R>: ComplexScalar<RealField = R>,
@@ -104,7 +104,7 @@ impl<B> RealAxisEvaluator<B> {
     {
         let mapping = DerivativeMapping::none();
 
-        self._retain::<ValueJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._retain::<ValueJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 }
 
@@ -114,7 +114,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         parameter: Parameter,
     ) -> SolvedRealResult<B, FirstJet<Complex<R>, D>>
     where
@@ -128,7 +128,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([parameter]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._solve::<FirstJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._solve::<FirstJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 
     /// Retain backend data while computing values and first derivatives with
@@ -137,7 +137,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         parameter: Parameter,
     ) -> RetainedRealResult<B, FirstJet<Complex<R>, D>, M>
     where
@@ -151,7 +151,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([parameter]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._retain::<FirstJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._retain::<FirstJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 }
 
@@ -162,7 +162,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         parameter: Parameter,
     ) -> SolvedRealResult<B, SecondJet<Complex<R>, D>>
     where
@@ -176,7 +176,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([parameter]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._solve::<SecondJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._solve::<SecondJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 
     /// Retain backend data while computing directional derivatives through
@@ -185,7 +185,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         parameter: Parameter,
     ) -> RetainedRealResult<B, SecondJet<Complex<R>, D>, M>
     where
@@ -199,7 +199,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([parameter]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._retain::<SecondJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._retain::<SecondJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 }
 
@@ -213,7 +213,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         axis0: Parameter,
         axis1: Parameter,
     ) -> SolvedRealResult<B, BivariateFirstJet<Complex<R>, D>>
@@ -229,7 +229,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([axis0, axis1]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._solve::<BivariateFirstJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._solve::<BivariateFirstJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 
     /// Retain backend data while computing first derivatives with respect to
@@ -238,7 +238,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         axis0: Parameter,
         axis1: Parameter,
     ) -> RetainedRealResult<B, BivariateFirstJet<Complex<R>, D>, M>
@@ -254,7 +254,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([axis0, axis1]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._retain::<BivariateFirstJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._retain::<BivariateFirstJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 }
 
@@ -267,7 +267,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         axis0: Parameter,
         axis1: Parameter,
     ) -> SolvedRealResult<B, BivariateSecondJet<Complex<R>, D>>
@@ -283,7 +283,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([axis0, axis1]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._solve::<BivariateSecondJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._solve::<BivariateSecondJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 
     /// Retain backend data while computing a two-parameter gradient and
@@ -292,7 +292,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<R, D>,
         stack: &Stack<M, R>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
         axis0: Parameter,
         axis1: Parameter,
     ) -> RetainedRealResult<B, BivariateSecondJet<Complex<R>, D>, M>
@@ -308,7 +308,7 @@ impl<B> RealAxisEvaluator<B> {
         let mapping =
             DerivativeMapping::new([axis0, axis1]).map_err(SolveRequestError::DerivativeMapping)?;
 
-        self._retain::<BivariateSecondJet<Complex<R>, D>, M>(input, stack, polarisation, &mapping)
+        self._retain::<BivariateSecondJet<Complex<R>, D>, M>(input, stack, channel.into(), &mapping)
     }
 }
 
@@ -318,7 +318,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<<J::Scalar as ComplexField>::RealField, J::Dimension>,
         stack: &Stack<M, <J::Scalar as ComplexField>::RealField>,
-        polarisation: Polarisation,
+        channel: Channel,
         mapping: &DerivativeMapping,
     ) -> Result<
         RealAxisResult<J, PlaneWaveSolution<B::Entries>>,
@@ -342,7 +342,7 @@ impl<B> RealAxisEvaluator<B> {
         let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
             canonical_problem.stack(),
-            polarisation,
+            channel,
         )
         .map_err(RealAxisEvaluationError::Constitutive)?;
 
@@ -352,7 +352,7 @@ impl<B> RealAxisEvaluator<B> {
                 canonical_problem.coordinates(),
                 canonical_problem.stack(),
                 &exterior,
-                polarisation,
+                channel,
             )
             .map_err(|err| RealAxisEvaluationError::Backend { source: err })?;
 
@@ -364,7 +364,7 @@ impl<B> RealAxisEvaluator<B> {
         &self,
         input: CoordinateInput<<J::Scalar as ComplexField>::RealField, J::Dimension>,
         stack: &Stack<M, <J::Scalar as ComplexField>::RealField>,
-        polarisation: Polarisation,
+        channel: Channel,
         mapping: &DerivativeMapping,
     ) -> Result<
         RealAxisState<J, M, B::Workspace>,
@@ -388,7 +388,7 @@ impl<B> RealAxisEvaluator<B> {
         let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
             canonical_problem.stack(),
-            polarisation,
+            channel,
         )
         .map_err(RealAxisEvaluationError::Constitutive)?;
 
@@ -398,7 +398,7 @@ impl<B> RealAxisEvaluator<B> {
                 canonical_problem.coordinates(),
                 canonical_problem.stack(),
                 &exterior,
-                polarisation,
+                channel,
             )
             .map_err(|err| RealAxisEvaluationError::Backend { source: err })?;
 
@@ -407,7 +407,7 @@ impl<B> RealAxisEvaluator<B> {
             workspace,
             context,
             stack.clone(),
-            polarisation,
+            channel,
         ))
     }
 }

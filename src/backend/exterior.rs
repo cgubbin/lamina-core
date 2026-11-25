@@ -4,22 +4,58 @@ use crate::{
     ComplexScalar, IncidentSide, Polarisation,
     algebra::ScalarAlgebra,
     backend::{
-        ClosedSide, ExteriorContextProvider, TerminationError, medium::LayerQuantities,
-        termination::check_exterior_pattern,
+        Channel, ChannelError, ClosedSide, ExteriorContextProvider, TerminationError,
+        medium::LayerQuantities, termination::check_exterior_pattern,
     },
-    input::{CanonicalCoordinates, CanonicalStack},
+    input::{CanonicalCoordinates, CanonicalStack, canonical::CanonicalTermination},
     material::{ConstitutiveError, TensorConstitutiveLift},
     stack::{StackRegion, StackSide},
 };
 
-/// Canonical longitudinal angular wavevectors in the open exterior media.
+/// The branch-selected outward normal wavenumbers of one open exterior.
 ///
-/// Each side holds the branch-selected out-of-plane angular wavevector `κ` of
-/// its semi-infinite exterior medium when that side is open, and nothing when
-/// the side is closed by a wall or a PML: a closed side's characteristic does
-/// not depend on a choice of exterior branch. A pattern that disagrees with
-/// the stack's terminations is rejected by the backends with
-/// [`TerminationError::ExteriorBranchMismatch`](crate::backend::TerminationError).
+/// A TE or TM channel has one outgoing wave per open side, a coupled channel
+/// two. Values are *outward*: an outgoing wave varies as `exp(iκ |z|)` away
+/// from the stack, so the right exterior's outgoing normal wavenumbers are
+/// `κ` and the left exterior's are `−κ`. An isotropic exterior gives `κ` for a
+/// scalar channel and `(κ, κ)` for the coupled channel on both sides.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExteriorBranch<A> {
+    /// The outward normal wavenumber of a TE or TM channel.
+    Scalar(A),
+    /// The outward normal wavenumbers of the two outgoing waves of the
+    /// coupled channel, in either order.
+    Pair([A; 2]),
+}
+
+impl<A> ExteriorBranch<A> {
+    /// The wavenumber of a scalar branch, or `None` for a pair.
+    pub fn scalar(&self) -> Option<&A> {
+        match self {
+            Self::Scalar(kappa) => Some(kappa),
+            Self::Pair(_) => None,
+        }
+    }
+
+    /// Return every supplied wavenumber.
+    pub(crate) fn values(&self) -> &[A] {
+        match self {
+            Self::Scalar(kappa) => std::slice::from_ref(kappa),
+            Self::Pair(pair) => pair,
+        }
+    }
+}
+
+/// Canonical outward normal angular wavevectors in the open exterior media.
+///
+/// Each side holds the branch-selected [`ExteriorBranch`] of its
+/// semi-infinite exterior medium when that side is open, and nothing when the
+/// side is closed by a wall or a PML: a closed side's characteristic does not
+/// depend on a choice of exterior branch. A pattern that disagrees with the
+/// stack's terminations is rejected by the backends with
+/// [`TerminationError::ExteriorBranchMismatch`](crate::backend::TerminationError),
+/// and a branch kind that does not match the channel with
+/// [`ChannelError::BranchKind`](crate::backend::ChannelError).
 ///
 /// Branch selection is completed before this value reaches a numerical
 /// backend. This allows advanced callers, such as complex-frequency mode
@@ -27,59 +63,58 @@ use crate::{
 /// rather than relying on the backend to reconstruct them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExteriorWavevectors<A> {
-    left: Option<A>,
-    right: Option<A>,
+    left: Option<ExteriorBranch<A>>,
+    right: Option<ExteriorBranch<A>>,
 }
 
 impl<A> ExteriorWavevectors<A> {
-    /// Construct wavevectors for a stack open on both sides.
+    /// Construct scalar-channel wavevectors for a stack open on both sides.
     pub fn new(left: A, right: A) -> Self {
-        Self {
-            left: Some(left),
-            right: Some(right),
-        }
+        Self::from_options(Some(left), Some(right))
     }
 
-    /// Construct wavevectors for a stack closed on the left and open on the
-    /// right.
+    /// Construct scalar-channel wavevectors for a stack closed on the left
+    /// and open on the right.
     pub fn closed_left(right: A) -> Self {
-        Self {
-            left: None,
-            right: Some(right),
-        }
+        Self::from_options(None, Some(right))
     }
 
-    /// Construct wavevectors for a stack open on the left and closed on the
-    /// right.
+    /// Construct scalar-channel wavevectors for a stack open on the left and
+    /// closed on the right.
     pub fn closed_right(left: A) -> Self {
-        Self {
-            left: Some(left),
-            right: None,
-        }
+        Self::from_options(Some(left), None)
     }
 
     /// Construct the empty pattern of a stack closed on both sides.
     pub fn closed() -> Self {
-        Self {
-            left: None,
-            right: None,
-        }
+        Self::from_branches(None, None)
     }
 
-    /// Construct wavevectors from optional per-side values.
+    /// Construct scalar-channel wavevectors from optional per-side values.
     pub fn from_options(left: Option<A>, right: Option<A>) -> Self {
+        Self::from_branches(
+            left.map(ExteriorBranch::Scalar),
+            right.map(ExteriorBranch::Scalar),
+        )
+    }
+
+    /// Construct wavevectors from optional per-side branches.
+    pub fn from_branches(
+        left: Option<ExteriorBranch<A>>,
+        right: Option<ExteriorBranch<A>>,
+    ) -> Self {
         Self { left, right }
     }
 
-    /// Return the wavevector in the left exterior medium, if the left side is
+    /// Return the branch of the left exterior medium, if the left side is
     /// open.
-    pub fn left(&self) -> Option<&A> {
+    pub fn left(&self) -> Option<&ExteriorBranch<A>> {
         self.left.as_ref()
     }
 
-    /// Return the wavevector in the right exterior medium, if the right side
-    /// is open.
-    pub fn right(&self) -> Option<&A> {
+    /// Return the branch of the right exterior medium, if the right side is
+    /// open.
+    pub fn right(&self) -> Option<&ExteriorBranch<A>> {
         self.right.as_ref()
     }
 
@@ -88,6 +123,7 @@ impl<A> ExteriorWavevectors<A> {
         self.left
             .iter()
             .chain(self.right.iter())
+            .flat_map(ExteriorBranch::values)
             .all(&mut predicate)
     }
 }
@@ -152,11 +188,18 @@ impl<A> ExteriorContext<A> {
         A: ScalarAlgebra + TensorConstitutiveLift<E, M> + Clone,
         A::Scalar: ComplexScalar,
         A::Dimension: Dimension,
-        Error: From<TerminationError> + From<ConstitutiveError>,
+        Error: From<TerminationError> + From<ConstitutiveError> + From<ChannelError>,
     {
         check_exterior_pattern(stack, exterior)?;
 
-        let side = |side, region, material, termination, supplied: Option<&A>| {
+        let side = |side, region, material, termination, supplied: Option<&ExteriorBranch<A>>| {
+            let supplied = match supplied {
+                None => None,
+                Some(branch) => Some(branch.scalar().ok_or(ChannelError::BranchKind {
+                    side,
+                    channel: polarisation.into(),
+                })?),
+            };
             let medium =
                 LayerQuantities::evaluate::<E, M>(region, material, coordinates, polarisation)?;
             let closure = ClosedSide::new(side, termination, &medium, coordinates)?;
@@ -323,34 +366,50 @@ where
     )
 }
 
-/// Principal-root exterior wavevectors of `polarisation` for the open sides
-/// of `stack`.
+/// Principal exterior branches of `channel` for the open sides of `stack`:
+/// the principal root of each polarisation's `κ²`, one for TE or TM and
+/// `(κ_TE, κ_TM)` for the coupled channel.
 pub(crate) fn evaluate_stack_exterior_wavevectors<E, M, J>(
     coordinates: &CanonicalCoordinates<J>,
     stack: &CanonicalStack<M, J>,
-    polarisation: Polarisation,
+    channel: Channel,
 ) -> Result<ExteriorWavevectors<J>, ConstitutiveError>
 where
     J: ScalarAlgebra + TensorConstitutiveLift<E, M> + Clone,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
 {
-    let kappa = |region, material| {
+    let kappa = |region, material: &M, polarisation| {
         LayerQuantities::evaluate::<E, M>(region, material, coordinates, polarisation)
             .map(LayerQuantities::into_kappa)
     };
+    let branch = |region, material: &M| {
+        Ok(match channel.polarisation() {
+            Some(polarisation) => ExteriorBranch::Scalar(kappa(region, material, polarisation)?),
+            None => ExteriorBranch::Pair([
+                kappa(region, material, Polarisation::TransverseElectric)?,
+                kappa(region, material, Polarisation::TransverseMagnetic)?,
+            ]),
+        })
+    };
+    let open = |termination: &CanonicalTermination<J>, region, material| {
+        termination
+            .is_open()
+            .then(|| branch(region, material))
+            .transpose()
+    };
 
-    Ok(ExteriorWavevectors::from_options(
-        stack
-            .left_termination()
-            .is_open()
-            .then(|| kappa(StackRegion::LeftExterior, stack.left_exterior()))
-            .transpose()?,
-        stack
-            .right_termination()
-            .is_open()
-            .then(|| kappa(StackRegion::RightExterior, stack.right_exterior()))
-            .transpose()?,
+    Ok(ExteriorWavevectors::from_branches(
+        open(
+            stack.left_termination(),
+            StackRegion::LeftExterior,
+            stack.left_exterior(),
+        )?,
+        open(
+            stack.right_termination(),
+            StackRegion::RightExterior,
+            stack.right_exterior(),
+        )?,
     ))
 }
 
@@ -424,9 +483,15 @@ mod tests {
         let right_quantities =
             LayerQuantities::real_axis(&right, &coordinates, Polarisation::TransverseElectric);
 
-        assert_jet_close(exterior.left().unwrap(), left_quantities.kappa());
+        assert_jet_close(
+            exterior.left().unwrap().scalar().unwrap(),
+            left_quantities.kappa(),
+        );
 
-        assert_jet_close(exterior.right().unwrap(), right_quantities.kappa());
+        assert_jet_close(
+            exterior.right().unwrap().scalar().unwrap(),
+            right_quantities.kappa(),
+        );
     }
 
     #[test]
@@ -444,13 +509,19 @@ mod tests {
         let right_expected =
             LayerQuantities::real_axis(&right, &coordinates, Polarisation::TransverseElectric);
 
-        assert_jet_close(exterior.left().unwrap(), left_expected.kappa());
+        assert_jet_close(
+            exterior.left().unwrap().scalar().unwrap(),
+            left_expected.kappa(),
+        );
 
-        assert_jet_close(exterior.right().unwrap(), right_expected.kappa());
+        assert_jet_close(
+            exterior.right().unwrap().scalar().unwrap(),
+            right_expected.kappa(),
+        );
 
         assert_ne!(
-            exterior.left().unwrap().value()[()],
-            exterior.right().unwrap().value()[()],
+            exterior.left().unwrap().scalar().unwrap().value()[()],
+            exterior.right().unwrap().scalar().unwrap().value()[()],
         );
     }
 
@@ -465,7 +536,13 @@ mod tests {
 
         let tm = evaluate_exterior_wavevectors::<RealAxis, _, J>(&coordinates, &left, &right);
 
-        assert_jet_close(te.left().unwrap(), tm.left().unwrap());
-        assert_jet_close(te.right().unwrap(), tm.right().unwrap());
+        assert_jet_close(
+            te.left().unwrap().scalar().unwrap(),
+            tm.left().unwrap().scalar().unwrap(),
+        );
+        assert_jet_close(
+            te.right().unwrap().scalar().unwrap(),
+            tm.right().unwrap().scalar().unwrap(),
+        );
     }
 }

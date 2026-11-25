@@ -48,9 +48,12 @@ use nalgebra::ComplexField;
 use ndarray::Dimension;
 
 use crate::{
-    CanonicalCoordinates, ComplexScalar, Polarisation,
+    CanonicalCoordinates, ComplexScalar,
     algebra::ScalarAlgebra,
-    backend::{Backend, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace},
+    backend::{
+        Backend, Channel, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace,
+        scalar_polarisation,
+    },
     input::CanonicalStack,
     material::TensorConstitutiveLift,
 };
@@ -131,7 +134,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>,
@@ -140,7 +143,7 @@ where
             coordinates,
             stack,
             exterior,
-            polarisation,
+            scalar_polarisation(channel)?,
             RunMode::ResponseOnly,
         )?;
 
@@ -152,7 +155,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<Self::Workspace, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>,
@@ -161,7 +164,7 @@ where
             coordinates,
             stack,
             exterior,
-            polarisation,
+            scalar_polarisation(channel)?,
             RunMode::InternalFields,
         )?;
 

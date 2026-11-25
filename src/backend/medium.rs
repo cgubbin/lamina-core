@@ -51,23 +51,27 @@ pub enum PrincipalConstitutive<A> {
 /// The constitutive entries one polarisation sees; `normal` is `None` when
 /// it equals `transverse` (isotropic regions).
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Channel<T> {
+pub(crate) struct ChannelEntries<T> {
     pub(crate) canonical: T,
     pub(crate) transverse: T,
     pub(crate) normal: Option<T>,
 }
 
-impl<T> Channel<T> {
-    pub(crate) fn map<U>(self, mut f: impl FnMut(T) -> U) -> Channel<U> {
-        Channel {
+impl<T> ChannelEntries<T> {
+    pub(crate) fn map<U>(self, mut f: impl FnMut(T) -> U) -> ChannelEntries<U> {
+        ChannelEntries {
             canonical: f(self.canonical),
             transverse: f(self.transverse),
             normal: self.normal.map(f),
         }
     }
 
-    pub(crate) fn zip<U, V>(self, other: Channel<U>, mut f: impl FnMut(T, U) -> V) -> Channel<V> {
-        Channel {
+    pub(crate) fn zip<U, V>(
+        self,
+        other: ChannelEntries<U>,
+        mut f: impl FnMut(T, U) -> V,
+    ) -> ChannelEntries<V> {
+        ChannelEntries {
             canonical: f(self.canonical, other.canonical),
             transverse: f(self.transverse, other.transverse),
             normal: self.normal.zip(other.normal).map(|(a, b)| f(a, b)),
@@ -104,24 +108,24 @@ impl<A> PrincipalConstitutive<A> {
     }
 
     /// The entries `polarisation` sees.
-    pub(crate) fn channel(&self, polarisation: Polarisation) -> Channel<&A> {
+    pub(crate) fn channel(&self, polarisation: Polarisation) -> ChannelEntries<&A> {
         match (self, polarisation) {
-            (Self::Isotropic { epsilon, mu }, Polarisation::TransverseElectric) => Channel {
+            (Self::Isotropic { epsilon, mu }, Polarisation::TransverseElectric) => ChannelEntries {
                 canonical: epsilon,
                 transverse: mu,
                 normal: None,
             },
-            (Self::Isotropic { epsilon, mu }, Polarisation::TransverseMagnetic) => Channel {
+            (Self::Isotropic { epsilon, mu }, Polarisation::TransverseMagnetic) => ChannelEntries {
                 canonical: mu,
                 transverse: epsilon,
                 normal: None,
             },
-            (Self::Diagonal { epsilon, mu }, Polarisation::TransverseElectric) => Channel {
+            (Self::Diagonal { epsilon, mu }, Polarisation::TransverseElectric) => ChannelEntries {
                 canonical: &epsilon[1],
                 transverse: &mu[0],
                 normal: Some(&mu[2]),
             },
-            (Self::Diagonal { epsilon, mu }, Polarisation::TransverseMagnetic) => Channel {
+            (Self::Diagonal { epsilon, mu }, Polarisation::TransverseMagnetic) => ChannelEntries {
                 canonical: &mu[1],
                 transverse: &epsilon[0],
                 normal: Some(&epsilon[2]),
@@ -261,7 +265,7 @@ impl<A> LayerQuantities<A> {
     }
 
     /// Return the entries the selected polarisation sees.
-    pub(crate) fn channel(&self) -> Channel<&A> {
+    pub(crate) fn channel(&self) -> ChannelEntries<&A> {
         self.constitutive.channel(self.polarisation)
     }
 

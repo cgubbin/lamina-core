@@ -18,7 +18,7 @@ use num_traits::One;
 use crate::{
     Polarisation,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::{Channel, LayerQuantities},
+    backend::{ChannelEntries, LayerQuantities},
 };
 
 use super::IntegratedHermitianCrossStateProducts;
@@ -76,7 +76,7 @@ where
     /// Return `(electric, magnetic)` with each component weighted by its
     /// entry of `weights`; an isotropic weight multiplies the summed
     /// reconstructed components.
-    pub(crate) fn weighted(self, weights: Channel<R>) -> (R, R) {
+    pub(crate) fn weighted(self, weights: ChannelEntries<R>) -> (R, R) {
         let canonical = self.canonical.multiply(&weights.canonical);
         let reconstructed = match weights.normal {
             None => self

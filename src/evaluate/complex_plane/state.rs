@@ -5,7 +5,7 @@ use num_traits::{FromPrimitive, One};
 #[cfg(test)]
 use crate::observable::IsotropicConstitutiveSpectralData;
 use crate::{
-    CanonicalCoordinates, ComplexPlane, ComplexScalar, ExteriorWavevectors, Polarisation,
+    CanonicalCoordinates, Channel, ComplexPlane, ComplexScalar, ExteriorWavevectors,
     algebra::{
         CartesianScalarAlgebra, ComplexJet, Jet, JetStack, ScalarAlgebra, ScalarAlgebraExpRelExt,
     },
@@ -33,7 +33,7 @@ where
     exterior: ExteriorWavevectors<J>,
     stack: &'a CanonicalStack<M, J>,
     workspace: W,
-    polarisation: Polarisation,
+    channel: Channel,
 }
 
 impl<'a, J, M, W> ComplexPlaneState<'a, J, M, W>
@@ -45,14 +45,14 @@ where
         exterior: ExteriorWavevectors<J>,
         stack: &'a CanonicalStack<M, J>,
         workspace: W,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Self {
         Self {
             coordinates,
             exterior,
             stack,
             workspace,
-            polarisation,
+            channel,
         }
     }
 
@@ -72,8 +72,9 @@ where
         &self.workspace
     }
 
-    pub fn polarisation(&self) -> Polarisation {
-        self.polarisation
+    /// The channel solved.
+    pub fn channel(&self) -> Channel {
+        self.channel
     }
 
     pub fn solution(&self) -> PlaneWaveSolutionView<'_, W::Entries>
