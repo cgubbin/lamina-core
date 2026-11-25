@@ -104,6 +104,7 @@ Changed (breaking):
   as diagonal and full regions already did; `Scatter2` previously returned NaN
   amplitudes and `Transfer2` `NonFiniteFinalMatrix`. For every class the check
   now covers each derivative part of the lifted jet as well as its value.
+  `Transfer2Error::NonFiniteFinalMatrix` now says the inputs were finite.
 - Real-axis `amplitudes`, `power` and `excitation` return `SolveRequestError`,
   which now wraps `ProjectionConstraintError`.
 
