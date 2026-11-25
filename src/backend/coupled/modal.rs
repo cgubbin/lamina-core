@@ -116,8 +116,8 @@ where
             return Err(ModeReconstructionError::NoUsableNullVector);
         };
         for k in 0..n {
-            left[k].push(u[(k, smallest)].clone());
-            right[k].push(v_t[(smallest, k)].clone());
+            left[k].push(u[(k, smallest)]);
+            right[k].push(v_t[(smallest, k)]);
         }
     }
     let lift = |values: Vec<A::Scalar>| {
