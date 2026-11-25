@@ -141,6 +141,8 @@ A separable region has no `xy`, `yx`, `yz` or `zy` component in `ε` or `μ`, so
 
 Canonical compilation copies regions, with their class and rotation, into the canonical stack: the exterior media, which also fill the gaps behind walls and the PML layers, are regions like the finite layers. Constitutive evaluation through the jet algebra preserves the class (`Isotropic(J)`, `Diagonal([J; 3])`, `Full([[J; 3]; 3])`); isotropic regions evaluate through exactly the scalar path. Diagonal and full regions must have finite entries and nonzero `ε_zz` and `μ_zz` at every evaluated point, since the normal fields are eliminated through them.
 
+Tensor materials are erased at two capability levels: `AnalyticalTensorMaterialHandle` (complex continuation and derivatives) and `TensorMaterialHandle` (real-axis values only, as for tabulated data). A region holding the latter lifts value jets on the real axis and nothing else, so its stacks give real-axis responses, and derivative or complex-plane evaluation of them is a type error.
+
 A scalar material evaluates as an isotropic region, so the backends, evaluators and observables take scalar and region stacks alike. The 2×2 backends accept isotropic and diagonal regions and refuse a full one with `ConstitutiveError::Unsupported`, naming the region and its class.
 
 ---

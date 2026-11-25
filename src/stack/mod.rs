@@ -14,7 +14,8 @@ use crate::{
     IncidentSide, MeromorphicMaterial,
     material::{
         AnalyticalMaterialHandle, AnalyticalMaterialRegion, Constitutive,
-        DifferentiableMaterialHandle, Material, MaterialHandle, MeromorphicMaterialHandle,
+        DifferentiableMaterialHandle, Material, MaterialHandle, MaterialRegion,
+        MeromorphicMaterialHandle,
     },
 };
 
@@ -32,6 +33,10 @@ pub type MeromorphicMaterialStack<C> =
 /// Heterogeneous stack supporting complex continuation and derivatives.
 pub type AnalyticalMaterialStack<C> =
     Stack<AnalyticalMaterialHandle<C>, <C as ComplexField>::RealField>;
+
+/// Stack of regions, each isotropic or tensor-valued, supporting real-axis
+/// constitutive evaluation.
+pub type TensorStack<C> = Stack<MaterialRegion<C>, <C as ComplexField>::RealField>;
 
 /// Stack of regions, each isotropic or tensor-valued, supporting complex
 /// continuation and derivatives.

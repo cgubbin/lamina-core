@@ -12,6 +12,8 @@ use super::{
     DifferentiableMaterialHandle, EvaluateDifferentiableMaterial,
     EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
     Material, MaterialHandle, MeromorphicMaterialHandle, Rotation, Sampled, Tensor3,
+    TensorMaterialHandle,
+    tensor::{TensorHandle, TensorMaterialPoint, TensorMaterialValuePoint},
 };
 use crate::{ComplexScalar, algebra::ScalarAlgebra, stack::StackRegion};
 
@@ -62,12 +64,19 @@ enum Kind<S, T, R> {
     },
 }
 
+/// A region of materials evaluated on the real spectral axis only.
+pub type MaterialRegion<C> =
+    Constitutive<MaterialHandle<C>, TensorMaterialHandle<C>, <C as ComplexField>::RealField>;
+
 /// A region of materials with a complex continuation and derivatives.
 pub type AnalyticalMaterialRegion<C> = Constitutive<
     AnalyticalMaterialHandle<C>,
     AnalyticalTensorMaterialHandle<C>,
     <C as ComplexField>::RealField,
 >;
+
+/// The real scalar type of a tensor handle.
+type Real<T> = <<T as TensorHandle>::Scalar as ComplexField>::RealField;
 
 impl<S, T, R> From<S> for Constitutive<S, T, R> {
     /// An isotropic region of a scalar material.
@@ -78,16 +87,17 @@ impl<S, T, R> From<S> for Constitutive<S, T, R> {
     }
 }
 
-impl<S, C> Constitutive<S, AnalyticalTensorMaterialHandle<C>, C::RealField>
+impl<S, T> Constitutive<S, T, Real<T>>
 where
-    C: ComplexScalar,
-    C::RealField: Float,
+    T: TensorHandle,
+    Real<T>: Float,
 {
     /// A tensor material oriented in the stack frame by `rotation`.
-    pub fn oriented(
-        material: AnalyticalTensorMaterialHandle<C>,
-        rotation: Rotation<C::RealField>,
-    ) -> Self {
+    ///
+    /// `material` is a [`TensorMaterialHandle`] (real-axis values) or an
+    /// [`AnalyticalTensorMaterialHandle`] (complex continuation and
+    /// derivatives); the region evaluates at the handle's level.
+    pub fn oriented(material: T, rotation: Rotation<Real<T>>) -> Self {
         let principal = material.principal_axes();
         Self {
             kind: Kind::Oriented {
@@ -201,29 +211,33 @@ pub enum ConstitutiveError {
 /// Lifting an entry through the scalar jet algebra gives its values and
 /// spectral derivatives: `R` is real and constant, so it commutes with both.
 #[doc(hidden)]
-pub struct StackFrameEntry<C: ComplexScalar> {
-    material: AnalyticalTensorMaterialHandle<C>,
-    rotation: Rotation<C::RealField>,
+pub struct StackFrameEntry<T: TensorHandle> {
+    material: T,
+    rotation: Rotation<Real<T>>,
     row: usize,
     column: usize,
 }
 
-impl<C> StackFrameEntry<C>
+impl<T> StackFrameEntry<T>
 where
-    C: ComplexScalar,
-    C::RealField: Copy,
+    T: TensorHandle,
+    Real<T>: Copy,
 {
-    fn rotate(&self, tensor: Tensor3<C>) -> C {
+    fn rotate(&self, tensor: Tensor3<T::Scalar>) -> T::Scalar {
         self.rotation.rotate(&tensor)[self.row][self.column]
     }
 }
 
 /// The scalar evaluation traits for [`StackFrameEntry`], each method rotating
-/// the matching tensor evaluation.
+/// the matching tensor evaluation. Each trait is implemented for the handles
+/// whose point offers it: values for every handle, derivatives and the complex
+/// plane only for handles that carry them.
 macro_rules! rotated_entry {
-    ($trait:ident, $k0:ty { $($item:item)* } $($method:ident => $point:ident $(($order:ident))?;)+) => {
-        impl<C> $trait<C> for StackFrameEntry<C>
+    ($trait:ident: $bound:ident, $k0:ty { $($item:item)* } $($method:ident => $point:ident $(($order:ident))?;)+) => {
+        impl<T, C> $trait<C> for StackFrameEntry<T>
         where
+            T: TensorHandle<Scalar = C>,
+            T::Point: $bound<C>,
             C: ComplexScalar,
             C::RealField: Copy,
         {
@@ -240,19 +254,19 @@ macro_rules! rotated_entry {
     };
 }
 
-rotated_entry!(EvaluateMaterial, C::RealField { type Real = C::RealField; }
+rotated_entry!(EvaluateMaterial: TensorMaterialValuePoint, C::RealField { type Real = C::RealField; }
     evaluate_relative_permittivity => permittivity_at;
     evaluate_relative_permeability => permeability_at;
 );
-rotated_entry!(EvaluateDifferentiableMaterial, C::RealField {}
+rotated_entry!(EvaluateDifferentiableMaterial: TensorMaterialPoint, C::RealField {}
     evaluate_relative_permittivity_derivative => permittivity_derivative_at(order);
     evaluate_relative_permeability_derivative => permeability_derivative_at(order);
 );
-rotated_entry!(EvaluateMeromorphicMaterial, C {}
+rotated_entry!(EvaluateMeromorphicMaterial: TensorMaterialPoint, C {}
     evaluate_relative_permittivity_complex => permittivity_complex_at;
     evaluate_relative_permeability_complex => permeability_complex_at;
 );
-rotated_entry!(EvaluateDifferentiableMeromorphicMaterial, C {}
+rotated_entry!(EvaluateDifferentiableMeromorphicMaterial: TensorMaterialPoint, C {}
     evaluate_relative_permittivity_complex_derivative => permittivity_complex_derivative_at(order);
     evaluate_relative_permeability_complex_derivative => permeability_complex_derivative_at(order);
 );
@@ -337,22 +351,24 @@ where
     }
 }
 
-type Region<S, C> =
-    Constitutive<S, AnalyticalTensorMaterialHandle<C>, <C as ComplexField>::RealField>;
+/// A region whose oriented material is erased by the handle `T`. The lifts
+/// below hold at every handle level for which `J` lifts the stack-frame
+/// entries in domain `E`: a value-only handle lifts values on the real axis.
+type Region<S, T> = Constitutive<S, T, Real<T>>;
 
-impl<J, E, S, C> TensorConstitutiveLift<E, Region<S, C>> for J
+impl<J, E, S, T> TensorConstitutiveLift<E, Region<S, T>> for J
 where
-    J: ConstitutiveLift<E, S> + ConstitutiveLift<E, StackFrameEntry<C>>,
-    J: ScalarAlgebra<Scalar = C>,
+    T: TensorHandle,
+    J: ConstitutiveLift<E, S> + ConstitutiveLift<E, StackFrameEntry<T>>,
+    J: ScalarAlgebra<Scalar = T::Scalar>,
     J::Dimension: Dimension,
-    C: ComplexScalar,
-    C::RealField: Copy,
-    E: ConstitutiveEvaluator<C, J::Dimension, S>
-        + ConstitutiveEvaluator<C, J::Dimension, StackFrameEntry<C>>,
+    Real<T>: Copy,
+    E: ConstitutiveEvaluator<T::Scalar, J::Dimension, S>
+        + ConstitutiveEvaluator<T::Scalar, J::Dimension, StackFrameEntry<T>>,
 {
     fn constitutive_tensors(
         region: StackRegion,
-        material: &Region<S, C>,
+        material: &Region<S, T>,
         k0: &Self,
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
         let tensors = lift(
@@ -377,18 +393,18 @@ where
     }
 }
 
-impl<J, E, S, C> TensorConstitutiveSpectralFirstLift<E, Region<S, C>> for J
+impl<J, E, S, T> TensorConstitutiveSpectralFirstLift<E, Region<S, T>> for J
 where
-    J: ConstitutiveSpectralFirstLift<E, S> + ConstitutiveSpectralFirstLift<E, StackFrameEntry<C>>,
-    J: ScalarAlgebra<Scalar = C>,
+    T: TensorHandle,
+    J: ConstitutiveSpectralFirstLift<E, S> + ConstitutiveSpectralFirstLift<E, StackFrameEntry<T>>,
+    J: ScalarAlgebra<Scalar = T::Scalar>,
     J::Dimension: Dimension,
-    C: ComplexScalar,
-    C::RealField: Copy,
-    E: ConstitutiveDerivativeEvaluator<C, J::Dimension, S>
-        + ConstitutiveDerivativeEvaluator<C, J::Dimension, StackFrameEntry<C>>,
+    Real<T>: Copy,
+    E: ConstitutiveDerivativeEvaluator<T::Scalar, J::Dimension, S>
+        + ConstitutiveDerivativeEvaluator<T::Scalar, J::Dimension, StackFrameEntry<T>>,
 {
     fn constitutive_tensors_spectral_first(
-        material: &Region<S, C>,
+        material: &Region<S, T>,
         k0: &Self,
     ) -> [ConstitutiveTensor<Self>; 2] {
         lift(
@@ -419,14 +435,14 @@ where
 
 /// `[ε, μ]` of `region` in its class: `scalar` lifts an isotropic region's
 /// material, `entry` each needed stack-frame entry of an oriented one.
-fn lift<J: Clone, S, C>(
-    region: &Region<S, C>,
+fn lift<J: Clone, S, T>(
+    region: &Region<S, T>,
     scalar: impl Fn(&S) -> [J; 2],
-    entry: impl Fn(&StackFrameEntry<C>) -> [J; 2],
+    entry: impl Fn(&StackFrameEntry<T>) -> [J; 2],
 ) -> [ConstitutiveTensor<J>; 2]
 where
-    C: ComplexScalar,
-    C::RealField: Copy,
+    T: TensorHandle,
+    Real<T>: Copy,
 {
     let (material, rotation, diagonal) = match &region.kind {
         Kind::Isotropic(material) => return scalar(material).map(ConstitutiveTensor::Isotropic),

@@ -160,7 +160,7 @@ pub use lifting::{ConstitutiveEvaluator, ConstitutiveLift};
 pub use model::Constant;
 pub use region::{
     AnalyticalMaterialRegion, Constitutive, ConstitutiveClass, ConstitutiveError,
-    ConstitutiveTensor, ScalarMaterial, TensorConstitutiveLift,
+    ConstitutiveTensor, MaterialRegion, ScalarMaterial, TensorConstitutiveLift,
     TensorConstitutiveSpectralFirstLift,
 };
 pub use rotation::{Rotation, RotationError, SignedAxis};
@@ -168,6 +168,7 @@ pub use sample::Scalar;
 pub use tensor::{
     AnalyticalTensorMaterialHandle, DifferentiableMeromorphicTensorMaterial,
     DifferentiableTensorMaterial, MeromorphicTensorMaterial, Tensor3, TensorMaterial,
+    TensorMaterialHandle,
 };
 
 pub use sample::Sampled;

@@ -43,6 +43,13 @@ Added:
   tensor regions in layers and exteriors, including the gaps behind walls;
   `Stack::is_separable`. A scalar stack lifts to a region stack with `From`
   (`StackRegion` names a region).
+- Real-axis tensor regions: `TensorMaterialHandle` erases any
+  `TensorMaterial`, such as a tabulated or interpolated model, and records its
+  `PRINCIPAL_AXES` declaration. `MaterialRegion` and `TensorStack` hold such
+  regions beside real-axis scalar materials, with the same class, separability
+  and validation as analytical regions. They evaluate values on the real axis
+  only (amplitudes and power); derivative and complex-plane evaluation of them
+  does not compile. `Tensor3` is re-exported at the crate root.
 - Class-preserving stack-frame evaluation of ε and μ through the jet algebra,
   refusing non-finite entries or a vanishing `ε_zz` or `μ_zz`
   (`ConstitutiveError`). A scalar material evaluates as an isotropic region.

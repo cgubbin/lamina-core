@@ -439,9 +439,9 @@ pub use material::{
     ConstitutiveTensor, DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
     DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial,
     EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
-    EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, MeromorphicTensorMaterial,
-    Rotation, RotationError, Sampled, Scalar, ScalarMaterial, SignedAxis, TensorConstitutiveLift,
-    TensorMaterial,
+    EvaluateMeromorphicMaterial, Material, MaterialRegion, MeromorphicMaterial,
+    MeromorphicTensorMaterial, Rotation, RotationError, Sampled, Scalar, ScalarMaterial,
+    SignedAxis, Tensor3, TensorConstitutiveLift, TensorMaterial, TensorMaterialHandle,
 };
 
 pub use field::VectorField;
@@ -458,7 +458,7 @@ pub use scalar::ComplexScalar;
 pub use stack::{
     AnalyticalMaterialStack, AnalyticalTensorStack, DifferentiableMaterialStack, Layer,
     MaterialStack, MeromorphicMaterialStack, Pml, Stack, StackRegion, StackSide, StretchProfile,
-    Termination, Wall, WallKind,
+    TensorStack, Termination, Wall, WallKind,
 };
 
 pub mod units {
