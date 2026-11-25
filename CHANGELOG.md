@@ -99,6 +99,11 @@ Changed (breaking):
 - `Scatter2`'s error type is `Scatter2Error` (previously uninhabited);
   `Transfer2Error` gains `Termination`.
 - `ModalFieldBackend::unscaled_fields` takes `[Option<C>; 2]` exterior roots.
+- A scalar material, or an isotropic region, whose ε or μ is not finite at an
+  evaluated point fails with `ConstitutiveError::NonFinite` naming the region,
+  as diagonal and full regions already did; `Scatter2` previously returned NaN
+  amplitudes and `Transfer2` `NonFiniteFinalMatrix`. For every class the check
+  now covers each derivative part of the lifted jet as well as its value.
 - Real-axis `amplitudes`, `power` and `excitation` return `SolveRequestError`,
   which now wraps `ProjectionConstraintError`.
 
