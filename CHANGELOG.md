@@ -142,6 +142,13 @@ Added:
   backends (`ModalDerivativeBackend` for `Transfer4` and `Scatter4`, any
   `Into<Channel>` as the direction's channel); the 2×2 backends refuse a full
   rate.
+- `Scatter4::continued_from(k₀, k∥)`: each layer's forward/backward split is
+  classified at a fixed complex reference point and continued to every
+  evaluation point by tracking the eigenvalues along the segment between
+  them, so the characteristic is holomorphic over a whole chart region that
+  holds no layer branch point; `Scatter4Error::Continuation` refuses an
+  evaluation whose segment passes near one. The default keeps the
+  classification at the real point.
 - Real-axis evaluation of the coupled channel selects the principal
   outgoing pair (decaying, or carrying flux away from the stack) of each open
   exterior; `ExteriorSelectionError`, `RealAxisEvaluationError::Exterior`.

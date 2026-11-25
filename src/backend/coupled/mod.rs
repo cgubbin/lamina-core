@@ -476,6 +476,7 @@ macro_rules! coupled_backend {
             {
                 use $crate::backend::SolutionWorkspace;
                 Self::accumulate::<J, Domain, M>(
+                    self,
                     coordinates,
                     stack,
                     exterior,
@@ -496,6 +497,7 @@ macro_rules! coupled_backend {
                 J: $crate::material::TensorConstitutiveLift<Domain, M>,
             {
                 Self::accumulate::<J, Domain, M>(
+                    self,
                     coordinates,
                     stack,
                     exterior,
