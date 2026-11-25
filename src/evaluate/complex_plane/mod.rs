@@ -9,7 +9,7 @@
 //!
 //! - canonical complex coordinates;
 //! - explicitly branch-selected exterior longitudinal wavevectors;
-//! - the polarization;
+//! - the channel (TE, TM or coupled);
 //! - the jet algebra used to propagate any desired analytic derivatives.
 //!
 //! This path is intended for complex continuation, outgoing-mode
@@ -49,7 +49,7 @@ use num_traits::{Float, FromPrimitive};
 use thiserror::Error;
 
 use crate::{
-    CanonicalCoordinates, ComplexPlane, ComplexScalar, ExteriorWavevectors, Polarisation, Stack,
+    CanonicalCoordinates, Channel, ComplexPlane, ComplexScalar, ExteriorWavevectors, Stack,
     algebra::{Jet, ScalarAlgebra},
     backend::{Backend, PlaneWaveSolution},
     input::{
@@ -146,7 +146,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         &self,
         coordinates: &CanonicalCoordinates<J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> Result<
         PlaneWaveSolution<<B as Backend<J, ComplexPlane>>::Entries>,
         <B as Backend<J, ComplexPlane>>::Error,
@@ -158,7 +158,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         B: Backend<J, ComplexPlane>,
     {
         self.backend
-            .solve(coordinates, &self.stack, exterior, polarisation)
+            .solve(coordinates, &self.stack, exterior, channel.into())
     }
 
     #[allow(clippy::type_complexity)]
@@ -166,7 +166,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         &self,
         coordinates: &CanonicalCoordinates<J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> Result<
         RawModeDeterminant<<B as Backend<J, ComplexPlane>>::Entries>,
         <B as Backend<J, ComplexPlane>>::Error,
@@ -179,9 +179,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         B: Backend<J, ComplexPlane>,
         <B as Backend<J, ComplexPlane>>::Entries: ProjectPlaneWaveModeDeterminant,
     {
-        Ok(self
-            .solve(coordinates, exterior, polarisation)?
-            .determinant())
+        Ok(self.solve(coordinates, exterior, channel)?.determinant())
     }
 
     /// Evaluate the outgoing characteristic, checking every input and output
@@ -189,8 +187,9 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
     /// Backend errors retain their source; the raw [`Self::determinant`] API
     /// remains available without these additional checks.
     ///
-    /// The caller must supply branch-consistent exterior wavevectors satisfying
-    /// `kappa² = epsilon * mu * k0² - k_parallel²`, including their derivatives.
+    /// The caller must supply branch-consistent exterior wavevectors, including
+    /// their derivatives: for TE or TM the root of the channel's `κ²`, for the
+    /// coupled channel the two outgoing roots of each open exterior.
     /// This method neither checks that relation nor selects radiation sheets.
     ///
     /// Success is a **pointwise numerical check**, not root acceptance or domain
@@ -213,7 +212,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         &self,
         coordinates: &CanonicalCoordinates<J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> Result<PlaneWaveDeterminant<J>, DeterminantEvaluationError<B::Error>>
     where
         J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
@@ -229,7 +228,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
             return Err(DeterminantEvaluationError::NonFiniteInput);
         }
         let determinant = self
-            .determinant(coordinates, exterior, polarisation)
+            .determinant(coordinates, exterior, channel)
             .map_err(|source| DeterminantEvaluationError::Backend { source })?;
         if !determinant.value().all_finite() {
             return Err(DeterminantEvaluationError::NonFiniteOutput);
@@ -241,7 +240,7 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         &self,
         coordinates: CanonicalCoordinates<J>,
         exterior: ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: impl Into<Channel>,
     ) -> Result<ComplexPlaneState<'_, J, M, B::Workspace>, B::Error>
     where
         J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
@@ -249,16 +248,17 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         J::Dimension: Dimension,
         B: Backend<J, ComplexPlane>,
     {
+        let channel = channel.into();
         let workspace = self
             .backend
-            .retain(&coordinates, &self.stack, &exterior, polarisation)?;
+            .retain(&coordinates, &self.stack, &exterior, channel)?;
 
         Ok(ComplexPlaneState::new(
             coordinates,
             exterior,
             &self.stack,
             workspace,
-            polarisation,
+            channel,
         ))
     }
 }

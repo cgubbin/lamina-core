@@ -204,7 +204,7 @@ fn projection_preserves_polarisation() {
 
     let point = state.project_point(&0).unwrap();
 
-    assert_eq!(point.polarisation(), Polarisation::TransverseMagnetic,);
+    assert_eq!(point.channel(), crate::Channel::TransverseMagnetic,);
 }
 
 #[test]

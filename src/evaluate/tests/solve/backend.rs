@@ -1067,3 +1067,59 @@ backend_equivalence_suite!(
     left = Transfer2::new(),
     right = Scatter2::new(),
 );
+
+#[test]
+fn scalar_backends_refuse_the_coupled_channel_and_pair_branches() {
+    use crate::{Channel, ChannelError, ExteriorBranch, ExteriorWavevectors, StackSide};
+
+    let stack = single_layer_stack(1.5, 0.2);
+    let coupled = ChannelError::Unsupported {
+        channel: Channel::Coupled,
+    };
+    let scatter = RealAxisEvaluator::new(Scatter2::new())
+        .evaluate(scalar_real_input(2.0, 0.5), &stack, Channel::Coupled)
+        .map(|_| ())
+        .unwrap_err();
+    assert!(matches!(
+        scatter,
+        crate::RealAxisEvaluationError::Backend { source }
+            if source == crate::backend::Scatter2Error::Channel(coupled)
+    ));
+    let transfer = RealAxisEvaluator::new(Transfer2::new())
+        .evaluate(scalar_real_input(2.0, 0.5), &stack, Channel::Coupled)
+        .map(|_| ())
+        .unwrap_err();
+    assert!(matches!(
+        transfer,
+        crate::RealAxisEvaluationError::Backend { source }
+            if source == crate::backend::Transfer2Error::Channel(coupled)
+    ));
+
+    // A coupled-channel pair supplied for a TE solve.
+    let evaluator =
+        ComplexPlaneEvaluator::<HoloJ0, _, _>::compile(&stack, Scatter2::new()).unwrap();
+    let coordinates = CanonicalCoordinates::new(
+        HoloJ0::constant(arr0(C::new(2.0, 0.0))),
+        HoloJ0::constant(arr0(C::new(0.5, 0.0))),
+    );
+    let principal = principal_exterior_wavevectors(evaluator.stack(), &coordinates);
+    let kappa = principal
+        .left()
+        .and_then(ExteriorBranch::scalar)
+        .unwrap()
+        .clone();
+    let pair = ExteriorWavevectors::from_branches(
+        Some(ExteriorBranch::Pair([kappa.clone(), kappa])),
+        principal.right().cloned(),
+    );
+    assert_eq!(
+        evaluator
+            .solve(&coordinates, &pair, Polarisation::TransverseElectric)
+            .map(|_| ())
+            .unwrap_err(),
+        crate::backend::Scatter2Error::Channel(ChannelError::BranchKind {
+            side: StackSide::Left,
+            channel: Channel::TransverseElectric,
+        })
+    );
+}

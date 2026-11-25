@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::{
     ComplexScalar, FiniteLayerIndex, StackRegion,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::{Channel, LayerQuantities, PrincipalConstitutive},
+    backend::{ChannelEntries, LayerQuantities, PrincipalConstitutive},
     material::{ConstitutiveError, TensorConstitutiveSpectralFirstLift},
     observable::{
         LayerAggregateError,
@@ -314,7 +314,7 @@ fn brillouin_weights<A>(
     vacuum_angular_wavenumber: &A,
     quantities: &LayerQuantities<A>,
     derivative: &PrincipalConstitutive<A>,
-) -> Channel<A>
+) -> ChannelEntries<A>
 where
     A: ScalarAlgebra,
 {

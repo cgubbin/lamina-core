@@ -3,7 +3,7 @@ use ndarray::Ix0;
 use thiserror::Error;
 
 use crate::{
-    ComplexScalar, FiniteLayerIndex, Polarisation,
+    Channel, ComplexScalar, FiniteLayerIndex,
     algebra::{ComplexJet, Jet, RealScalarAlgebra, ScalarAlgebraExpRelExt},
     backend::{PlaneWaveSolutionSource, RetainedIsotropicLayers},
     derivative_parts::DerivativePartsPolicy,
@@ -42,12 +42,12 @@ impl std::fmt::Display for PairOperand {
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RealAxisPairError {
     #[error(
-        "pairing requires matching polarizations; \
+        "pairing requires matching channels; \
      reference is {reference:?}, comparison is {comparison:?}"
     )]
-    PolarisationMismatch {
-        reference: Polarisation,
-        comparison: Polarisation,
+    ChannelMismatch {
+        reference: Channel,
+        comparison: Channel,
     },
 
     #[error("reference and comparison derivative mappings are incompatible")]
@@ -468,14 +468,14 @@ where
     WL: RetainedIsotropicLayers<Algebra = J>,
     WR: RetainedIsotropicLayers<Algebra = J>,
 {
-    validate_polarisation(reference, comparison)?;
+    validate_channel(reference, comparison)?;
 
     validate_mapping(reference, comparison)?;
 
     validate_layer_geometry(reference, comparison)
 }
 
-fn validate_polarisation<J, ML, MR, WL, WR>(
+fn validate_channel<J, ML, MR, WL, WR>(
     reference: &RealAxisExcitation<'_, J, ML, WL>,
     comparison: &RealAxisExcitation<'_, J, MR, WR>,
 ) -> Result<(), RealAxisPairError>
@@ -484,14 +484,14 @@ where
     J::Scalar: ComplexField,
     <J::Scalar as ComplexField>::RealField: ComplexField,
 {
-    let reference_polarisation = reference.state().polarisation();
+    let reference_channel = reference.state().channel();
 
-    let comparison_polarisation = comparison.state().polarisation();
+    let comparison_channel = comparison.state().channel();
 
-    if reference_polarisation != comparison_polarisation {
-        return Err(RealAxisPairError::PolarisationMismatch {
-            reference: reference_polarisation,
-            comparison: comparison_polarisation,
+    if reference_channel != comparison_channel {
+        return Err(RealAxisPairError::ChannelMismatch {
+            reference: reference_channel,
+            comparison: comparison_channel,
         });
     }
 

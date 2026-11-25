@@ -19,12 +19,13 @@
 //! methods directly.
 
 use crate::{
-    CanonicalCoordinates, ComplexScalar, Polarisation, algebra::Jet, input::CanonicalStack,
+    CanonicalCoordinates, ComplexScalar, algebra::Jet, input::CanonicalStack,
     material::TensorConstitutiveLift,
 };
 
 use ndarray::Dimension;
 
+mod channel;
 mod exterior;
 mod medium;
 mod mode;
@@ -34,12 +35,13 @@ mod termination;
 pub(crate) mod transfer2;
 mod workspace;
 
+pub use channel::{Channel, ChannelError};
 pub(crate) use exterior::ExteriorContext;
-pub use exterior::ExteriorWavevectors;
 #[cfg(test)]
 pub(crate) use exterior::evaluate_exterior_wavevectors;
 pub(crate) use exterior::evaluate_stack_exterior_wavevectors;
-pub(crate) use medium::{Channel, LayerQuantities, PrincipalConstitutive};
+pub use exterior::{ExteriorBranch, ExteriorWavevectors};
+pub(crate) use medium::{ChannelEntries, LayerQuantities, PrincipalConstitutive};
 pub(crate) use mode::{
     ModalSolutionSource, ModeReconstructionError, PlaneWaveModeCandidate,
     ReconstructExteriorModeWaves, ReconstructLayerModeWaves,
@@ -56,6 +58,14 @@ pub use termination::TerminationError;
 pub(crate) use termination::{right_exterior_mode_waves, undefined_amplitudes};
 pub use transfer2::{Transfer2, Transfer2Error};
 pub(crate) use workspace::{RetainedIsotropicLayers, SolutionWorkspace};
+
+/// The polarisation of a scalar channel; the 2×2 backends refuse the coupled
+/// channel.
+fn scalar_polarisation(channel: Channel) -> Result<crate::Polarisation, ChannelError> {
+    channel
+        .polarisation()
+        .ok_or(ChannelError::Unsupported { channel })
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum RunMode {
@@ -82,7 +92,9 @@ impl RunMode {
 /// - a canonical stack, which may be compiled once and reused.
 ///
 /// Exterior longitudinal wavevectors are supplied separately so callers such
-/// as mode solvers may control their complex-plane branch choices.
+/// as mode solvers may control their complex-plane branch choices. `channel`
+/// selects the field subspace: a backend that does not solve it is refused
+/// with a [`ChannelError`].
 ///
 /// This trait is public because it appears in bounds on public evaluator
 /// implementations. Backend implementations are supplied by `lamina-core`;
@@ -111,7 +123,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>;
@@ -123,7 +135,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<Self::Workspace, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>;

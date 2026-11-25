@@ -27,9 +27,12 @@ mod projection;
 mod workspace;
 
 use crate::{
-    CanonicalCoordinates, ComplexScalar, Polarisation,
+    CanonicalCoordinates, ComplexScalar,
     algebra::ScalarAlgebra,
-    backend::{Backend, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace},
+    backend::{
+        Backend, Channel, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace,
+        scalar_polarisation,
+    },
     input::CanonicalStack,
     material::TensorConstitutiveLift,
 };
@@ -44,7 +47,8 @@ use ndarray::Dimension;
 /// Failure of the scattering backend.
 ///
 /// Scattering composition itself does not fail; evaluation fails only when the
-/// stack's terminations reject the request.
+/// stack's terminations, constitutive regions or the channel reject the
+/// request.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Scatter2Error {
     #[error(transparent)]
@@ -52,6 +56,9 @@ pub enum Scatter2Error {
 
     #[error(transparent)]
     Constitutive(#[from] crate::material::ConstitutiveError),
+
+    #[error(transparent)]
+    Channel(#[from] crate::backend::ChannelError),
 }
 
 /// Scalar-channel 2×2 scattering backend.
@@ -81,7 +88,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>,
@@ -90,7 +97,7 @@ where
             coordinates,
             stack,
             exterior,
-            polarisation,
+            scalar_polarisation(channel)?,
             RunMode::ResponseOnly,
         )?;
 
@@ -102,7 +109,7 @@ where
         coordinates: &CanonicalCoordinates<J>,
         stack: &CanonicalStack<M, J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Result<Self::Workspace, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>,
@@ -111,7 +118,7 @@ where
             coordinates,
             stack,
             exterior,
-            polarisation,
+            scalar_polarisation(channel)?,
             RunMode::InternalFields,
         )?;
 

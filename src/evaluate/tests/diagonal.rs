@@ -8,11 +8,11 @@ use ndarray::{Array1, arr0};
 
 use crate::{
     AnalyticalMaterialHandle, AnalyticalMaterialRegion, AnalyticalTensorStack,
-    CanonicalCoordinates, ComplexPlane, ComplexPlaneEvaluator, ConstitutiveClass,
-    ConstitutiveError, ExteriorSampling, ExteriorWavevectors, FieldSampling, FiniteLayerIndex,
-    IncidentSide, LayerSampling, Parameter, Pml, Polarisation, RealAxisEvaluationError,
-    RealAxisEvaluator, Rotation, Scatter2, SeedJet, Stack, StackRegion, StretchProfile, Transfer2,
-    Wall, WallKind,
+    CanonicalCoordinates, Channel, ComplexPlane, ComplexPlaneEvaluator, ConstitutiveClass,
+    ConstitutiveError, ExteriorBranch, ExteriorSampling, ExteriorWavevectors, FieldSampling,
+    FiniteLayerIndex, IncidentSide, LayerSampling, Parameter, Pml, Polarisation,
+    RealAxisEvaluationError, RealAxisEvaluator, Rotation, Scatter2, SeedJet, Stack, StackRegion,
+    StretchProfile, Transfer2, Wall, WallKind,
     backend::evaluate_stack_exterior_wavevectors,
     test_support::{
         jet::{HoloJ0, HoloJ1, HoloJB2},
@@ -235,10 +235,11 @@ fn birefringent_cladding_has_polarisation_dependent_light_lines() {
         evaluate_stack_exterior_wavevectors::<ComplexPlane, _, _>(
             &coordinates,
             &canonical,
-            polarisation,
+            Channel::from(polarisation),
         )
         .unwrap()
         .left()
+        .and_then(ExteriorBranch::scalar)
         .unwrap()
         .value()[()]
     };
@@ -826,6 +827,8 @@ fn walls_and_pmls_in_diagonal_exteriors() {
                     principal_exterior_wavevectors(evaluator.stack(), &coordinates)
                         .left()
                         .unwrap()
+                        .scalar()
+                        .unwrap()
                         .clone(),
                 );
                 evaluator
@@ -1044,7 +1047,7 @@ fn transfer_and_scatter_agree_on_diagonal_stacks() {
                     let exterior = evaluate_stack_exterior_wavevectors::<ComplexPlane, _, _>(
                         &coordinates,
                         evaluator.stack(),
-                        polarisation,
+                        polarisation.into(),
                     )
                     .unwrap();
                     evaluator

@@ -271,7 +271,7 @@ macro_rules! implementation {
                     direction.coordinates,
                     &stack,
                     direction.exterior,
-                    direction.polarisation,
+                    direction.polarisation.into(),
                 )
                 .map_err(super::shared_error)?
                 .determinant()
@@ -306,7 +306,7 @@ macro_rules! implementation {
                     direction.coordinates,
                     &stack,
                     direction.exterior,
-                    direction.polarisation,
+                    direction.polarisation.into(),
                 )
                 .map_err(super::shared_error)?;
                 let state = ComplexPlaneState::new(
@@ -314,7 +314,7 @@ macro_rules! implementation {
                     direction.exterior.clone(),
                     &stack,
                     workspace,
-                    direction.polarisation,
+                    direction.polarisation.into(),
                 );
                 let seed = state
                     .workspace()

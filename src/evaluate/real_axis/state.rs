@@ -5,8 +5,7 @@ use num_traits::{FromPrimitive, One, Zero};
 #[cfg(test)]
 use crate::observable::{LayerIntegrationInput, LayerProjectionError};
 use crate::{
-    ComplexScalar, IncidentSide, InterfacePower, LayerPower, PlaneWaveAmplitudes, Polarisation,
-    Stack,
+    Channel, ComplexScalar, IncidentSide, InterfacePower, LayerPower, PlaneWaveAmplitudes, Stack,
     algebra::{
         CartesianScalarAlgebra, ComplexJet, Jet, JetStack, RealScalarAlgebra, ScalarAlgebra,
     },
@@ -57,7 +56,7 @@ where
     workspace: W,
     context: CompilationContext<<J::Scalar as ComplexField>::RealField, J::Dimension, J::Mapping>,
     stack: Stack<M, <J::Scalar as ComplexField>::RealField>,
-    polarisation: Polarisation,
+    channel: Channel,
 }
 
 impl<J, M, W> RealAxisState<J, M, W>
@@ -76,14 +75,14 @@ where
             J::Mapping,
         >,
         stack: Stack<M, <J::Scalar as ComplexField>::RealField>,
-        polarisation: Polarisation,
+        channel: Channel,
     ) -> Self {
         Self {
             problem,
             workspace,
             context,
             stack,
-            polarisation,
+            channel,
         }
     }
 
@@ -120,7 +119,7 @@ where
             self.workspace.project_point(index)?,
             self.context.project_point(index)?,
             self.stack.clone(),
-            self.polarisation,
+            self.channel,
         ))
     }
 
@@ -138,8 +137,9 @@ where
         &self.workspace
     }
 
-    pub fn polarisation(&self) -> Polarisation {
-        self.polarisation
+    /// The channel solved.
+    pub fn channel(&self) -> Channel {
+        self.channel
     }
 
     pub fn solution(&self) -> PlaneWaveSolutionView<'_, W::Entries>
@@ -164,7 +164,7 @@ where
             workspace: map(self.workspace),
             context: self.context,
             stack: self.stack,
-            polarisation: self.polarisation,
+            channel: self.channel,
         }
     }
 

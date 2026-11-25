@@ -226,6 +226,8 @@ Both implement a shared backend interface:
 Backend<J, Domain>
 ```
 
+`solve` and `retain` take a `Channel` (TE, TM or coupled) and branch-selected `ExteriorWavevectors` whose open sides hold an `ExteriorBranch`: one outward normal wavenumber for TE or TM, the outgoing pair for the coupled channel. The 2×2 backends refuse the coupled channel.
+
 The backend produces an entry representation and may optionally retain internal calculation data.
 
 ```rust

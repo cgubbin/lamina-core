@@ -59,4 +59,7 @@ pub enum Transfer2Error {
 
     #[error(transparent)]
     Constitutive(#[from] crate::material::ConstitutiveError),
+
+    #[error(transparent)]
+    Channel(#[from] crate::backend::ChannelError),
 }

@@ -8,7 +8,7 @@ use crate::{
     ExteriorSampling, ExteriorWavevectors, FieldSampling, FiniteLayerIndex, ModalFieldBackend,
     Polarisation, Stack, StackRegion, TensorConstitutiveLift,
     algebra::{ArrayJet0, HolomorphicParameter},
-    backend::{Channel, ModalSolutionSource, PrincipalConstitutive, Scatter2, Transfer2},
+    backend::{ChannelEntries, ModalSolutionSource, PrincipalConstitutive, Scatter2, Transfer2},
     material::TensorConstitutiveSpectralFirstLift,
 };
 use lamina_units::Length;
@@ -122,7 +122,7 @@ fn entries<M>(
     material: &M,
     input: PoleNormalizationInput,
     spectral: bool,
-) -> Result<[Channel<C>; 2], ConstitutiveError>
+) -> Result<[ChannelEntries<C>; 2], ConstitutiveError>
 where
     J: TensorConstitutiveLift<ComplexPlane, M>
         + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>,
@@ -154,7 +154,10 @@ where
 /// `(p, ∂p, ∂(1/p), ∂q)` of the Sturm–Liouville form
 /// `(ψ'/p)' + q ψ = 0` with `q = w k0² − β²/r`, for transverse entry `p`,
 /// canonical `w` and normal `r`; `∂` is with respect to the pole variable.
-fn coefficients([value, first]: &[Channel<C>; 2], input: PoleNormalizationInput) -> (C, C, C, C) {
+fn coefficients(
+    [value, first]: &[ChannelEntries<C>; 2],
+    input: PoleNormalizationInput,
+) -> (C, C, C, C) {
     let (p, pd) = (value.transverse, first.transverse);
     let (w, wd) = (value.canonical, first.canonical);
     let (r, rd) = (value.normal.unwrap_or(p), first.normal.unwrap_or(pd));
@@ -167,7 +170,7 @@ fn coefficients([value, first]: &[Channel<C>; 2], input: PoleNormalizationInput)
     (p, pd, -pd / (p * p), qd)
 }
 /// Every entry finite and the transverse and normal entries above `cutoff`.
-fn regular([value, first]: &[Channel<C>; 2], cutoff: f64) -> bool {
+fn regular([value, first]: &[ChannelEntries<C>; 2], cutoff: f64) -> bool {
     let dividing = [Some(value.transverse), value.normal];
     [value, first]
         .into_iter()

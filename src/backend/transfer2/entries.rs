@@ -899,8 +899,8 @@ mod projection_tests {
         );
 
         let flipped = ExteriorWavevectors::new(
-            ordinary.left().unwrap().negate(),
-            ordinary.right().unwrap().clone(),
+            ordinary.left().unwrap().scalar().unwrap().negate(),
+            ordinary.right().unwrap().scalar().unwrap().clone(),
         );
 
         let ordinary_context = ExteriorContext::new::<RealAxis, _>(
