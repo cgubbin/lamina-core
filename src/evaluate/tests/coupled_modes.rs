@@ -470,3 +470,228 @@ fn a_two_dimensional_null_space_is_refused() {
         assert_eq!(workspace.retained_layer_count(), Some(1));
     }
 }
+
+/// `R_x(θ) R₀`, with `R_x` the rotation about the stack's `x` axis.
+fn rotated(theta: f64) -> Rotation<f64> {
+    let base = *Rotation::from_euler(0.5, 0.6, 0.3).matrix();
+    let (s, co) = theta.sin_cos();
+    let about_x = [[1.0, 0.0, 0.0], [0.0, co, -s], [0.0, s, co]];
+    Rotation::from_matrix(std::array::from_fn(|row| {
+        std::array::from_fn(|column| (0..3).map(|k| about_x[row][k] * base[k][column]).sum())
+    }))
+    .unwrap()
+}
+
+#[test]
+fn rotation_angle_rates_match_central_differences_of_rotated_stacks() {
+    use crate::{
+        ConstitutiveTensor, ModalCharacteristicDirection, ModalDerivativeBackend, ModeJet1,
+    };
+    type J1 = ModeJet1<C, ndarray::Ix0>;
+    let theta = 0.4;
+    let beta = 7.1;
+    let constant = |value: C| J1::from_parts(arr0(value), arr0(C::default()));
+    let coordinates = CanonicalCoordinates::new(constant(c(K0, 0.0)), constant(c(beta, 0.0)));
+    let pair = |epsilon| {
+        let kappa = constant(decaying(epsilon, c(beta, 0.0)));
+        Some(ExteriorBranch::Pair([kappa.clone(), kappa]))
+    };
+    let exterior = ExteriorWavevectors::from_branches(pair(CLADDING), pair(SUBSTRATE));
+    // dε/dθ = G ε − ε G, G the generator of rotations about x.
+    let epsilon = {
+        let [epsilon, _] =
+            <RealJ0 as TensorConstitutiveLift<ComplexPlane, _>>::constitutive_tensors(
+                LAYER,
+                film(uniaxial(rotated(theta))).layers_left_to_right()[0].material(),
+                &jet(c(K0, 0.0)),
+            )
+            .unwrap();
+        epsilon.full().map(|row| row.map(|entry| entry.value()[()]))
+    };
+    let generator = [[0.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]];
+    let rate: [[C; 3]; 3] = std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            (0..3)
+                .map(|k| {
+                    generator[row][k] * epsilon[k][column] - epsilon[row][k] * generator[k][column]
+                })
+                .sum()
+        })
+    });
+    let zero = || {
+        [
+            ConstitutiveTensor::Isotropic(C::default()),
+            ConstitutiveTensor::Isotropic(C::default()),
+        ]
+    };
+    let rates = [
+        zero(),
+        [
+            ConstitutiveTensor::Full(rate),
+            ConstitutiveTensor::Isotropic(C::default()),
+        ],
+        zero(),
+    ];
+    let characteristic = |transfer: bool, theta: f64| {
+        let stack = film(uniaxial(rotated(theta)));
+        let direction = ModalCharacteristicDirection {
+            stack: &stack,
+            coordinates: &coordinates,
+            exterior: &exterior,
+            polarisation: Channel::Coupled,
+            thickness_rates: &[0.0],
+            constitutive_rates: &rates,
+        };
+        if transfer {
+            Transfer4::new()
+                .directional_characteristic(direction)
+                .unwrap()
+        } else {
+            Scatter4::new()
+                .directional_characteristic(direction)
+                .unwrap()
+        }
+    };
+    for transfer in [true, false] {
+        let h = 1e-5;
+        let difference = (characteristic(transfer, theta + h).value()[()]
+            - characteristic(transfer, theta - h).value()[()])
+            / (2.0 * h);
+        let derivative = characteristic(transfer, theta).first()[()];
+        let name = format!("transfer {transfer}");
+        assert!(derivative.norm() > 1e-3, "{name} {derivative}");
+        assert_close(derivative, difference, 1e-7, &name);
+    }
+
+    // The 2×2 backends refuse a full rate; the 4×4 fields along the
+    // direction are the mode's fields.
+    let stack = film(uniaxial(Rotation::identity()));
+    let direction = ModalCharacteristicDirection {
+        stack: &stack,
+        coordinates: &CanonicalCoordinates::new(constant(c(K0, 0.0)), constant(c(beta, 0.0))),
+        exterior: &ExteriorWavevectors::from_branches(
+            Some(ExteriorBranch::Scalar(constant(decaying(
+                CLADDING,
+                c(beta, 0.0),
+            )))),
+            Some(ExteriorBranch::Scalar(constant(decaying(
+                SUBSTRATE,
+                c(beta, 0.0),
+            )))),
+        ),
+        polarisation: Polarisation::TransverseElectric,
+        thickness_rates: &[0.0],
+        constitutive_rates: &rates,
+    };
+    assert!(
+        Scatter2::new()
+            .directional_characteristic(direction)
+            .is_err()
+    );
+    let stack = film(uniaxial(rotated(theta)));
+    let direction = ModalCharacteristicDirection {
+        stack: &stack,
+        coordinates: &coordinates,
+        exterior: &exterior,
+        polarisation: Channel::Coupled,
+        thickness_rates: &[0.0],
+        constitutive_rates: &rates,
+    };
+    let sampling = FieldSampling::new().layer(
+        0,
+        LayerSampling::offsets_in([0.0, 0.5], LengthUnit::Centimetre),
+    );
+    for fields in [
+        Transfer4::new()
+            .directional_fields(direction, &sampling, c(1.0, 0.0))
+            .unwrap(),
+        Scatter4::new()
+            .directional_fields(direction, &sampling, c(1.0, 0.0))
+            .unwrap(),
+    ] {
+        let tangent = fields.tangent.quantity();
+        assert!(
+            tangent
+                .electric()
+                .x()
+                .iter()
+                .chain(tangent.magnetic().z())
+                .all(|v| v.norm() > 0.0)
+        );
+    }
+}
+
+#[test]
+fn bivariate_derivatives_agree_between_backends_and_with_central_differences() {
+    use super::coupled::full_stack_with;
+    use crate::{IncidentSide, Parameter, RealAxisEvaluator, observable::ProjectJonesAmplitudes};
+    let (k0, beta, thickness) = (2.6, 1.9, 0.13);
+    let entry = |k: f64, b: f64, d: f64| {
+        let solution = RealAxisEvaluator::new(Transfer4::new())
+            .evaluate(
+                crate::test_support::planar::scalar_real_input(k, b),
+                &full_stack_with(d),
+                Channel::Coupled,
+            )
+            .unwrap()
+            .into_parts()
+            .0;
+        let jones = solution
+            .entries()
+            .project_jones_amplitudes(solution.context(), IncidentSide::Left);
+        jones.reflection(0, 1).unwrap().value()[()]
+    };
+    let layer = Parameter::LayerThickness(FiniteLayerIndex::new(1));
+    for (axis0, axis1) in [
+        (Parameter::Spectral, Parameter::InPlane),
+        (Parameter::InPlane, layer),
+        (Parameter::Spectral, layer),
+    ] {
+        macro_rules! mixed {
+            ($backend:expr) => {{
+                let solution = RealAxisEvaluator::new($backend)
+                    .evaluate_bivariate_second(
+                        crate::test_support::planar::scalar_real_input(k0, beta),
+                        &full_stack_with(thickness),
+                        Channel::Coupled,
+                        axis0,
+                        axis1,
+                    )
+                    .unwrap()
+                    .into_parts()
+                    .0;
+                let jones = solution
+                    .entries()
+                    .project_jones_amplitudes(solution.context(), IncidentSide::Left);
+                let r = jones.reflection(0, 1).unwrap().clone();
+                [
+                    r.value()[()],
+                    r.axis0()[()],
+                    r.axis1()[()],
+                    r.axis0_axis1()[()],
+                ]
+            }};
+        }
+        let (transfer, scatter) = (mixed!(Transfer4::new()), mixed!(Scatter4::new()));
+        let label = format!("{axis0:?} {axis1:?}");
+        for (t, s) in transfer.iter().zip(&scatter) {
+            assert_close(*s, *t, 1e-7, &label);
+        }
+        let h = 1e-4;
+        let shifted = |a: f64, b: f64| {
+            let mut point = [k0, beta, thickness];
+            for (axis, step) in [(axis0, a), (axis1, b)] {
+                let slot = match axis {
+                    Parameter::Spectral => 0,
+                    Parameter::InPlane => 1,
+                    _ => 2,
+                };
+                point[slot] += step;
+            }
+            entry(point[0], point[1], point[2])
+        };
+        let difference =
+            (shifted(h, h) - shifted(h, -h) - shifted(-h, h) + shifted(-h, -h)) / (4.0 * h * h);
+        assert_close(transfer[3], difference, 1e-5, &format!("{label} mixed"));
+    }
+}

@@ -130,6 +130,18 @@ Added:
   separable stacks they equal the 2×2 results.
 - `Layers`, `LayerEnergy`, `LayerParticipation`, `EnergyConfinement`,
   `HermitianLayerOverlap` and `BilinearLayerOverlap` are exported.
+- Modes of the 4×4 backends: `CoupledWorkspace::mode` gives the null vector
+  of the homogeneous interface system (`[V_L | M V_R]` for `Transfer4`, the
+  last pivot back-substituted for `Scatter4`) as the state at every
+  interface, with the residual `σ_min/σ_max`, and refuses a two-dimensional
+  null space (`ModeReconstructionError::DegenerateNullSpace`);
+  `CoupledWorkspace::mode_solution` gives its fields, which keep only the
+  outgoing waves outside, and its integrals including the exterior tails.
+  On separable stacks the modes equal the 2×2 ones with no cross terms.
+- Modal directions take full stack-frame rates `[ε', μ']` for the 4×4
+  backends (`ModalDerivativeBackend` for `Transfer4` and `Scatter4`, any
+  `Into<Channel>` as the direction's channel); the 2×2 backends refuse a full
+  rate.
 - Real-axis evaluation of the coupled channel selects the principal
   outgoing pair (decaying, or carrying flux away from the stack) of each open
   exterior; `ExteriorSelectionError`, `RealAxisEvaluationError::Exterior`.

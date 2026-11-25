@@ -4,11 +4,11 @@ use super::{
     mode::{ExteriorWaves, reconstruct_mode_fields},
 };
 use crate::{
-    AnalyticalMaterialHandle, CanonicalCoordinates, ComplexPlane, ConstitutiveClass,
-    ConstitutiveError, ConstitutiveTensor, ExteriorWavevectors, FiniteLayerIndex, ModeJet1,
-    PlaneWaveDeterminant, Polarisation, ScalarAlgebra, Stack, StackRegion, TensorConstitutiveLift,
+    AnalyticalMaterialHandle, CanonicalCoordinates, Channel, ComplexPlane, ConstitutiveError,
+    ConstitutiveTensor, ExteriorWavevectors, FiniteLayerIndex, ModeJet1, PlaneWaveDeterminant,
+    Polarisation, ScalarAlgebra, Stack, StackRegion, TensorConstitutiveLift, VectorField,
     algebra::{ArrayJet0, HolomorphicParameter},
-    backend::{Backend, Scatter2, Transfer2},
+    backend::{Backend, Scatter2, Scatter4, Transfer2, Transfer4},
     input::{CanonicalStack, canonical::CanonicalLayer, compile_terminations},
 };
 use crate::{ElectromagneticFields, FieldSampling, SpatialResponse, backend::ModalSolutionSource};
@@ -20,11 +20,19 @@ type J = ModeJet1<C, Ix0>;
 type ValueJet = ArrayJet0<C, Ix0, HolomorphicParameter>;
 
 /// Independently seeded physical inputs for a first-order modal direction.
-pub struct ModalCharacteristicDirection<'a, M = AnalyticalMaterialHandle<C>, R = (C, C)> {
+///
+/// `polarisation` names the channel: a [`Polarisation`] for TE or TM, or a
+/// [`Channel`] (the coupled channel needs a 4×4 backend).
+pub struct ModalCharacteristicDirection<
+    'a,
+    M = AnalyticalMaterialHandle<C>,
+    R = (C, C),
+    P = Polarisation,
+> {
     pub stack: &'a Stack<M, f64>,
     pub coordinates: &'a CanonicalCoordinates<J>,
     pub exterior: &'a ExteriorWavevectors<J>,
-    pub polarisation: Polarisation,
+    pub polarisation: P,
     /// Layer thickness rates, in centimetres per parameter unit.
     pub thickness_rates: &'a [f64],
     /// Rates of each region's relative permittivity and permeability, left
@@ -32,17 +40,18 @@ pub struct ModalCharacteristicDirection<'a, M = AnalyticalMaterialHandle<C>, R =
     pub constitutive_rates: &'a [R],
 }
 
-impl<M, R> Clone for ModalCharacteristicDirection<'_, M, R> {
+impl<M, R, P: Copy> Clone for ModalCharacteristicDirection<'_, M, R, P> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<M, R> Copy for ModalCharacteristicDirection<'_, M, R> {}
+impl<M, R, P: Copy> Copy for ModalCharacteristicDirection<'_, M, R, P> {}
 
 /// The rates of one region's relative permittivity and permeability along a
 /// modal direction, in the stack frame: total `(ε', μ')` of an isotropic
-/// region, or `[ε', μ']` entry by entry.
+/// region, or `[ε', μ']` entry by entry, diagonal for the 2×2 backends and
+/// any for the 4×4 backends.
 ///
 /// A material-frame rate `T'` enters as `R T' Rᵀ`
 /// ([`Rotation::rotate`](crate::Rotation::rotate)).
@@ -80,40 +89,64 @@ impl TensorConstitutiveLift<SeededConstitutive, SeededMaterial> for J {
         Ok(material.0.clone())
     }
 
-    fn is_separable(_: &SeededMaterial) -> bool {
-        true
+    fn is_separable(material: &SeededMaterial) -> bool {
+        // TE and TM decouple when the xy and yz entries vanish.
+        material.0.iter().all(|tensor| match tensor {
+            ConstitutiveTensor::Full(entries) => {
+                [(0, 1), (1, 0), (1, 2), (2, 1)]
+                    .into_iter()
+                    .all(|(row, column)| {
+                        let entry = &entries[row][column];
+                        entry.value()[()] == C::ZERO && entry.first()[()] == C::ZERO
+                    })
+            }
+            _ => true,
+        })
     }
 }
 
-/// Seed one stack-frame tensor `value` with its stack-frame `rate`.
-fn seed(
-    region: StackRegion,
-    value: ConstitutiveTensor<ValueJet>,
-    rate: ConstitutiveTensor<C>,
-) -> Result<ConstitutiveTensor<J>, ConstitutiveError> {
-    let jet = |value: ValueJet, rate| J::from_parts(value.into_inner(), arr0(rate));
-    if let (ConstitutiveTensor::Isotropic(value), ConstitutiveTensor::Isotropic(rate)) =
-        (&value, &rate)
-    {
-        return Ok(ConstitutiveTensor::Isotropic(jet(value.clone(), *rate)));
+/// Seed one stack-frame tensor `value` with its stack-frame `rate`, in the
+/// smaller class of the two.
+fn seed(value: ConstitutiveTensor<ValueJet>, rate: ConstitutiveTensor<C>) -> ConstitutiveTensor<J> {
+    let jet = |value: &ValueJet, rate: C| J::from_parts(value.value().clone(), arr0(rate));
+    match (value, rate) {
+        (ConstitutiveTensor::Isotropic(value), ConstitutiveTensor::Isotropic(rate)) => {
+            ConstitutiveTensor::Isotropic(jet(&value, rate))
+        }
+        (value, rate) => match (value.clone().into_diagonal(), rate.clone().into_diagonal()) {
+            (Some(value), Some(rate)) => {
+                ConstitutiveTensor::Diagonal(std::array::from_fn(|k| jet(&value[k], rate[k])))
+            }
+            _ => {
+                let rate = match rate {
+                    ConstitutiveTensor::Full(rate) => rate,
+                    rate => {
+                        let diagonal = rate.into_diagonal().unwrap_or([C::ZERO; 3]);
+                        std::array::from_fn(|row| {
+                            std::array::from_fn(|column| {
+                                if row == column {
+                                    diagonal[row]
+                                } else {
+                                    C::ZERO
+                                }
+                            })
+                        })
+                    }
+                };
+                let value = value.full();
+                ConstitutiveTensor::Full(std::array::from_fn(|row| {
+                    std::array::from_fn(|column| jet(&value[row][column], rate[row][column]))
+                }))
+            }
+        },
     }
-    let unsupported = ConstitutiveError::Unsupported {
-        region,
-        class: ConstitutiveClass::Full,
-    };
-    let [x, y, z] = value.into_diagonal().ok_or(unsupported)?;
-    let [rate_x, rate_y, rate_z] = rate.into_diagonal().ok_or(unsupported)?;
-    Ok(ConstitutiveTensor::Diagonal([
-        jet(x, rate_x),
-        jet(y, rate_y),
-        jet(z, rate_z),
-    ]))
 }
 
-impl<M, R> ModalCharacteristicDirection<'_, M, R>
+impl<M, R, P> ModalCharacteristicDirection<'_, M, R, P>
 where
     ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
     R: ConstitutiveRates,
+    P: Into<Channel> + Copy,
 {
     /// The seeded canonical stack, with walls and PMLs fixed in the stack
     /// frame: the right gap changes by `−Σ thickness_rates`. A direction that
@@ -165,10 +198,7 @@ where
                 )
                 .map_err(super::shared_error)?;
             let [epsilon_rate, mu_rate] = rates.stack_frame();
-            let tensors = [
-                seed(region, epsilon, epsilon_rate).map_err(super::shared_error)?,
-                seed(region, mu, mu_rate).map_err(super::shared_error)?,
-            ];
+            let tensors = [seed(epsilon, epsilon_rate), seed(mu, mu_rate)];
             if !tensors
                 .iter()
                 .all(|tensor| tensor.entries().all(J::all_finite))
@@ -226,48 +256,231 @@ pub struct DirectionalModeFields {
 /// allowing a selected finite-layer thickness jet to reuse core compilation.
 pub trait ModalDerivativeBackend: Clone {
     /// Evaluate the characteristic with independently seeded material and coordinate jets.
-    fn directional_characteristic<M, R>(
+    fn directional_characteristic<M, R, P>(
         &self,
-        direction: ModalCharacteristicDirection<'_, M, R>,
+        direction: ModalCharacteristicDirection<'_, M, R, P>,
     ) -> Result<J, Arc<dyn Error + Send + Sync>>
     where
         ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
-        R: ConstitutiveRates;
+        R: ConstitutiveRates,
+        P: Into<Channel> + Copy;
 
     /// Recover field jets at material-attached coordinates. The backend's
     /// homogeneous seed is used as the gauge, multiplied by a constant amplitude.
-    fn directional_fields<M, R>(
+    fn directional_fields<M, R, P>(
         &self,
-        direction: ModalCharacteristicDirection<'_, M, R>,
+        direction: ModalCharacteristicDirection<'_, M, R, P>,
         sampling: &FieldSampling<f64>,
         amplitude: C,
     ) -> Result<DirectionalModeFields, Arc<dyn Error + Send + Sync>>
     where
         ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
-        R: ConstitutiveRates;
+        R: ConstitutiveRates,
+        P: Into<Channel> + Copy;
 
     fn checked_characteristic<M>(
         &self,
         stack: crate::CanonicalStack<M, J>,
         coordinates: &CanonicalCoordinates<J>,
         exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
+        polarisation: impl Into<Channel>,
     ) -> Result<J, Arc<dyn Error + Send + Sync>>
     where
         M: Clone,
         J: TensorConstitutiveLift<ComplexPlane, M>;
 }
 
+fn invalid_amplitude(amplitude: C) -> Result<(), Arc<dyn Error + Send + Sync>> {
+    if !amplitude.re.is_finite() || !amplitude.im.is_finite() || amplitude == C::ZERO {
+        return Err(Arc::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid field amplitude",
+        )));
+    }
+    Ok(())
+}
+
+/// Primal and tangent fields, refusing non-finite samples.
+fn directional_mode_fields(
+    primal: ElectromagneticFields<VectorField<C, ndarray::Ix1>>,
+    tangent: ElectromagneticFields<VectorField<C, ndarray::Ix1>>,
+    resolved: crate::ResolvedFieldSampling<f64>,
+) -> Result<DirectionalModeFields, Arc<dyn Error + Send + Sync>> {
+    for fields in [&primal, &tangent] {
+        let (electric, magnetic) = (fields.electric(), fields.magnetic());
+        if [
+            electric.x(),
+            electric.y(),
+            electric.z(),
+            magnetic.x(),
+            magnetic.y(),
+            magnetic.z(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|v| !v.re.is_finite() || !v.im.is_finite())
+        {
+            return Err(Arc::new(std::io::Error::other(
+                "nonfinite directional fields",
+            )));
+        }
+    }
+    Ok(DirectionalModeFields {
+        fields: SpatialResponse::new(primal, resolved.clone()),
+        tangent: SpatialResponse::new(tangent, resolved),
+    })
+}
+
+/// Fields of a 2×2 backend's mode along a direction.
+macro_rules! scalar_fields {
+    ($backend:expr, $direction:expr, $sampling:expr, $amplitude:expr) => {{
+        let (direction, sampling, amplitude) = ($direction, $sampling, $amplitude);
+        invalid_amplitude(amplitude)?;
+        let stack = direction.canonical_stack()?;
+        let channel = direction.polarisation.into();
+        let workspace = <Self as Backend<J, SeededConstitutive>>::retain(
+            $backend,
+            direction.coordinates,
+            &stack,
+            direction.exterior,
+            channel,
+        )
+        .map_err(super::shared_error)?;
+        let state = ComplexPlaneState::new(
+            direction.coordinates.clone(),
+            direction.exterior.clone(),
+            &stack,
+            workspace,
+            channel,
+        );
+        let seed = state
+            .workspace()
+            .modal_boundary_solution()
+            .map_err(super::shared_error)?
+            .scaled(&J::constant(arr0(amplitude)));
+        let resolved = sampling
+            .resolve(direction.stack)
+            .map_err(super::shared_error)?;
+        let (electric, magnetic) =
+            reconstruct_mode_fields(&state, &seed, &resolved, ExteriorWaves::Outgoing)
+                .map_err(super::shared_error)?
+                .into_parts();
+        directional_mode_fields(
+            ElectromagneticFields::new(electric.value().clone(), magnetic.value().clone()),
+            ElectromagneticFields::new(electric.first().clone(), magnetic.first().clone()),
+            resolved,
+        )
+    }};
+}
+
+/// Fields of a 4×4 backend's mode along a direction.
+fn coupled_fields<B, M, R, P>(
+    backend: &B,
+    direction: ModalCharacteristicDirection<'_, M, R, P>,
+    sampling: &FieldSampling<f64>,
+    amplitude: C,
+) -> Result<DirectionalModeFields, Arc<dyn Error + Send + Sync>>
+where
+    B: Backend<J, SeededConstitutive, Workspace = crate::backend::CoupledWorkspace<J>>,
+    ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
+    R: ConstitutiveRates,
+    P: Into<Channel> + Copy,
+{
+    invalid_amplitude(amplitude)?;
+    let stack = direction.canonical_stack()?;
+    let workspace = backend
+        .retain(
+            direction.coordinates,
+            &stack,
+            direction.exterior,
+            direction.polarisation.into(),
+        )
+        .map_err(super::shared_error)?;
+    let mode = workspace.mode().map_err(super::shared_error)?;
+    let solution = workspace
+        .mode_solution(&mode)
+        .scaled(&J::constant(arr0(amplitude)));
+    let resolved = sampling
+        .resolve(direction.stack)
+        .map_err(super::shared_error)?;
+    let centimetres =
+        |length: &lamina_units::Length<f64>| J::constant(arr0(C::from(length.as_centimetres())));
+    let mut samples: [Vec<J>; 6] = Default::default();
+    for position in resolved.positions() {
+        let (region, depth) = match position {
+            crate::FieldPosition::LeftExterior { distance } => {
+                (StackRegion::LeftExterior, centimetres(distance))
+            }
+            crate::FieldPosition::RightExterior { distance } => {
+                (StackRegion::RightExterior, centimetres(distance))
+            }
+            crate::FieldPosition::Layer { index, position } => {
+                let thickness = stack.layers()[index.get()].thickness_cm();
+                let depth = match position {
+                    crate::ResolvedLayerPosition::FromLeft(distance) => centimetres(distance),
+                    crate::ResolvedLayerPosition::FromRight(distance) => {
+                        thickness.subtract(&centimetres(distance))
+                    }
+                    crate::ResolvedLayerPosition::Fraction(fraction) => {
+                        thickness.scale(C::from(*fraction))
+                    }
+                };
+                (StackRegion::Layer(*index), depth)
+            }
+        };
+        let [electric, magnetic] = solution.fields(region, &depth).ok_or_else(|| {
+            Arc::new(std::io::Error::other("fields unavailable")) as Arc<dyn Error + Send + Sync>
+        })?;
+        for (slot, value) in samples.iter_mut().zip(electric.into_iter().chain(magnetic)) {
+            slot.push(value);
+        }
+    }
+    let part = |range: std::ops::Range<usize>, first: bool| {
+        let [x, y, z]: [ndarray::Array1<C>; 3] = std::array::from_fn(|k| {
+            samples[range.start + k]
+                .iter()
+                .map(|jet| {
+                    if first {
+                        jet.first()[()]
+                    } else {
+                        jet.value()[()]
+                    }
+                })
+                .collect()
+        });
+        VectorField::new(x, y, z).map_err(super::shared_error)
+    };
+    directional_mode_fields(
+        ElectromagneticFields::new(part(0..3, false)?, part(3..6, false)?),
+        ElectromagneticFields::new(part(0..3, true)?, part(3..6, true)?),
+        resolved,
+    )
+}
+
 macro_rules! implementation {
-    ($backend:ty) => {
+    ($backend:ty, scalar) => {
+        implementation!(
+            $backend,
+            |backend, direction, sampling, amplitude| scalar_fields!(
+                backend, direction, sampling, amplitude
+            )
+        );
+    };
+    ($backend:ty, coupled) => {
+        implementation!($backend, |backend, direction, sampling, amplitude| {
+            coupled_fields(backend, direction, sampling, amplitude)
+        });
+    };
+    ($backend:ty, |$b:ident, $d:ident, $s:ident, $a:ident| $fields:expr) => {
         impl ModalDerivativeBackend for $backend {
-            fn directional_characteristic<M, R>(
+            fn directional_characteristic<M, R, P>(
                 &self,
-                direction: ModalCharacteristicDirection<'_, M, R>,
+                direction: ModalCharacteristicDirection<'_, M, R, P>,
             ) -> Result<J, Arc<dyn Error + Send + Sync>>
             where
                 ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
                 R: ConstitutiveRates,
+                P: Into<Channel> + Copy,
             {
                 let stack = direction.canonical_stack()?;
                 let determinant = <Self as Backend<J, SeededConstitutive>>::solve(
@@ -288,78 +501,19 @@ macro_rules! implementation {
                 Ok(determinant)
             }
 
-            fn directional_fields<M, R>(
+            fn directional_fields<M, R, P>(
                 &self,
-                direction: ModalCharacteristicDirection<'_, M, R>,
+                direction: ModalCharacteristicDirection<'_, M, R, P>,
                 sampling: &FieldSampling<f64>,
                 amplitude: C,
             ) -> Result<DirectionalModeFields, Arc<dyn Error + Send + Sync>>
             where
                 ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
                 R: ConstitutiveRates,
+                P: Into<Channel> + Copy,
             {
-                if !amplitude.re.is_finite() || !amplitude.im.is_finite() || amplitude == C::ZERO {
-                    return Err(Arc::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "invalid field amplitude",
-                    )));
-                }
-                let stack = direction.canonical_stack()?;
-                let workspace = <Self as Backend<J, SeededConstitutive>>::retain(
-                    self,
-                    direction.coordinates,
-                    &stack,
-                    direction.exterior,
-                    direction.polarisation.into(),
-                )
-                .map_err(super::shared_error)?;
-                let state = ComplexPlaneState::new(
-                    direction.coordinates.clone(),
-                    direction.exterior.clone(),
-                    &stack,
-                    workspace,
-                    direction.polarisation.into(),
-                );
-                let seed = state
-                    .workspace()
-                    .modal_boundary_solution()
-                    .map_err(super::shared_error)?
-                    .scaled(&J::constant(arr0(amplitude)));
-                let resolved = sampling
-                    .resolve(direction.stack)
-                    .map_err(super::shared_error)?;
-                let (electric, magnetic) =
-                    reconstruct_mode_fields(&state, &seed, &resolved, ExteriorWaves::Outgoing)
-                        .map_err(super::shared_error)?
-                        .into_parts();
-                let primal =
-                    ElectromagneticFields::new(electric.value().clone(), magnetic.value().clone());
-                let tangent =
-                    ElectromagneticFields::new(electric.first().clone(), magnetic.first().clone());
-                for fields in [&primal, &tangent] {
-                    let electric = fields.electric();
-                    let magnetic = fields.magnetic();
-                    if [
-                        electric.x(),
-                        electric.y(),
-                        electric.z(),
-                        magnetic.x(),
-                        magnetic.y(),
-                        magnetic.z(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .any(|v| !v.re.is_finite() || !v.im.is_finite())
-                    {
-                        return Err(Arc::new(std::io::Error::other(
-                            "nonfinite directional fields",
-                        )));
-                    }
-                }
-                Ok(DirectionalModeFields {
-                    fields: SpatialResponse::new(primal, resolved.clone()),
-                    tangent: SpatialResponse::new(tangent, resolved),
-                })
+                let ($b, $d, $s, $a) = (self, direction, sampling, amplitude);
+                $fields
             }
 
             fn checked_characteristic<M>(
@@ -367,7 +521,7 @@ macro_rules! implementation {
                 stack: CanonicalStack<M, J>,
                 coordinates: &CanonicalCoordinates<J>,
                 exterior: &ExteriorWavevectors<J>,
-                polarisation: Polarisation,
+                polarisation: impl Into<Channel>,
             ) -> Result<J, Arc<dyn Error + Send + Sync>>
             where
                 M: Clone,
@@ -383,8 +537,10 @@ macro_rules! implementation {
     };
 }
 
-implementation!(Scatter2);
-implementation!(Transfer2);
+implementation!(Scatter2, scalar);
+implementation!(Transfer2, scalar);
+implementation!(Scatter4, coupled);
+implementation!(Transfer4, coupled);
 
 #[cfg(test)]
 mod tests {
