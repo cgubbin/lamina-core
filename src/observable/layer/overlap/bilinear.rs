@@ -348,11 +348,10 @@ impl<A> BilinearLayerOverlapInput<A> {
             right_parallel_angular_wavenumber,
         );
 
-        Ok(BilinearLayerOverlap::from_parts(
-            field.electric().clone(),
-            field.magnetic().clone(),
-            field.electric().add(field.magnetic()),
-        ))
+        let (electric, magnetic) = field.into_parts();
+        let total = electric.add(&magnetic);
+
+        Ok(BilinearLayerOverlap::from_parts(electric, magnetic, total))
     }
 }
 

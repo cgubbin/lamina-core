@@ -1,4 +1,4 @@
-//! Isotropic 2×2 transfer-matrix backend.
+//! 2×2 transfer-matrix backend.
 //!
 //! [`Transfer2`] evaluates scalar TE or TM channels using ordinary 2×2
 //! transfer matrices.
@@ -30,7 +30,7 @@ mod projection;
 mod state;
 mod workspace;
 
-pub(crate) use entries::{Transfer2Entries, Transfer2ExteriorContext};
+pub(crate) use entries::Transfer2Entries;
 pub use error::Transfer2Error;
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ use crate::{
     algebra::ScalarAlgebra,
     backend::{Backend, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace},
     input::CanonicalStack,
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
 };
 
 /// Validation policy for non-finite transfer-matrix entries.
@@ -80,7 +80,7 @@ pub enum TransferStabilityCheck {
     Disabled,
 }
 
-/// Scalar-channel isotropic 2×2 transfer backend.
+/// Scalar-channel 2×2 transfer backend.
 ///
 /// The transfer formulation may overflow for optically thick, strongly
 /// absorbing, or strongly evanescent layers. The configured stability check
@@ -134,8 +134,7 @@ where
         polarisation: Polarisation,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>,
+        J: TensorConstitutiveLift<Domain, M>,
     {
         let workspace = self.accumulate::<J, Domain, M>(
             coordinates,
@@ -156,8 +155,7 @@ where
         polarisation: Polarisation,
     ) -> Result<Self::Workspace, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>,
+        J: TensorConstitutiveLift<Domain, M>,
     {
         let workspace = self.accumulate::<J, Domain, M>(
             coordinates,

@@ -1,4 +1,4 @@
-//! Retained state and reconstruction for the isotropic transfer backend.
+//! Retained state and reconstruction for the 2×2 transfer backend.
 //!
 //! [`Transfer2Workspace`] always stores the accumulated transfer-matrix
 //! solution and optionally retains each finite-layer matrix, constitutive
@@ -25,7 +25,7 @@ use crate::{
         ExteriorContextProvider, ModalSolutionSource, ModeReconstructionError,
         PlaneWaveModeCandidate, PlaneWaveSolution, PlaneWaveSolutionSource,
         ReconstructExteriorModeWaves, ReconstructLayerModeWaves, RunMode, SolutionWorkspace,
-        isotropic::IsotropicLayerQuantities,
+        medium::LayerQuantities,
         right_exterior_mode_waves,
         solution::PlaneWaveSolutionView,
         transfer2::{entries::right_gauged_mode_candidate, state::right_outgoing_transfer_state},
@@ -38,9 +38,10 @@ use crate::{
     },
 };
 
+use crate::backend::ExteriorContext;
+
 use super::{
     Transfer2Entries,
-    entries::Transfer2ExteriorContext,
     state::{TransferState, bidirectional_waves_from_state, transfer_state_from_waves},
 };
 
@@ -53,14 +54,14 @@ use super::{
 pub(crate) struct LayerBoundaryStates<A> {
     left: TransferState<A>,
     right: TransferState<A>,
-    quantities: IsotropicLayerQuantities<A>,
+    quantities: LayerQuantities<A>,
 }
 
 impl<A> LayerBoundaryStates<A> {
     pub(crate) fn new(
         left: TransferState<A>,
         right: TransferState<A>,
-        quantities: IsotropicLayerQuantities<A>,
+        quantities: LayerQuantities<A>,
     ) -> Self {
         Self {
             left,
@@ -79,13 +80,7 @@ impl<A> LayerBoundaryStates<A> {
         &self.right
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        TransferState<A>,
-        TransferState<A>,
-        IsotropicLayerQuantities<A>,
-    ) {
+    pub(crate) fn into_parts(self) -> (TransferState<A>, TransferState<A>, LayerQuantities<A>) {
         (self.left, self.right, self.quantities)
     }
 
@@ -113,14 +108,14 @@ impl<A> LayerBoundaryStates<A> {
 #[derive(Clone, Debug)]
 pub(crate) struct RetainedTransferLayer<A> {
     matrix: Transfer2Entries<A>,
-    quantities: IsotropicLayerQuantities<A>,
+    quantities: LayerQuantities<A>,
     thickness: A,
 }
 
 impl<A> RetainedTransferLayer<A> {
     pub(crate) fn new(
         matrix: Transfer2Entries<A>,
-        quantities: IsotropicLayerQuantities<A>,
+        quantities: LayerQuantities<A>,
         thickness: A,
     ) -> Self {
         Self {
@@ -134,7 +129,7 @@ impl<A> RetainedTransferLayer<A> {
         &self.matrix
     }
 
-    pub(crate) fn quantities(&self) -> &IsotropicLayerQuantities<A> {
+    pub(crate) fn quantities(&self) -> &LayerQuantities<A> {
         &self.quantities
     }
 
@@ -165,7 +160,7 @@ impl<A> RetainedTransferLayers<A> {
     pub(crate) fn push(
         &mut self,
         matrix: Transfer2Entries<A>,
-        quantities: IsotropicLayerQuantities<A>,
+        quantities: LayerQuantities<A>,
         thickness: A,
     ) {
         self.layers
@@ -176,10 +171,7 @@ impl<A> RetainedTransferLayers<A> {
         self.layers.len()
     }
 
-    pub(crate) fn get_quantities(
-        &self,
-        layer_index: usize,
-    ) -> Option<&IsotropicLayerQuantities<A>> {
+    pub(crate) fn get_quantities(&self, layer_index: usize) -> Option<&LayerQuantities<A>> {
         self.layers.get(layer_index).map(|layer| layer.quantities())
     }
 
@@ -294,7 +286,7 @@ impl<A> RetainedIsotropicLayers for Transfer2Workspace<A> {
         self.retained.as_ref().map(|x| x.len())
     }
 
-    fn layer_quantities(&self, index: usize) -> Option<&IsotropicLayerQuantities<Self::Algebra>> {
+    fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>> {
         self.retained.as_ref()?.get_quantities(index)
     }
 
@@ -307,7 +299,7 @@ impl<A> Transfer2Workspace<A> {
     /// Construct a workspace
     pub(crate) fn new(
         source: &ArrayBase<OwnedRepr<A::Scalar>, A::Dimension>,
-        context: Transfer2ExteriorContext<A>,
+        context: ExteriorContext<A>,
         mode: RunMode,
         layer_count: usize,
     ) -> Self
@@ -368,7 +360,7 @@ impl<A> Transfer2Workspace<A> {
     pub(crate) fn append(
         &mut self,
         next: Transfer2Entries<A>,
-        quantities: IsotropicLayerQuantities<A>,
+        quantities: LayerQuantities<A>,
         thickness: A,
     ) where
         A: ScalarAlgebra,
@@ -612,38 +604,30 @@ mod tests {
         CanonicalCoordinates::new(real_j0(c(2.0)), real_j0(c(0.0)))
     }
 
-    fn quantities() -> IsotropicLayerQuantities<A> {
-        IsotropicLayerQuantities::real_axis(
+    fn quantities() -> LayerQuantities<A> {
+        LayerQuantities::real_axis(
             &constant(4.0, 1.0),
             &coordinates(),
             Polarisation::TransverseElectric,
         )
     }
 
-    fn context() -> Transfer2ExteriorContext<A> {
+    fn context() -> ExteriorContext<A> {
         let left_exterior = constant(1.0, 1.0);
         let right_exterior = constant(1.0, 1.0);
         let coordinates = coordinates();
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                &left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                &right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(&left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(&right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
-        Transfer2ExteriorContext::new::<crate::domain::RealAxis, _>(
+        ExteriorContext::new::<crate::domain::RealAxis, _>(
             &coordinates,
             &left_exterior,
             &right_exterior,
@@ -660,7 +644,7 @@ mod tests {
         stack: &CanonicalStack<Constant<f64>, RealJ0>,
         coordinates: &CanonicalCoordinates<RealJ0>,
     ) -> ExteriorWavevectors<RealJ0> {
-        let left = IsotropicLayerQuantities::evaluate::<crate::ComplexPlane, _>(
+        let left = LayerQuantities::complex_plane(
             stack.left_exterior(),
             coordinates,
             Polarisation::TransverseElectric,
@@ -668,7 +652,7 @@ mod tests {
         .kappa()
         .clone();
 
-        let right = IsotropicLayerQuantities::evaluate::<crate::ComplexPlane, _>(
+        let right = LayerQuantities::complex_plane(
             stack.right_exterior(),
             coordinates,
             Polarisation::TransverseElectric,
@@ -799,20 +783,12 @@ mod tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         Transfer2::new()
@@ -930,8 +906,8 @@ mod tests {
         RealJ0::new(arr0(c(thickness)))
     }
 
-    fn quantities_for_material(material: Constant<f64>) -> IsotropicLayerQuantities<RealJ0> {
-        IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+    fn quantities_for_material(material: Constant<f64>) -> LayerQuantities<RealJ0> {
+        LayerQuantities::real_axis(
             &material,
             &test_coordinates(),
             Polarisation::TransverseElectric,
@@ -1113,7 +1089,7 @@ mod tests {
 
         let retained_admittance = retained.layers()[0].quantities().clone().into_admittance();
 
-        let fresh_quantities = IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        let fresh_quantities = LayerQuantities::real_axis(
             stack.layers()[0].material(),
             &coordinates,
             Polarisation::TransverseElectric,

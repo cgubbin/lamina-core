@@ -298,11 +298,10 @@ impl<A> HermitianLayerOverlapInput<A> {
             right_parallel_angular_wavenumber,
         );
 
-        Ok(HermitianLayerOverlap::new(
-            field.electric().clone(),
-            field.magnetic().clone(),
-            field.electric().add(field.magnetic()),
-        ))
+        let (electric, magnetic) = field.into_parts();
+        let total = electric.add(&magnetic);
+
+        Ok(HermitianLayerOverlap::new(electric, magnetic, total))
     }
 }
 
@@ -400,7 +399,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, ArrayJet1, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
         observable::BoundaryWaves,
     };
 
@@ -448,13 +447,8 @@ mod tests {
         HermitianLayerOverlap::new(jet(electric), jet(magnetic), jet(electric + magnetic))
     }
 
-    fn quantities(
-        kappa: C,
-        polarisation: Polarisation,
-        epsilon: C,
-        mu: C,
-    ) -> IsotropicLayerQuantities<A0> {
-        IsotropicLayerQuantities::test_fixture(jet(kappa), jet(epsilon), jet(mu), polarisation)
+    fn quantities(kappa: C, polarisation: Polarisation, epsilon: C, mu: C) -> LayerQuantities<A0> {
+        LayerQuantities::test_fixture(jet(kappa), jet(epsilon), jet(mu), polarisation)
     }
 
     fn operand(forward: C, backward: C, kappa: C) -> LayerOverlapOperand<A0> {

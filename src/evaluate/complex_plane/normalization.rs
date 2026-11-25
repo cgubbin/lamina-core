@@ -4,11 +4,12 @@ use super::{
     mode::{raw_layer_integration_inputs_unchecked, raw_qnm_normalisation_unchecked},
 };
 use crate::{
-    AnalyticalMaterialHandle, AnalyticalMaterialStack, CanonicalCoordinates, DerivativeOrder,
-    EvaluateDifferentiableMeromorphicMaterial, EvaluateMeromorphicMaterial, ExteriorSampling,
-    ExteriorWavevectors, FieldSampling, ModalFieldBackend, Polarisation, Scalar,
+    AnalyticalMaterialHandle, CanonicalCoordinates, ComplexPlane, ConstitutiveError,
+    ExteriorSampling, ExteriorWavevectors, FieldSampling, FiniteLayerIndex, ModalFieldBackend,
+    Polarisation, Stack, StackRegion, TensorConstitutiveLift,
     algebra::{ArrayJet0, HolomorphicParameter},
-    backend::{ModalSolutionSource, Scatter2, Transfer2},
+    backend::{Channel, ModalSolutionSource, PrincipalConstitutive, Scatter2, Transfer2},
+    material::TensorConstitutiveSpectralFirstLift,
 };
 use lamina_units::Length;
 use ndarray::{Ix0, arr0};
@@ -103,10 +104,10 @@ pub enum PoleNormalizationError {
     #[error("pole normalization with outgoing exterior terms needs a stack open on both sides")]
     ClosedStack,
 }
-pub trait ModalNormalizationBackend: ModalFieldBackend {
+pub trait ModalNormalizationBackend<M = AnalyticalMaterialHandle<C>>: ModalFieldBackend<M> {
     fn pole_normalization(
         &self,
-        stack: &AnalyticalMaterialStack<C>,
+        stack: &Stack<M, f64>,
         input: PoleNormalizationInput,
         settings: PoleNormalizationSettings,
     ) -> Result<PoleNormalizationData, PoleNormalizationError>;
@@ -114,43 +115,87 @@ pub trait ModalNormalizationBackend: ModalFieldBackend {
 fn finite(v: C) -> bool {
     v.re.is_finite() && v.im.is_finite()
 }
-/// Exact local material values and spectral derivatives, not finite differences.
-fn constitutive(m: &AnalyticalMaterialHandle<C>, k: C, spectral: bool) -> [C; 4] {
-    let k = Scalar(k);
-    let e = m.evaluate_relative_permittivity_complex(k);
-    let u = m.evaluate_relative_permeability_complex(k);
-    if spectral {
-        [
-            e,
-            u,
-            m.evaluate_relative_permittivity_complex_derivative(k, DerivativeOrder::First),
-            m.evaluate_relative_permeability_complex_derivative(k, DerivativeOrder::First),
-        ]
+/// The entries `polarisation` sees in `material` and, for the spectral pole
+/// variable, their exact `k0`-derivatives (zero otherwise).
+fn entries<M>(
+    region: StackRegion,
+    material: &M,
+    input: PoleNormalizationInput,
+    spectral: bool,
+) -> Result<[Channel<C>; 2], ConstitutiveError>
+where
+    J: TensorConstitutiveLift<ComplexPlane, M>
+        + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>,
+{
+    let k0 = J::constant(arr0(input.k0));
+    let value = PrincipalConstitutive::new(
+        region,
+        <J as TensorConstitutiveLift<ComplexPlane, _>>::constitutive_tensors(
+            region, material, &k0,
+        )?,
+    )?;
+    let value = value
+        .channel(input.polarisation)
+        .map(|entry| entry.value()[()]);
+    let first = if spectral {
+        PrincipalConstitutive::new(
+            region,
+            <J as TensorConstitutiveSpectralFirstLift<ComplexPlane, _>>::constitutive_tensors_spectral_first(
+                material, &k0,
+            ),
+        )?
+            .channel(input.polarisation)
+            .map(|entry| entry.value()[()])
     } else {
-        [e, u, C::new(0., 0.), C::new(0., 0.)]
-    }
-}
-fn coefficients(v: [C; 4], input: PoleNormalizationInput) -> (C, C, C, C) {
-    let [e, u, ed, ud] = v;
-    let (f, g, fd, gd) = if input.polarisation == Polarisation::TransverseElectric {
-        (u, e, ud, ed)
-    } else {
-        (e, u, ed, ud)
+        value.clone().map(|_| C::new(0., 0.))
     };
+    Ok([value, first])
+}
+/// `(p, ∂p, ∂(1/p), ∂q)` of the Sturm–Liouville form
+/// `(ψ'/p)' + q ψ = 0` with `q = w k0² − β²/r`, for transverse entry `p`,
+/// canonical `w` and normal `r`; `∂` is with respect to the pole variable.
+fn coefficients([value, first]: &[Channel<C>; 2], input: PoleNormalizationInput) -> (C, C, C, C) {
+    let (p, pd) = (value.transverse, first.transverse);
+    let (w, wd) = (value.canonical, first.canonical);
+    let (r, rd) = (value.normal.unwrap_or(p), first.normal.unwrap_or(pd));
     let qd = match input.variable {
         PoleVariable::K0AtFixedBeta => {
-            2. * input.k0 * g + input.k0 * input.k0 * gd + input.beta * input.beta * fd / (f * f)
+            2. * input.k0 * w + input.k0 * input.k0 * wd + input.beta * input.beta * rd / (r * r)
         }
-        PoleVariable::BetaAtFixedK0 => -2. * input.beta / f,
+        PoleVariable::BetaAtFixedK0 => -2. * input.beta / r,
     };
-    (f, fd, -fd / (f * f), qd)
+    (p, pd, -pd / (p * p), qd)
+}
+/// Every entry finite and the transverse and normal entries above `cutoff`.
+fn regular([value, first]: &[Channel<C>; 2], cutoff: f64) -> bool {
+    let dividing = [Some(value.transverse), value.normal];
+    [value, first]
+        .into_iter()
+        .flat_map(|channel| {
+            [
+                Some(channel.canonical),
+                Some(channel.transverse),
+                channel.normal,
+            ]
+        })
+        .flatten()
+        .all(finite)
+        && dividing
+            .into_iter()
+            .flatten()
+            .all(|entry| entry.norm() > cutoff)
 }
 macro_rules! implement {
     ($backend:ty)=>{
-        impl ModalNormalizationBackend for $backend {
+        impl<M> ModalNormalizationBackend<M> for $backend
+        where
+            M: Clone,
+            J: TensorConstitutiveLift<ComplexPlane, M>
+                + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>,
+        {
             fn pole_normalization(
                 &self,
-                stack: &AnalyticalMaterialStack<C>,
+                stack: &Stack<M, f64>,
                 input: PoleNormalizationInput,
                 settings: PoleNormalizationSettings,
             ) -> Result<PoleNormalizationData, PoleNormalizationError> {
@@ -233,9 +278,16 @@ macro_rules! implement {
                     .zip(stack.layers_left_to_right())
                     .enumerate()
                 {
-                    let v = constitutive(material.material(), input.k0, spectral);
-                    let (f, fd, _, qd) = coefficients(v, input);
-                    if !v.into_iter().all(finite) || f.norm() <= cfg.constitutive_cutoff {
+                    let v = entries(
+                        StackRegion::Layer(FiniteLayerIndex::new(i)),
+                        material.material(),
+                        input,
+                        spectral,
+                    )
+                    .map_err(super::shared_error)
+                    .map_err(PoleNormalizationError::Evaluation)?;
+                    let (_, fd, _, qd) = coefficients(&v, input);
+                    if !regular(&v, cfg.constitutive_cutoff) {
                         return Err(PoleNormalizationError::Singular {
                             region: format!("layer {i}"),
                         });
@@ -249,25 +301,37 @@ macro_rules! implement {
                 }
                 let mut outgoing_boundaries = [C::new(0., 0.); 2];
                 let mut exterior_segments = outgoing_boundaries;
-                for (i, m) in [stack.left_exterior(), stack.right_exterior()]
-                    .into_iter()
-                    .enumerate()
+                for (i, (region, m)) in [
+                    (StackRegion::LeftExterior, stack.left_exterior()),
+                    (StackRegion::RightExterior, stack.right_exterior()),
+                ]
+                .into_iter()
+                .enumerate()
                 {
-                    let v = constitutive(m, input.k0, spectral);
-                    let (f, fd, pd, qd) = coefficients(v, input);
+                    let v = entries(region, m, input, spectral)
+                        .map_err(super::shared_error)
+                        .map_err(PoleNormalizationError::Evaluation)?;
+                    let (f, fd, pd, qd) = coefficients(&v, input);
                     let k = input.kappa[i];
-                    if !v.into_iter().all(finite)
-                        || f.norm() <= cfg.constitutive_cutoff
-                        || k.norm() <= cfg.kappa_cutoff
-                    {
+                    if !regular(&v, cfg.constitutive_cutoff) || k.norm() <= cfg.kappa_cutoff {
                         return Err(PoleNormalizationError::Singular {
                             region: format!("exterior {i}"),
                         });
                     }
-                    let qd_wave = if spectral {
-                        (v[2] * v[1] + v[0] * v[3]) * input.k0 * input.k0 + 2. * v[0] * v[1] * input.k0
-                    } else {
-                        -2. * input.beta
+                    // ∂κ²/∂λ of κ² = p w k0² − (p/r) β², with p = f.
+                    let [value, first] = &v;
+                    let (w, wd) = (value.canonical, first.canonical);
+                    let normal = value.normal.zip(first.normal);
+                    let qd_wave = match (input.variable, normal) {
+                        (PoleVariable::K0AtFixedBeta, None) => {
+                            (wd * f + w * fd) * input.k0 * input.k0 + 2. * w * f * input.k0
+                        }
+                        (PoleVariable::K0AtFixedBeta, Some((r, rd))) => {
+                            (wd * f + w * fd) * input.k0 * input.k0 + 2. * w * f * input.k0
+                                - input.beta * input.beta * (fd * r - f * rd) / (r * r)
+                        }
+                        (PoleVariable::BetaAtFixedK0, None) => -2. * input.beta,
+                        (PoleVariable::BetaAtFixedK0, Some((r, _))) => -2. * input.beta * f / r,
                     };
                     let kd = qd_wave / (2. * k);
                     // Opposite Robin signs cancel the opposite endpoint signs.
@@ -344,7 +408,7 @@ implement!(Transfer2);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Constant, Stack};
+    use crate::{AnalyticalMaterialStack, Constant};
     fn c(v: f64) -> C {
         C::new(v, 0.)
     }
@@ -479,6 +543,109 @@ mod tests {
                 * h
                 / 3.;
             close(n.layers[0], sum);
+        }
+    }
+    #[test]
+    fn diagonal_layers_and_exteriors_use_their_own_entries() {
+        use crate::{
+            AnalyticalMaterialRegion, AnalyticalTensorStack, Rotation,
+            test_support::materials::{ComplexQuadratic, principal_region},
+        };
+        let linear = |epsilon: [f64; 2], mu: [f64; 2]| ComplexQuadratic {
+            epsilon: [c(epsilon[0]), c(epsilon[1]), c(0.)],
+            mu: [c(mu[0]), c(mu[1]), c(0.)],
+        };
+        let axes = [
+            linear([3., 0.2], [1.2, 0.07]),
+            linear([2.5, 0.1], [1.1, 0.05]),
+            linear([4., 0.3], [0.9, 0.02]),
+        ];
+        let (k, beta) = (C::new(2., -0.1), c(0.4));
+        let exterior = (k * k - beta * beta).sqrt();
+        let vacuum =
+            || AnalyticalMaterialRegion::from(AnalyticalMaterialHandle::new(Constant::vacuum()));
+        let stack: AnalyticalTensorStack<C> = Stack::builder(vacuum(), vacuum())
+            .layer(
+                principal_region(axes, Rotation::identity()),
+                Length::centimetres(0.3),
+            )
+            .finalise();
+        let entry = |axis: usize, epsilon: bool| {
+            let [a, b] = if epsilon {
+                [axes[axis].epsilon[0], axes[axis].epsilon[1]]
+            } else {
+                [axes[axis].mu[0], axes[axis].mu[1]]
+            };
+            (a + b * k, b)
+        };
+        for pol in [
+            Polarisation::TransverseElectric,
+            Polarisation::TransverseMagnetic,
+        ] {
+            let input = PoleNormalizationInput {
+                k0: k,
+                beta,
+                kappa: [exterior; 2],
+                polarisation: pol,
+                variable: PoleVariable::K0AtFixedBeta,
+            };
+            let n = Transfer2::new()
+                .pole_normalization(&stack, input, Default::default())
+                .unwrap();
+            let te = pol == Polarisation::TransverseElectric;
+            let ((p, pd), (w, wd), (r, rd)) = (entry(0, !te), entry(1, te), entry(2, !te));
+            let wave = (p * (w * k * k - beta * beta / r)).sqrt();
+            let qd = 2. * k * w + k * k * wd + beta * beta * rd / (r * r);
+            let integrand = |z: f64| {
+                let x = wave * (z - 0.3);
+                let psi = x.cos() + C::i() * exterior * p / wave * x.sin();
+                let dp = -wave * x.sin() + C::i() * exterior * p * x.cos();
+                pd / (p * p) * dp * dp + qd * psi * psi
+            };
+            let count = 2000;
+            let h = 0.3 / count as f64;
+            let sum = (0..=count)
+                .map(|i| {
+                    let weight = if i == 0 || i == count {
+                        1.
+                    } else if i % 2 == 0 {
+                        2.
+                    } else {
+                        4.
+                    };
+                    integrand(i as f64 * h) * weight
+                })
+                .sum::<C>()
+                * h
+                / 3.;
+            close(n.layers[0], sum);
+
+            // An isotropic tensor exterior reproduces the scalar one.
+            let (scalar, input) = cavity(pol);
+            let tensor: AnalyticalTensorStack<C> = Stack::builder(
+                principal_region([Constant::vacuum(); 3], Rotation::identity()),
+                principal_region([Constant::vacuum(); 3], Rotation::identity()),
+            )
+            .layer(
+                principal_region([Constant::dielectric(4.); 3], Rotation::identity()),
+                Length::centimetres(0.3),
+            )
+            .finalise();
+            let settings = PoleNormalizationSettings {
+                exterior_offsets_cm: [0.11, 0.23],
+                ..Default::default()
+            };
+            let (a, b) = (
+                Scatter2::new()
+                    .pole_normalization(&scalar, input, settings)
+                    .unwrap(),
+                Scatter2::new()
+                    .pole_normalization(&tensor, input, settings)
+                    .unwrap(),
+            );
+            close(b.total, a.total);
+            close(b.exterior_segments[1], a.exterior_segments[1]);
+            close(b.outgoing_boundaries[0], a.outgoing_boundaries[0]);
         }
     }
     #[test]

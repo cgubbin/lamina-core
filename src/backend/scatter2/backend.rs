@@ -1,13 +1,13 @@
 use crate::{
-    ComplexScalar, Polarisation,
+    ComplexScalar, FiniteLayerIndex, Polarisation,
     algebra::ScalarAlgebra,
     backend::{
-        ExteriorContextProvider, ExteriorWavevectors, RunMode,
-        isotropic::IsotropicLayerQuantities,
-        scatter2::{Scatter2Error, Scatter2ExteriorContext},
+        ExteriorContext, ExteriorContextProvider, ExteriorWavevectors, RunMode,
+        medium::LayerQuantities, scatter2::Scatter2Error,
     },
     input::{CanonicalCoordinates, CanonicalStack},
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
+    stack::StackRegion,
 };
 
 use super::{Scatter2, Scatter2Entries, Scatter2ProjectiveEntries, Scatter2Workspace};
@@ -65,14 +65,17 @@ impl Scatter2 {
         request: RunMode,
     ) -> Result<Scatter2Workspace<J>, Scatter2Error>
     where
-        J: ScalarAlgebra + ConstitutiveLift<E, M>,
+        J: ScalarAlgebra + TensorConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,
         <J::Scalar as ComplexField>::RealField: Copy,
         J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let context =
-            Scatter2ExteriorContext::for_stack::<E, M>(coordinates, stack, exterior, polarisation)?;
+        let context = ExteriorContext::for_stack::<E, M, Scatter2Error>(
+            coordinates,
+            stack,
+            exterior,
+            polarisation,
+        )?;
 
         let mut current_admittance = context.left_admittance().clone();
         let right_admittance = context.right_admittance().clone();
@@ -84,12 +87,13 @@ impl Scatter2 {
             stack.layer_count(),
         );
 
-        for layer in stack.layers() {
-            let quantities = IsotropicLayerQuantities::evaluate::<E, M>(
+        for (index, layer) in stack.layers().iter().enumerate() {
+            let quantities = LayerQuantities::evaluate::<E, M>(
+                StackRegion::Layer(FiniteLayerIndex::new(index)),
                 layer.material(),
                 coordinates,
                 polarisation,
-            );
+            )?;
 
             let exponent = quantities
                 .kappa()
@@ -1044,7 +1048,7 @@ mod accumulate_tests {
     use crate::{
         CanonicalCoordinates, Constant, Polarisation, RealAxis,
         backend::{
-            ExteriorContextProvider, ExteriorWavevectors, IsotropicLayerQuantities, RunMode,
+            ExteriorContextProvider, ExteriorWavevectors, LayerQuantities, RunMode,
             SolutionWorkspace, evaluate_exterior_wavevectors,
             scatter2::{Scatter2, backend::interface},
         },
@@ -1234,13 +1238,13 @@ mod accumulate_tests {
          * backend. The accumulated scattering network must therefore use the
          * supplied ExteriorWavevectors rather than recomputing κ.
          */
-        let left_quantities = IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        let left_quantities = LayerQuantities::real_axis(
             stack.left_exterior(),
             &coordinates,
             Polarisation::TransverseElectric,
         );
 
-        let right_quantities = IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        let right_quantities = LayerQuantities::real_axis(
             stack.right_exterior(),
             &coordinates,
             Polarisation::TransverseElectric,

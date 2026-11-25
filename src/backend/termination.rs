@@ -7,14 +7,15 @@
 //! the exterior material with complex thickness `τ = d (1 + c/(m+1))`.
 //!
 //! Each PML side is normalised by the β-independent factor `exp(iκ_ref τ)`,
-//! with `κ_ref = k₀ √(εμ)` the PML material's wavevector at `β = 0`, so that
+//! with `κ_ref` the PML material's wavevector at `β = 0` (`k₀ √(εμ)`, or
+//! `k₀ √(ε_yy μ_xx)` for TE and `k₀ √(ε_xx μ_yy)` for TM in a diagonal one), so that
 //! the characteristic stays entire and even in `β` while thick PMLs do not
 //! overflow. The growing exponentials are never formed on their own: every
 //! exponent is combined with the normalisation before exponentiating.
 //!
 //! The exterior material's wavevector on a closed side, used for the
-//! directional decomposition of fields there, is the root `κ̃` of
-//! `κ² = εμk₀² − β²` with `Im(κ̃ ℓ) ≥ 0`, `ℓ` the total complex length from the
+//! directional decomposition of fields there, is the root `κ̃` of the
+//! exterior's `κ²` for the polarisation with `Im(κ̃ ℓ) ≥ 0`, `ℓ` the total complex length from the
 //! outermost interface to the wall. Every quantity reported by the backends is
 //! even in that choice.
 
@@ -24,14 +25,13 @@ use num_traits::{One, Zero};
 use thiserror::Error;
 
 use crate::{
-    ComplexScalar, Polarisation,
+    ComplexScalar,
     algebra::ScalarAlgebra,
-    backend::{ExteriorWavevectors, PlaneWaveModeCandidate, isotropic::IsotropicMediumQuantities},
+    backend::{ExteriorWavevectors, LayerQuantities, PlaneWaveModeCandidate},
     input::{
         CanonicalCoordinates, CanonicalStack,
         canonical::{CanonicalPml, CanonicalTermination, WallCondition},
     },
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
     stack::StackSide,
     waves::BidirectionalWaves,
 };
@@ -102,7 +102,7 @@ pub(crate) fn check_exterior_pattern<M, J, A>(
 }
 
 /// A PML as seen by the backends: its canonical layer and the PML material's
-/// wavevector `κ_ref = k₀ √(εμ)` at `β = 0`.
+/// wavevector `κ_ref` at `β = 0`.
 #[derive(Clone, Debug, PartialEq)]
 struct ClosedPml<A> {
     layer: CanonicalPml<A>,
@@ -115,7 +115,7 @@ struct ClosedPml<A> {
 pub struct ClosedSide<A> {
     side: StackSide,
     condition: WallCondition,
-    kappa: A,
+    pub(super) kappa: A,
     kappa_squared: A,
     factor: A,
     gap: A,
@@ -155,12 +155,11 @@ where
 {
     /// Build the closed-side data for `termination`, or `None` for an open
     /// side, checking the PML normalisation scale.
-    fn new(
+    pub(super) fn new(
         side: StackSide,
         termination: &CanonicalTermination<A>,
-        medium: &IsotropicMediumQuantities<A>,
+        medium: &LayerQuantities<A>,
         coordinates: &CanonicalCoordinates<A>,
-        polarisation: Polarisation,
     ) -> Result<Option<Self>, TerminationError> {
         let (Some(kind), Some(gap)) = (termination.wall_kind(), termination.gap_cm()) else {
             return Ok(None);
@@ -168,21 +167,20 @@ where
 
         let k0 = coordinates.vacuum_angular_wavenumber();
 
-        let factor = match polarisation {
-            Polarisation::TransverseElectric => medium.mu().clone(),
-            Polarisation::TransverseMagnetic => medium.epsilon().clone(),
-        };
-
         let mut closed = Self {
             side,
-            condition: WallCondition::new(kind, polarisation),
+            condition: WallCondition::new(kind, medium.polarisation()),
             kappa: medium.kappa().clone(),
             kappa_squared: medium.kappa_squared().clone(),
-            factor,
+            factor: medium.factor().clone(),
             gap: gap.clone(),
             pml: termination.pml().map(|layer| ClosedPml {
                 layer: layer.clone(),
-                reference_kappa: medium.epsilon().multiply(medium.mu()).sqrt().multiply(k0),
+                reference_kappa: medium
+                    .constitutive()
+                    .index_squared(medium.polarisation())
+                    .sqrt()
+                    .multiply(k0),
             }),
             reference_slope: k0.scale(-A::Scalar::i()),
         };
@@ -498,79 +496,6 @@ where
     });
 
     kappa.multiply(&A::lift_constant(signs))
-}
-
-/// The exterior data shared by both backends' contexts: open sides take
-/// their wavevectors from `exterior`, closed sides from their termination.
-pub(crate) struct ExteriorParts<A> {
-    pub(crate) left_admittance: A,
-    pub(crate) right_admittance: A,
-    pub(crate) left_kappa: A,
-    pub(crate) right_kappa: A,
-    pub(crate) left_epsilon: A,
-    pub(crate) right_epsilon: A,
-    pub(crate) left_mu: A,
-    pub(crate) right_mu: A,
-    pub(crate) left_closure: Option<ClosedSide<A>>,
-    pub(crate) right_closure: Option<ClosedSide<A>>,
-}
-
-/// Evaluate the exterior data of `stack`, closing its terminated sides.
-pub(crate) fn exterior_parts<E, M, A>(
-    coordinates: &CanonicalCoordinates<A>,
-    stack: &CanonicalStack<M, A>,
-    exterior: &ExteriorWavevectors<A>,
-    polarisation: Polarisation,
-) -> Result<ExteriorParts<A>, TerminationError>
-where
-    A: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-    E: ConstitutiveEvaluator<A::Scalar, A::Dimension, M>,
-{
-    check_exterior_pattern(stack, exterior)?;
-
-    let left_medium =
-        IsotropicMediumQuantities::evaluate::<E, M>(stack.left_exterior(), coordinates);
-    let right_medium =
-        IsotropicMediumQuantities::evaluate::<E, M>(stack.right_exterior(), coordinates);
-
-    let closure = |side, termination, medium| {
-        ClosedSide::new(side, termination, medium, coordinates, polarisation)
-    };
-    let left_closure = closure(StackSide::Left, stack.left_termination(), &left_medium)?;
-    let right_closure = closure(StackSide::Right, stack.right_termination(), &right_medium)?;
-
-    let kappa = |supplied: Option<&A>, closure: &Option<ClosedSide<A>>| match supplied {
-        Some(kappa) => kappa.clone(),
-        None => closure
-            .as_ref()
-            .expect("the pattern check pairs every closed side with a closure")
-            .kappa
-            .clone(),
-    };
-
-    let left_kappa = kappa(exterior.left(), &left_closure);
-    let right_kappa = kappa(exterior.right(), &right_closure);
-
-    let left_admittance = left_medium.admittance_with_kappa(&left_kappa, polarisation);
-    let right_admittance = right_medium.admittance_with_kappa(&right_kappa, polarisation);
-
-    let (left_epsilon, left_mu, _) = left_medium.into_parts();
-    let (right_epsilon, right_mu, _) = right_medium.into_parts();
-
-    Ok(ExteriorParts {
-        left_admittance,
-        right_admittance,
-        left_kappa,
-        right_kappa,
-        left_epsilon,
-        right_epsilon,
-        left_mu,
-        right_mu,
-        left_closure,
-        right_closure,
-    })
 }
 
 /// The right exterior waves of a modal seed at the outermost interface: the

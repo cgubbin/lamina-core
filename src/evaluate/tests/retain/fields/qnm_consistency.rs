@@ -1,5 +1,5 @@
 use approx::assert_relative_eq;
-use ndarray::{Array1, ArrayBase, Ix0, Ix1, OwnedRepr, arr0};
+use ndarray::{Array1, ArrayBase, Ix1, OwnedRepr, arr0};
 use num_complex::Complex64;
 
 use crate::{
@@ -38,8 +38,7 @@ fn principal_exterior<M>(
     _polarisation: Polarisation,
 ) -> ExteriorWavevectors<HoloJ0>
 where
-    HoloJ0: crate::material::ConstitutiveLift<ComplexPlane, M> + Clone,
-    ComplexPlane: crate::material::ConstitutiveEvaluator<C, Ix0, M>,
+    HoloJ0: crate::material::TensorConstitutiveLift<ComplexPlane, M> + Clone,
 {
     evaluate_exterior_wavevectors::<ComplexPlane, M, HoloJ0>(
         coordinates,
@@ -194,6 +193,7 @@ macro_rules! sampled_qnm_unit_normalisation_test {
             let factors = state
                 .raw_constitutive_spectral_first_parameters::<ComplexPlane>(&resolved)
                 .expect("complex constitutive spectral data should sample")
+                .isotropic()
                 .into_brillouin_factors();
 
             /*
@@ -347,6 +347,7 @@ macro_rules! sampled_components_match_analytic_test {
             let factors = state
                 .raw_constitutive_spectral_first_parameters::<ComplexPlane>(&resolved)
                 .expect("constitutive spectral sampling should succeed")
+                .isotropic()
                 .into_brillouin_factors();
 
             /*
@@ -484,6 +485,7 @@ macro_rules! sampled_layers_match_analytic_test {
             let factors = state
                 .raw_constitutive_spectral_first_parameters::<ComplexPlane>(&resolved)
                 .expect("constitutive spectral sampling should succeed")
+                .isotropic()
                 .into_brillouin_factors();
 
             /*

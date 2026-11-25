@@ -37,14 +37,15 @@ use ndarray::{Array, Dimension};
 use num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{
-    ComplexScalar, Stack,
+    ComplexScalar, IncidentSide, Stack,
     algebra::SeedJet,
     input::{
         CanonicalCoordinates, CompileJet, CoordinateReference, Coordinates, InPlaneCoordinate,
         compile::ProjectionConstraint,
     },
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::{ConstitutiveClass, ConstitutiveError, ConstitutiveTensor},
     parameter::{DerivativeMapping, Parameter},
+    stack::StackRegion,
 };
 use in_plane::{canonicalise_in_plane, validate_in_plane};
 use spectral::{canonicalise_spectral, validate_spectral};
@@ -93,7 +94,6 @@ where
     J::Scalar: ComplexScalar,
     <J::Scalar as ComplexField>::RealField: Float + FloatConst + FromPrimitive + Copy,
     J::Dimension: Dimension,
-    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
     let coordinate_mapping = CoordinateMapping::new(mapping);
 
@@ -109,10 +109,24 @@ where
         }
 
         (InPlaneCoordinate::IncidentAngle(_), CoordinateReference::IncidentSide(side)) => {
-            let material = stack.incident_exterior(side);
-
-            let incident_index =
-                ConstitutiveLift::refractive_index(material, spectral.vacuum_angular_wavenumber());
+            let region = match side {
+                IncidentSide::Left => StackRegion::LeftExterior,
+                IncidentSide::Right => StackRegion::RightExterior,
+            };
+            let incident_index = match J::constitutive_tensors(
+                region,
+                stack.incident_exterior(side),
+                spectral.vacuum_angular_wavenumber(),
+            )? {
+                [ConstitutiveTensor::Isotropic(epsilon), _] => epsilon.sqrt(),
+                [epsilon, _] => {
+                    let class = match epsilon {
+                        ConstitutiveTensor::Diagonal(_) => ConstitutiveClass::Diagonal,
+                        _ => ConstitutiveClass::Full,
+                    };
+                    return Err(ConstitutiveError::Unsupported { region, class }.into());
+                }
+            };
 
             (Some(incident_index), ProjectionConstraint::Fixed(side))
         }

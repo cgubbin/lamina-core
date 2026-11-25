@@ -1,47 +1,29 @@
 //! Projection of canonical-state cross-products into complete Hermitian
 //! electric- and magnetic-field overlaps.
 
-use crate::{Polarisation, algebra::RealScalarAlgebra, backend::IsotropicLayerQuantities};
+use crate::{algebra::RealScalarAlgebra, backend::LayerQuantities};
 
-use super::hermitian_state_products::IntegratedHermitianCrossStateProducts;
+use super::{
+    IntegratedFieldParts, hermitian_state_products::IntegratedHermitianCrossStateProducts,
+};
 
-/// Integrated Hermitian electric- and magnetic-field overlaps.
+/// Project integrated Hermitian cross-state products into the field overlaps
 ///
 /// ```text
 /// electric = ∫ E_reference* · E_comparison dz
 /// magnetic = ∫ H_reference* · H_comparison dz
 /// ```
 ///
-/// The values are generally complex.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct IntegratedHermitianFieldOverlap<A> {
-    electric: A,
-    magnetic: A,
-}
-
-impl<A> IntegratedHermitianFieldOverlap<A> {
-    pub(crate) const fn new(electric: A, magnetic: A) -> Self {
-        Self { electric, magnetic }
-    }
-
-    pub(crate) fn electric(&self) -> &A {
-        &self.electric
-    }
-
-    pub(crate) fn magnetic(&self) -> &A {
-        &self.magnetic
-    }
-}
-
+/// which are generally complex.
 pub(crate) fn project_integrated_hermitian_field_overlap<A>(
     state: &IntegratedHermitianCrossStateProducts<A>,
-    reference_quantities: &IsotropicLayerQuantities<A>,
-    comparison_quantities: &IsotropicLayerQuantities<A>,
+    reference_quantities: &LayerQuantities<A>,
+    comparison_quantities: &LayerQuantities<A>,
     reference_vacuum_angular_wavenumber: &A,
     comparison_vacuum_angular_wavenumber: &A,
     reference_parallel_angular_wavenumber: &A,
     comparison_parallel_angular_wavenumber: &A,
-) -> IntegratedHermitianFieldOverlap<A>
+) -> IntegratedFieldParts<A>
 where
     A: RealScalarAlgebra,
 {
@@ -63,14 +45,16 @@ where
     /*
      * Cross-longitudinal coefficient:
      *
-     * [beta_reference / (k0_reference factor_reference)]*
-     * [beta_comparison / (k0_comparison factor_comparison)]
+     * [beta_reference / (k0_reference normal_reference)]*
+     * [beta_comparison / (k0_comparison normal_comparison)]
      */
-    let reference_longitudinal = reference_parallel_angular_wavenumber
-        .divide(&reference_vacuum_angular_wavenumber.multiply(reference_quantities.factor()));
+    let reference_longitudinal = reference_parallel_angular_wavenumber.divide(
+        &reference_vacuum_angular_wavenumber.multiply(reference_quantities.normal_factor()),
+    );
 
-    let comparison_longitudinal = comparison_parallel_angular_wavenumber
-        .divide(&comparison_vacuum_angular_wavenumber.multiply(comparison_quantities.factor()));
+    let comparison_longitudinal = comparison_parallel_angular_wavenumber.divide(
+        &comparison_vacuum_angular_wavenumber.multiply(comparison_quantities.normal_factor()),
+    );
 
     let longitudinal = reference_longitudinal.hermitian_product(&comparison_longitudinal);
 
@@ -78,19 +62,12 @@ where
 
     let secondary = state.secondary_secondary();
 
-    let reconstructed = secondary
-        .multiply(&transverse)
-        .add(&field.multiply(&longitudinal));
-
-    match reference_quantities.polarisation() {
-        Polarisation::TransverseElectric => {
-            IntegratedHermitianFieldOverlap::new(field.clone(), reconstructed)
-        }
-
-        Polarisation::TransverseMagnetic => {
-            IntegratedHermitianFieldOverlap::new(reconstructed, field.clone())
-        }
-    }
+    IntegratedFieldParts::new(
+        field.clone(),
+        secondary.multiply(&transverse),
+        field.multiply(&longitudinal),
+        reference_quantities.polarisation(),
+    )
 }
 
 #[cfg(test)]
@@ -104,7 +81,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, ArrayJet1, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
     };
 
     type C = Complex64;
@@ -151,13 +128,8 @@ mod tests {
         )
     }
 
-    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> IsotropicLayerQuantities<A0> {
-        IsotropicLayerQuantities::test_fixture(
-            jet(c(1.7, 0.2)),
-            jet(epsilon),
-            jet(mu),
-            polarisation,
-        )
+    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> LayerQuantities<A0> {
+        LayerQuantities::test_fixture(jet(c(1.7, 0.2)), jet(epsilon), jet(mu), polarisation)
     }
 
     fn assert_complex_relative_eq(actual: C, expected: C) {
@@ -174,14 +146,6 @@ mod tests {
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
-    }
-
-    #[test]
-    fn integrated_field_overlap_preserves_component_order() {
-        let overlap = IntegratedHermitianFieldOverlap::new(1, 2);
-
-        assert_eq!(overlap.electric(), &1);
-        assert_eq!(overlap.magnetic(), &2);
     }
 
     #[test]
@@ -222,9 +186,9 @@ mod tests {
 
         let expected_magnetic = secondary / 4.0 + field / 100.0;
 
-        assert_complex_relative_eq(scalar(overlap.electric()), field);
+        assert_complex_relative_eq(scalar(&overlap.electric()), field);
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), expected_magnetic);
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), expected_magnetic);
     }
 
     #[test]
@@ -253,9 +217,9 @@ mod tests {
 
         let expected_electric = secondary / 4.0 + field * 0.0225;
 
-        assert_complex_relative_eq(scalar(overlap.electric()), expected_electric);
+        assert_complex_relative_eq(scalar(&overlap.electric()), expected_electric);
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), field);
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), field);
     }
 
     #[test]
@@ -278,7 +242,7 @@ mod tests {
 
         let expected = secondary / (reference_k0.conj() * comparison_k0);
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), expected);
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), expected);
     }
 
     #[test]
@@ -317,7 +281,7 @@ mod tests {
 
         let expected = field * reference_longitudinal.conj() * comparison_longitudinal;
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), expected);
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), expected);
     }
 
     #[test]
@@ -336,9 +300,9 @@ mod tests {
             &jet(c(0.0, 0.0)),
         );
 
-        assert_complex_relative_eq(scalar(overlap.electric()), field);
+        assert_complex_relative_eq(scalar(&overlap.electric()), field);
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), secondary / 6.0);
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), secondary / 6.0);
     }
 
     #[test]
@@ -357,9 +321,9 @@ mod tests {
             &jet(c(0.6, 0.0)),
         );
 
-        assert_complex_relative_eq(scalar(overlap.electric()), c(5.0, 0.0));
+        assert_complex_relative_eq(scalar(&overlap.electric()), c(5.0, 0.0));
 
-        assert_complex_relative_eq(scalar(overlap.magnetic()), c(1.8, 0.0));
+        assert_complex_relative_eq(scalar(&overlap.magnetic()), c(1.8, 0.0));
     }
 
     #[test]
@@ -380,7 +344,7 @@ mod tests {
             jet1(c(0.0, 0.0), c(0.0, 0.0)),
         );
 
-        let quantities = IsotropicLayerQuantities::test_fixture(
+        let quantities = LayerQuantities::test_fixture(
             jet1(c(1.7, 0.2), c(0.0, 0.0)),
             jet1(c(2.0, 0.0), c(0.0, 0.0)),
             jet1(c(3.0, 0.0), c(0.0, 0.0)),
@@ -401,11 +365,11 @@ mod tests {
 
         let expected_magnetic_first = c(13.0, 5.0) / 4.0 + c(11.0, -3.0) / 100.0;
 
-        assert_complex_relative_eq(scalar1_value(overlap.electric()), c(5.0, 2.0));
+        assert_complex_relative_eq(scalar1_value(&overlap.electric()), c(5.0, 2.0));
 
-        assert_complex_relative_eq(scalar1_first(overlap.electric()), expected_electric_first);
+        assert_complex_relative_eq(scalar1_first(&overlap.electric()), expected_electric_first);
 
-        assert_complex_relative_eq(scalar1_first(overlap.magnetic()), expected_magnetic_first);
+        assert_complex_relative_eq(scalar1_first(&overlap.magnetic()), expected_magnetic_first);
     }
 
     #[test]
@@ -441,13 +405,13 @@ mod tests {
         );
 
         assert_complex_relative_eq(
-            scalar(reference_comparison.electric()),
-            scalar(comparison_reference.electric()).conj(),
+            scalar(&reference_comparison.electric()),
+            scalar(&comparison_reference.electric()).conj(),
         );
 
         assert_complex_relative_eq(
-            scalar(reference_comparison.magnetic()),
-            scalar(comparison_reference.magnetic()).conj(),
+            scalar(&reference_comparison.magnetic()),
+            scalar(&comparison_reference.magnetic()).conj(),
         );
     }
 }

@@ -3,6 +3,9 @@
 use num_traits::{Float, FloatConst};
 use thiserror::Error;
 
+use super::Tensor3;
+use crate::ComplexScalar;
+
 /// A proper rotation `R` from a material's own (crystal) frame to the stack
 /// frame.
 ///
@@ -47,6 +50,27 @@ impl<R> Rotation<R> {
     /// The recorded crystal-to-stack matrix.
     pub fn matrix(&self) -> &[[R; 3]; 3] {
         &self.matrix
+    }
+
+    /// The stack-frame image `R T Rᵀ` of a crystal-frame tensor `T`, such as
+    /// a crystal-frame rate of a tensor material.
+    pub fn rotate<C>(&self, tensor: &Tensor3<C>) -> Tensor3<C>
+    where
+        C: ComplexScalar<RealField = R>,
+        R: Copy,
+    {
+        let r = &self.matrix;
+        [0, 1, 2].map(|row| {
+            [0, 1, 2].map(|column| {
+                let mut entry = C::zero();
+                for (k, tensor_row) in tensor.iter().enumerate() {
+                    for (l, &value) in tensor_row.iter().enumerate() {
+                        entry += value * C::from_real(r[row][k]) * C::from_real(r[column][l]);
+                    }
+                }
+                entry
+            })
+        })
     }
 }
 

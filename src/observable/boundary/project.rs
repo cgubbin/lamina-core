@@ -159,9 +159,9 @@ mod tests {
     use super::*;
 
     use crate::{
-        FiniteLayerIndex, Polarisation, RealAxis,
+        FiniteLayerIndex, Polarisation,
         algebra::{ArrayJet0, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
         input::CanonicalCoordinates,
         material::Constant,
         waves::{
@@ -185,8 +185,8 @@ mod tests {
         CanonicalCoordinates::new(jet(c(2.3)), jet(c(0.37)))
     }
 
-    fn quantities(epsilon: f64) -> IsotropicLayerQuantities<A> {
-        IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+    fn quantities(epsilon: f64) -> LayerQuantities<A> {
+        LayerQuantities::real_axis(
             &Constant::new(epsilon, 1.0),
             &coordinates(),
             Polarisation::TransverseElectric,
@@ -214,7 +214,7 @@ mod tests {
     struct MockRetainedWorkspace {
         waves: Option<Vec<BackendLayerBoundaryWaves<A>>>,
         retained_layer_count: Option<usize>,
-        quantities: Vec<IsotropicLayerQuantities<A>>,
+        quantities: Vec<LayerQuantities<A>>,
         thicknesses: Vec<A>,
     }
 
@@ -235,7 +235,7 @@ mod tests {
             self.retained_layer_count
         }
 
-        fn layer_quantities(&self, index: usize) -> Option<&IsotropicLayerQuantities<A>> {
+        fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<A>> {
             self.quantities.get(index)
         }
 

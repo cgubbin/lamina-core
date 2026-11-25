@@ -56,7 +56,7 @@ use crate::{
         CanonicalStack, StackCompileError, StackThicknessJet, ValidationConfig,
         compile_canonical_constant_stack,
     },
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
     observable::{PlaneWaveDeterminant, ProjectPlaneWaveModeDeterminant},
 };
 
@@ -152,10 +152,9 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         <B as Backend<J, ComplexPlane>>::Error,
     >
     where
-        J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M>,
+        J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
-        ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, ComplexPlane>,
     {
         self.backend
@@ -173,11 +172,10 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         <B as Backend<J, ComplexPlane>>::Error,
     >
     where
-        J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M>,
+        J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
         M: Clone,
-        ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, ComplexPlane>,
         <B as Backend<J, ComplexPlane>>::Entries: ProjectPlaneWaveModeDeterminant,
     {
@@ -218,10 +216,9 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         polarisation: Polarisation,
     ) -> Result<PlaneWaveDeterminant<J>, DeterminantEvaluationError<B::Error>>
     where
-        J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M>,
+        J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
         J::Scalar: ComplexScalar,
         M: Clone,
-        ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, ComplexPlane>,
         B::Entries: ProjectPlaneWaveModeDeterminant<Determinant = PlaneWaveDeterminant<J>>,
     {
@@ -247,10 +244,9 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         polarisation: Polarisation,
     ) -> Result<ComplexPlaneState<'_, J, M, B::Workspace>, B::Error>
     where
-        J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M>,
+        J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M>,
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
-        ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, ComplexPlane>,
     {
         let workspace = self

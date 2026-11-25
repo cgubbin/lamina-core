@@ -18,14 +18,10 @@ use ndarray::{Array, ArrayBase, Dimension, OwnedRepr};
 use num_traits::{One, Zero};
 
 use crate::{
-    ComplexScalar, PlaneWaveAmplitudes, PlaneWavePower, Polarisation,
+    ComplexScalar, PlaneWaveAmplitudes, PlaneWavePower,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::{
-        ClosedSide, ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries,
-        TerminationError, exterior_parts,
-    },
-    input::{CanonicalCoordinates, CanonicalStack, IncidentSide},
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    backend::{ExteriorContext, PlaneWaveEntries},
+    input::IncidentSide,
     observable::{ProjectAmplitudes, ProjectPower},
 };
 
@@ -125,184 +121,8 @@ impl<A> Scatter2Entries<A> {
     }
 }
 
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct Scatter2ExteriorContext<A> {
-    left_admittance: A,
-    right_admittance: A,
-
-    left_kappa: A,
-    right_kappa: A,
-
-    left_epsilon: A,
-    right_epsilon: A,
-
-    left_mu: A,
-    right_mu: A,
-
-    vacuum_angular_wavenumber: A,
-    parallel_angular_wavenumber: A,
-
-    polarisation: Polarisation,
-
-    left_closure: Option<ClosedSide<A>>,
-    right_closure: Option<ClosedSide<A>>,
-}
-
-impl<A> ExteriorContextProvider for Scatter2ExteriorContext<A> {
-    type Algebra = A;
-    fn left_admittance(&self) -> &Self::Algebra {
-        &self.left_admittance
-    }
-
-    fn right_admittance(&self) -> &Self::Algebra {
-        &self.right_admittance
-    }
-
-    fn left_kappa(&self) -> &Self::Algebra {
-        &self.left_kappa
-    }
-
-    fn right_kappa(&self) -> &Self::Algebra {
-        &self.right_kappa
-    }
-
-    fn left_epsilon(&self) -> &Self::Algebra {
-        &self.left_epsilon
-    }
-
-    fn right_epsilon(&self) -> &Self::Algebra {
-        &self.right_epsilon
-    }
-
-    fn left_mu(&self) -> &Self::Algebra {
-        &self.left_mu
-    }
-
-    fn right_mu(&self) -> &Self::Algebra {
-        &self.right_mu
-    }
-
-    fn vacuum_angular_wavenumber(&self) -> &Self::Algebra {
-        &self.vacuum_angular_wavenumber
-    }
-
-    fn parallel_angular_wavenumber(&self) -> &Self::Algebra {
-        &self.parallel_angular_wavenumber
-    }
-
-    fn polarisation(&self) -> Polarisation {
-        self.polarisation
-    }
-
-    fn left_closure(&self) -> Option<&ClosedSide<A>> {
-        self.left_closure.as_ref()
-    }
-
-    fn right_closure(&self) -> Option<&ClosedSide<A>> {
-        self.right_closure.as_ref()
-    }
-}
-
-impl<J> Scatter2ExteriorContext<J> {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_parts(
-        left_admittance: J,
-        right_admittance: J,
-        left_kappa: J,
-        right_kappa: J,
-        left_epsilon: J,
-        right_epsilon: J,
-        left_mu: J,
-        right_mu: J,
-        vacuum_angular_wavenumber: J,
-        parallel_angular_wavenumber: J,
-        polarisation: Polarisation,
-        left_closure: Option<ClosedSide<J>>,
-        right_closure: Option<ClosedSide<J>>,
-    ) -> Self {
-        Self {
-            left_admittance,
-            right_admittance,
-            left_kappa,
-            right_kappa,
-            left_epsilon,
-            right_epsilon,
-            left_mu,
-            right_mu,
-            vacuum_angular_wavenumber,
-            parallel_angular_wavenumber,
-            polarisation,
-            left_closure,
-            right_closure,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn new<E, M>(
-        coordinates: &CanonicalCoordinates<J>,
-        left_exterior: &M,
-        right_exterior: &M,
-        exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
-    ) -> Self
-    where
-        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
-        J::Scalar: ComplexScalar,
-        J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        M: Clone,
-    {
-        let stack = CanonicalStack::new(left_exterior.clone(), right_exterior.clone(), Vec::new());
-
-        Self::for_stack::<E, M>(coordinates, &stack, exterior, polarisation)
-            .expect("an open stack takes both exterior wavevectors")
-    }
-
-    /// Construct the context for `stack`, whose open sides take their
-    /// wavevectors from `exterior` and whose closed sides take theirs from
-    /// the termination.
-    pub(crate) fn for_stack<E, M>(
-        coordinates: &CanonicalCoordinates<J>,
-        stack: &CanonicalStack<M, J>,
-        exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
-    ) -> Result<Self, TerminationError>
-    where
-        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
-        J::Scalar: ComplexScalar,
-        J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-    {
-        let parts = exterior_parts::<E, M, J>(coordinates, stack, exterior, polarisation)?;
-
-        Ok(Self::from_parts(
-            parts.left_admittance,
-            parts.right_admittance,
-            parts.left_kappa,
-            parts.right_kappa,
-            parts.left_epsilon,
-            parts.right_epsilon,
-            parts.left_mu,
-            parts.right_mu,
-            coordinates.vacuum_angular_wavenumber().clone(),
-            coordinates.parallel_angular_wavenumber().clone(),
-            polarisation,
-            parts.left_closure,
-            parts.right_closure,
-        ))
-    }
-
-    pub(super) fn incident_and_transmitted_admittances(&self, side: IncidentSide) -> (&J, &J) {
-        match side {
-            IncidentSide::Left => (&self.left_admittance, &self.right_admittance),
-            IncidentSide::Right => (&self.right_admittance, &self.left_admittance),
-        }
-    }
-}
-
 impl<A> PlaneWaveEntries for Scatter2Entries<A> {
-    type ExteriorContext = Scatter2ExteriorContext<A>;
+    type ExteriorContext = ExteriorContext<A>;
     type Algebra = A;
 }
 
@@ -421,7 +241,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::ArrayJet0,
-        backend::{ExteriorContextProvider, scatter2::Scatter2ExteriorContext},
+        backend::{ExteriorContext, ExteriorContextProvider},
         input::IncidentSide,
         test_support::{
             C,
@@ -845,7 +665,7 @@ mod tests {
 
     #[test]
     fn exterior_context_provider_preserves_all_context_components() {
-        let context = Scatter2ExteriorContext::from_parts(
+        let context = ExteriorContext::from_parts(
             real_j0_from_real(1.0),  // left Y
             real_j0_from_real(2.0),  // right Y
             real_j0_from_real(3.0),  // left kappa
@@ -867,11 +687,11 @@ mod tests {
         assert_eq!(value(context.left_kappa()), c(3.0));
         assert_eq!(value(context.right_kappa()), c(4.0));
 
-        assert_eq!(value(context.left_epsilon()), c(5.0));
-        assert_eq!(value(context.right_epsilon()), c(6.0));
+        assert_eq!(value(context.left().epsilon()), c(5.0));
+        assert_eq!(value(context.right().epsilon()), c(6.0));
 
-        assert_eq!(value(context.left_mu()), c(7.0));
-        assert_eq!(value(context.right_mu()), c(8.0));
+        assert_eq!(value(context.left().mu()), c(7.0));
+        assert_eq!(value(context.right().mu()), c(8.0));
 
         assert_eq!(value(context.vacuum_angular_wavenumber()), c(9.0),);
 

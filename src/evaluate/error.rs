@@ -64,6 +64,9 @@ pub enum RealAxisEvaluationError<C, B> {
         #[source]
         source: B,
     },
+
+    #[error(transparent)]
+    Constitutive(crate::material::ConstitutiveError),
 }
 
 impl<C, B> RealAxisEvaluationError<C, B> {

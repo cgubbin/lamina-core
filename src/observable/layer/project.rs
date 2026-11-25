@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::{
     ComplexScalar,
     algebra::{RealScalarAlgebra, ScalarAlgebra, ScalarAlgebraExpRelExt},
-    backend::{IsotropicLayerQuantities, RetainedIsotropicLayers},
+    backend::{LayerQuantities, RetainedIsotropicLayers},
     observable::{BoundaryProjectionError, BoundaryWaves, LayerBoundaries, LayerBoundaryWaves},
 };
 
@@ -54,16 +54,12 @@ pub enum LayerProjectionError {
 #[derive(Clone, Debug)]
 pub(crate) struct LayerIntegrationInput<A> {
     waves: BoundaryWaves<A>,
-    quantities: IsotropicLayerQuantities<A>,
+    quantities: LayerQuantities<A>,
     thickness: A,
 }
 
 impl<A> LayerIntegrationInput<A> {
-    const fn new(
-        waves: BoundaryWaves<A>,
-        quantities: IsotropicLayerQuantities<A>,
-        thickness: A,
-    ) -> Self {
+    const fn new(waves: BoundaryWaves<A>, quantities: LayerQuantities<A>, thickness: A) -> Self {
         Self {
             waves,
             quantities,
@@ -77,7 +73,7 @@ impl<A> LayerIntegrationInput<A> {
     }
 
     #[cfg(test)]
-    pub(crate) fn quantities(&self) -> &IsotropicLayerQuantities<A> {
+    pub(crate) fn quantities(&self) -> &LayerQuantities<A> {
         &self.quantities
     }
 
@@ -86,7 +82,7 @@ impl<A> LayerIntegrationInput<A> {
         &self.thickness
     }
 
-    fn into_parts(self) -> (BoundaryWaves<A>, IsotropicLayerQuantities<A>, A) {
+    fn into_parts(self) -> (BoundaryWaves<A>, LayerQuantities<A>, A) {
         (self.waves, self.quantities, self.thickness)
     }
 }
@@ -96,11 +92,11 @@ impl<A> LayerIntegrationInput<A> {
 #[derive(Clone, Debug)]
 pub(crate) struct IntegratedLayerData<S, A> {
     state_products: S,
-    quantities: IsotropicLayerQuantities<A>,
+    quantities: LayerQuantities<A>,
 }
 
 impl<S, A> IntegratedLayerData<S, A> {
-    pub(super) const fn new(state_products: S, quantities: IsotropicLayerQuantities<A>) -> Self {
+    pub(super) const fn new(state_products: S, quantities: LayerQuantities<A>) -> Self {
         Self {
             state_products,
             quantities,
@@ -113,11 +109,11 @@ impl<S, A> IntegratedLayerData<S, A> {
     }
 
     #[cfg(test)]
-    pub(crate) fn quantities(&self) -> &IsotropicLayerQuantities<A> {
+    pub(crate) fn quantities(&self) -> &LayerQuantities<A> {
         &self.quantities
     }
 
-    pub(crate) fn into_parts(self) -> (S, IsotropicLayerQuantities<A>) {
+    pub(crate) fn into_parts(self) -> (S, LayerQuantities<A>) {
         (self.state_products, self.quantities)
     }
 }
@@ -243,7 +239,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
         observable::{BoundaryWaves, LayerBoundaryWaves},
         test_support::{C, TOLERANCE, assertions::assert_complex_close},
     };
@@ -269,8 +265,8 @@ mod tests {
         )
     }
 
-    fn quantities(offset: f64) -> IsotropicLayerQuantities<A> {
-        IsotropicLayerQuantities::test_fixture(
+    fn quantities(offset: f64) -> LayerQuantities<A> {
+        LayerQuantities::test_fixture(
             jet(c(offset + 2.0, 0.1)),
             jet(c(offset + 3.0, 0.2)),
             jet(c(offset + 5.0, 0.3)),
@@ -281,7 +277,7 @@ mod tests {
     #[derive(Clone, Debug)]
     struct TestWorkspace {
         retained_count: Option<usize>,
-        quantities: Vec<Option<IsotropicLayerQuantities<A>>>,
+        quantities: Vec<Option<LayerQuantities<A>>>,
         thicknesses: Vec<Option<A>>,
     }
 
@@ -306,10 +302,7 @@ mod tests {
             self.retained_count
         }
 
-        fn layer_quantities(
-            &self,
-            index: usize,
-        ) -> Option<&IsotropicLayerQuantities<Self::Algebra>> {
+        fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>> {
             self.quantities.get(index).and_then(Option::as_ref)
         }
 

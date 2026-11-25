@@ -1,4 +1,4 @@
-//! Isotropic 2×2 scattering-matrix backend.
+//! 2×2 scattering-matrix backend.
 //!
 //! [`Scatter2`] evaluates scalar TE or TM channels using cascaded two-port
 //! scattering matrices. The backend is intended to remain numerically stable
@@ -31,9 +31,9 @@ use crate::{
     algebra::ScalarAlgebra,
     backend::{Backend, ExteriorWavevectors, PlaneWaveSolution, RunMode, SolutionWorkspace},
     input::CanonicalStack,
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
 };
-pub(crate) use entries::{Scatter2Entries, Scatter2ExteriorContext};
+pub(crate) use entries::Scatter2Entries;
 pub(crate) use workspace::{RetainedScatterComponents, Scatter2Workspace};
 
 pub(crate) use projection::{Scatter2ProjectiveEntries, cascade_projection};
@@ -49,9 +49,12 @@ use ndarray::Dimension;
 pub enum Scatter2Error {
     #[error(transparent)]
     Termination(#[from] crate::backend::TerminationError),
+
+    #[error(transparent)]
+    Constitutive(#[from] crate::material::ConstitutiveError),
 }
 
-/// Scalar-channel isotropic 2×2 scattering backend.
+/// Scalar-channel 2×2 scattering backend.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Scatter2;
 
@@ -81,8 +84,7 @@ where
         polarisation: Polarisation,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>,
+        J: TensorConstitutiveLift<Domain, M>,
     {
         let workspace = self.accumulate::<J, Domain, M>(
             coordinates,
@@ -103,8 +105,7 @@ where
         polarisation: Polarisation,
     ) -> Result<Self::Workspace, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>,
+        J: TensorConstitutiveLift<Domain, M>,
     {
         let workspace = self.accumulate::<J, Domain, M>(
             coordinates,

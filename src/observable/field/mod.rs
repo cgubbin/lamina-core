@@ -17,7 +17,9 @@ pub(crate) use constitutive::{
     IsotropicConstitutiveParameters, IsotropicConstitutiveSpectralData,
     electromagnetic_dissipation_coefficients,
 };
-pub(crate) use material::{ConstitutiveSamplingContext, ConstitutiveSamplingError};
+pub(crate) use material::{
+    ConstitutiveSamplingContext, ConstitutiveSamplingError, SampledConstitutive, SampledWeights,
+};
 pub(crate) use reconstruction::FieldSamplingContext;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]

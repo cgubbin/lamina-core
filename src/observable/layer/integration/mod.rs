@@ -40,5 +40,5 @@ pub(super) use hermitian_state_products::{
 };
 
 pub(crate) use bilinear_field_overlap::project_integrated_bilinear_field_overlap;
-pub(crate) use field_norm::project_integrated_field_norms;
+pub(crate) use field_norm::{IntegratedFieldParts, project_integrated_field_norms};
 pub(crate) use hermitian_field_overlap::project_integrated_hermitian_field_overlap;

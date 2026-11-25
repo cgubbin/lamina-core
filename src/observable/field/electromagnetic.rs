@@ -2,13 +2,16 @@ use num_traits::{Float, One};
 
 use crate::{
     ElectromagneticDissipation, ElectromagneticEnergy,
-    algebra::{CartesianVectorAlgebra, RealCartesianVectorAlgebra, ScalarAlgebra},
+    algebra::{
+        CartesianVectorAlgebra, ComplexJet, Jet, RealCartesianVectorAlgebra, RealScalarAlgebra,
+        ScalarAlgebra,
+    },
     observable::field::constitutive::{
         ElectromagneticDissipationCoefficients, ElectromagneticEnergyCoefficients,
     },
 };
 
-use super::{ConstitutiveFields, IsotropicConstitutiveParameters};
+use super::{ConstitutiveFields, IsotropicConstitutiveParameters, material::SampledConstitutive};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ElectromagneticIntensities<V> {
@@ -118,19 +121,86 @@ impl<V> ElectromagneticFields<V> {
         (self.electric, self.magnetic)
     }
 
+    /// `D = ε E` and `B = μ H`, component by component for diagonal media.
     pub(crate) fn into_constitutive_fields(
         self,
-        constitutive: &IsotropicConstitutiveParameters<V::ScalarAlgebra>,
+        constitutive: &SampledConstitutive<IsotropicConstitutiveParameters<V::ScalarAlgebra>, V>,
     ) -> ConstitutiveFields<V>
     where
         V: CartesianVectorAlgebra,
     {
         let (electric, magnetic) = self.into_parts();
 
-        ConstitutiveFields::new(
-            electric.multiply_by_scalar(constitutive.epsilon()),
-            magnetic.multiply_by_scalar(constitutive.mu()),
-        )
+        match constitutive {
+            SampledConstitutive::Isotropic(constitutive) => ConstitutiveFields::new(
+                electric.multiply_by_scalar(constitutive.epsilon()),
+                magnetic.multiply_by_scalar(constitutive.mu()),
+            ),
+            SampledConstitutive::Diagonal {
+                electric: epsilon,
+                magnetic: mu,
+            } => ConstitutiveFields::new(
+                electric.multiply_components(epsilon),
+                magnetic.multiply_components(mu),
+            ),
+        }
+    }
+
+    /// `Σ_i w_ii |E_i|²` and `Σ_i v_ii |H_i|²` for per-component weights `w`
+    /// and `v`.
+    fn weighted_intensities(&self, electric: &V, magnetic: &V) -> [V::ScalarAlgebra; 2]
+    where
+        V: RealCartesianVectorAlgebra,
+    {
+        [
+            self.electric
+                .hermitian_dot(&self.electric.multiply_components(electric)),
+            self.magnetic
+                .hermitian_dot(&self.magnetic.multiply_components(magnetic)),
+        ]
+    }
+
+    /// Energy density `¼ Re Σ_i w_ii |F_i|²` for per-component dispersive
+    /// weights `w = ∂(k₀ ε)/∂k₀` (electric) and `∂(k₀ μ)/∂k₀` (magnetic).
+    pub(crate) fn into_diagonal_energy(
+        self,
+        electric: &V,
+        magnetic: &V,
+    ) -> ElectromagneticEnergy<V::RealScalarAlgebra>
+    where
+        V: RealCartesianVectorAlgebra,
+        V::RealScalarAlgebra: ScalarAlgebra,
+        <V::RealScalarAlgebra as Jet>::Scalar: Float,
+    {
+        let [electric, magnetic] = self
+            .weighted_intensities(electric, magnetic)
+            .map(|weighted| V::scalar_real(weighted).scale(quarter()));
+        let total = electric.add(&magnetic);
+
+        ElectromagneticEnergy::new(electric, magnetic, total)
+    }
+
+    /// Dissipation density `½ Re(k₀) Im Σ_i ε_ii |E_i|²` (electric) and
+    /// likewise with `μ` (magnetic).
+    pub(crate) fn into_diagonal_dissipation(
+        self,
+        epsilon: &V,
+        mu: &V,
+        vacuum_angular_wavenumber: &V::ScalarAlgebra,
+    ) -> ElectromagneticDissipation<<V::ScalarAlgebra as ComplexJet>::RealJet>
+    where
+        V: RealCartesianVectorAlgebra,
+        V::ScalarAlgebra: RealScalarAlgebra,
+        <V::ScalarAlgebra as ComplexJet>::RealJet: ScalarAlgebra,
+        <<V::ScalarAlgebra as ComplexJet>::RealJet as Jet>::Scalar: Float,
+    {
+        let common = vacuum_angular_wavenumber.real().scale(half());
+        let [electric, magnetic] = self
+            .weighted_intensities(epsilon, mu)
+            .map(|weighted| weighted.imaginary().multiply(&common));
+        let total = electric.add(&magnetic);
+
+        ElectromagneticDissipation::new(electric, magnetic, total)
     }
 
     pub fn map_vectors<U>(self, f: impl Fn(V) -> U) -> ElectromagneticFields<U> {

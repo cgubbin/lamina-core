@@ -51,7 +51,7 @@ use crate::{
         compile::coordinates::CanonicalCoordinateJet,
         coordinate_input::{CoordinateInput, CoordinateValues},
     },
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
     parameter::{DerivativeMapping, DerivativeMappingError, Parameter},
 };
 use nalgebra::ComplexField;
@@ -70,13 +70,12 @@ pub trait CompileJet<M, E>:
     + CanonicalCoordinateJet
     + ScalarAlgebra
     + StackThicknessJet
-    + ConstitutiveLift<E, M>
+    + TensorConstitutiveLift<E, M>
     + JetMapping
 where
     Self::Scalar: ComplexScalar,
     <Self::Scalar as ComplexField>::RealField: Copy,
     Self::Dimension: Dimension,
-    E: ConstitutiveEvaluator<Self::Scalar, Self::Dimension, M>,
 {
 }
 
@@ -89,9 +88,8 @@ where
         + CanonicalCoordinateJet
         + ScalarAlgebra
         + StackThicknessJet
-        + ConstitutiveLift<E, M>
+        + TensorConstitutiveLift<E, M>
         + JetMapping,
-    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
 }
 
@@ -121,7 +119,6 @@ where
     <J::Scalar as ComplexField>::RealField: Float + FloatConst + FromPrimitive + Debug + Copy,
     J::Dimension: Dimension,
     M: Clone,
-    RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
     mapping.validate_against_stack(J::VARIABLE_SLOTS, stack.len())?;
 
@@ -169,7 +166,6 @@ where
     <J::Scalar as ComplexField>::RealField: Float + FloatConst + FromPrimitive + Debug + Copy,
     J::Dimension: Dimension,
     M: Clone,
-    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
     let compiled_coordinates = coordinates::compile_coordinates::<M, J, E>(
         metadata,

@@ -11,7 +11,7 @@ use crate::{
     },
     field::VectorField,
     input::{CanonicalCoordinates, CanonicalStack, canonical::CanonicalLayer},
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
     spatial::{ExteriorSampling, FieldSampling, LayerSampling},
     test_support::{
         C,
@@ -71,10 +71,9 @@ fn exterior<J, M>(
     _polarisation: Polarisation,
 ) -> ExteriorWavevectors<J>
 where
-    J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M> + Clone,
+    J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M> + Clone,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
-    ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
     evaluate_exterior_wavevectors::<ComplexPlane, M, J>(
         coordinates,
