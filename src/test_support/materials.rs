@@ -336,3 +336,124 @@ impl DifferentiableMeromorphicMaterial for QuadraticDispersion {
         }
     }
 }
+
+/// `ε = Σₙ aₙ k₀ⁿ` and `μ = Σₙ bₙ k₀ⁿ`, `n ≤ 2`, with complex coefficients.
+#[derive(Clone, Copy, Debug)]
+pub struct ComplexQuadratic {
+    pub epsilon: [num_complex::Complex64; 3],
+    pub mu: [num_complex::Complex64; 3],
+}
+
+/// The value (`order` `None`) or a derivative of `Σₙ cₙ kⁿ` at `k`.
+fn polynomial<X>(
+    coefficients: [num_complex::Complex64; 3],
+    k: X,
+    order: Option<DerivativeOrder>,
+) -> X
+where
+    X: ComplexScalar<RealField = f64>,
+{
+    let [c0, c1, c2] = coefficients.map(|c| X::from_real(c.re) + X::i() * X::from_real(c.im));
+    let two = X::from_real(2.0);
+    match order {
+        None => c0 + c1 * k + c2 * k * k,
+        Some(DerivativeOrder::First) => c1 + two * c2 * k,
+        Some(DerivativeOrder::Second) => two * c2,
+        Some(DerivativeOrder::Third) => X::zero(),
+    }
+}
+
+macro_rules! complex_quadratic {
+    ($trait:ident, $k:ty, $lift:path, { $($item:item)* } $($method:ident => $field:ident $(($order:ident))?;)+) => {
+        impl $trait for ComplexQuadratic {
+            $($item)*
+            $(
+                fn $method<I, X>(&self, k: I $(, $order: DerivativeOrder)?) -> I::Mapped<X>
+                where
+                    X: ComplexScalar<RealField = f64>,
+                    I: Sampled<Elem = $k>,
+                {
+                    #[allow(unused_variables)]
+                    let order: Option<DerivativeOrder> = None $(.or(Some($order)))?;
+                    k.map(|k| polynomial(self.$field, $lift(k), order))
+                }
+            )+
+        }
+    };
+}
+
+complex_quadratic!(Material, f64, X::from_real, { type Real = f64; }
+    relative_permittivity => epsilon;
+    relative_permeability => mu;
+);
+complex_quadratic!(DifferentiableMaterial, f64, X::from_real, {}
+    relative_permittivity_derivative => epsilon(order);
+    relative_permeability_derivative => mu(order);
+);
+complex_quadratic!(MeromorphicMaterial, X, std::convert::identity, {}
+    relative_permittivity_complex => epsilon;
+    relative_permeability_complex => mu;
+);
+complex_quadratic!(DifferentiableMeromorphicMaterial, X, std::convert::identity, {}
+    relative_permittivity_complex_derivative => epsilon(order);
+    relative_permeability_complex_derivative => mu(order);
+);
+
+/// A tensor material with principal axes on its own frame: axis `i` has the
+/// permittivity and permeability of the scalar material `self.0[i]`.
+#[derive(Clone, Debug)]
+pub struct Axes<M>(pub [M; 3]);
+
+macro_rules! axes {
+    ($trait:ident, $k:ty { $($item:item)* } $($method:ident => $scalar:ident $(($order:ident))?;)+) => {
+        impl<M: DifferentiableMeromorphicMaterial<Real = f64>> crate::$trait for Axes<M> {
+            $($item)*
+            $(
+                fn $method<I, X>(&self, k: I $(, $order: DerivativeOrder)?) -> I::Mapped<crate::material::Tensor3<X>>
+                where
+                    X: ComplexScalar<RealField = f64>,
+                    I: Sampled<Elem = $k>,
+                {
+                    k.map(|k| {
+                        let [x, y, z] = self.0.each_ref().map(|axis| {
+                            axis.$scalar(crate::Scalar(k) $(, $order)?)
+                        });
+                        let zero = X::zero();
+                        [[x, zero, zero], [zero, y, zero], [zero, zero, z]]
+                    })
+                }
+            )+
+        }
+    };
+}
+
+axes!(TensorMaterial, f64 { type Real = f64; const PRINCIPAL_AXES: bool = true; }
+    relative_permittivity_tensor => relative_permittivity;
+    relative_permeability_tensor => relative_permeability;
+);
+axes!(DifferentiableTensorMaterial, f64 {}
+    relative_permittivity_tensor_derivative => relative_permittivity_derivative(order);
+    relative_permeability_tensor_derivative => relative_permeability_derivative(order);
+);
+axes!(MeromorphicTensorMaterial, X {}
+    relative_permittivity_tensor_complex => relative_permittivity_complex;
+    relative_permeability_tensor_complex => relative_permeability_complex;
+);
+axes!(DifferentiableMeromorphicTensorMaterial, X {}
+    relative_permittivity_tensor_complex_derivative => relative_permittivity_complex_derivative(order);
+    relative_permeability_tensor_complex_derivative => relative_permeability_complex_derivative(order);
+);
+
+/// A region of the principal-axis material `axes` oriented by `rotation`.
+pub fn principal_region<M>(
+    axes: [M; 3],
+    rotation: crate::Rotation<f64>,
+) -> crate::AnalyticalMaterialRegion<num_complex::Complex64>
+where
+    M: DifferentiableMeromorphicMaterial<Real = f64> + Send + Sync + 'static,
+{
+    crate::Constitutive::oriented(
+        crate::AnalyticalTensorMaterialHandle::new(Axes(axes)),
+        rotation,
+    )
+}

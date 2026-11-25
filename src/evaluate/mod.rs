@@ -24,7 +24,7 @@ mod real_axis;
 mod tests;
 
 pub use complex_plane::{
-    ComplexPlaneEvaluator, DeterminantEvaluationError, DirectionalModeFields,
+    ComplexPlaneEvaluator, ConstitutiveRates, DeterminantEvaluationError, DirectionalModeFields,
     ModalCharacteristicDirection, ModalDerivativeBackend, ModalFieldBackend, OwnedModeFields,
     UnscaledFieldError, UnscaledFieldResult,
 };

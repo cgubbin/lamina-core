@@ -43,10 +43,11 @@ pub use coordinate_input::{
 };
 pub use error::PlaneWaveInputError;
 
-/// Polarisation supported by isotropic planar backends.
+/// Polarisation supported by the 2×2 planar backends.
 ///
-/// In an isotropic stratified system, transverse-electric and
-/// transverse-magnetic fields decouple into independent scalar problems.
+/// When permittivity and permeability are isotropic or diagonal in the stack
+/// frame, transverse-electric and transverse-magnetic fields decouple into
+/// independent scalar problems.
 ///
 /// An anisotropic backend may require a different input representation because
 /// this TE/TM decomposition does not generally remain valid.

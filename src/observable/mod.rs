@@ -70,7 +70,7 @@ pub(crate) use boundary::{
 pub(crate) use field::{
     ConstitutiveFieldReconstructionError, ConstitutiveSamplingContext, ConstitutiveSamplingError,
     FieldSamplingContext, IsotropicConstitutiveParameters, IsotropicConstitutiveSpectralData,
-    electromagnetic_dissipation_coefficients,
+    SampledConstitutive, SampledWeights, electromagnetic_dissipation_coefficients,
 };
 pub(crate) use interface::{
     InterfaceWaveData, assemble_interface_wave_data, exterior_boundary_states,

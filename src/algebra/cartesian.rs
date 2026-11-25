@@ -46,6 +46,10 @@ pub trait CartesianVectorAlgebra: Clone + Sized {
 
     /// Multiply pointwise by a scalar jet.
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self;
+
+    /// Multiply each Cartesian component pointwise by the same component of
+    /// `factor`.
+    fn multiply_components(&self, factor: &Self) -> Self;
 }
 
 /// Cartesian vector operations involving complex conjugation.
@@ -208,6 +212,10 @@ where
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self {
         Jet0::multiply_by_scalar(self, factor)
     }
+
+    fn multiply_components(&self, factor: &Self) -> Self {
+        Jet0::multiply_by_scalar(self, factor)
+    }
 }
 
 impl<T, D> RealCartesianVectorAlgebra for Jet0<VectorField<T, D>, RealParameter>
@@ -253,6 +261,10 @@ where
     }
 
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self {
+        Jet1::multiply_by_scalar(self, factor)
+    }
+
+    fn multiply_components(&self, factor: &Self) -> Self {
         Jet1::multiply_by_scalar(self, factor)
     }
 }
@@ -302,6 +314,10 @@ where
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self {
         Jet2::multiply_by_scalar(self, factor)
     }
+
+    fn multiply_components(&self, factor: &Self) -> Self {
+        Jet2::multiply_by_scalar(self, factor)
+    }
 }
 
 impl<T, D> RealCartesianVectorAlgebra for Jet2<VectorField<T, D>, RealParameter>
@@ -349,6 +365,10 @@ where
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self {
         JetBivariate1::multiply_by_scalar(self, factor)
     }
+
+    fn multiply_components(&self, factor: &Self) -> Self {
+        JetBivariate1::multiply_by_scalar(self, factor)
+    }
 }
 
 impl<T, D> RealCartesianVectorAlgebra for JetBivariate1<VectorField<T, D>, RealParameter>
@@ -394,6 +414,10 @@ where
     }
 
     fn multiply_by_scalar(&self, factor: &Self::ScalarAlgebra) -> Self {
+        JetBivariate2::multiply_by_scalar(self, factor)
+    }
+
+    fn multiply_components(&self, factor: &Self) -> Self {
         JetBivariate2::multiply_by_scalar(self, factor)
     }
 }

@@ -5,9 +5,9 @@ use ndarray::Dimension;
 use num_complex::Complex64;
 
 use crate::{
-    ComplexPlane, ComplexScalar, Constant, ConstitutiveEvaluator, ConstitutiveLift,
-    CoordinateInput, Coordinates, ExteriorWavevectors, InPlaneCoordinate, Polarisation,
-    ScalarAlgebra, SpectralCoordinate, Stack,
+    ComplexPlane, ComplexScalar, Constant, CoordinateInput, Coordinates, ExteriorWavevectors,
+    InPlaneCoordinate, Polarisation, ScalarAlgebra, SpectralCoordinate, Stack,
+    TensorConstitutiveLift,
     backend::evaluate_exterior_wavevectors,
     input::canonical::{CanonicalCoordinates, CanonicalStack},
     stack::Layer,
@@ -152,10 +152,9 @@ pub fn principal_exterior_wavevectors<M, J>(
     coordinates: &CanonicalCoordinates<J>,
 ) -> ExteriorWavevectors<J>
 where
-    J: ScalarAlgebra + ConstitutiveLift<ComplexPlane, M> + Clone,
+    J: ScalarAlgebra + TensorConstitutiveLift<ComplexPlane, M> + Clone,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
-    ComplexPlane: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
 {
     evaluate_exterior_wavevectors::<ComplexPlane, _, _>(
         coordinates,

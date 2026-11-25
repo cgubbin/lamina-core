@@ -18,10 +18,7 @@ use crate::{
     derivative_parts::DerivativePartsPolicy,
     differential::IntoDifferentialResponse,
     input::JetMapping,
-    material::{
-        ConstitutiveDerivativeEvaluator, ConstitutiveEvaluator, ConstitutiveLift,
-        ConstitutiveSpectralFirstLift,
-    },
+    material::{TensorConstitutiveLift, TensorConstitutiveSpectralFirstLift},
     observable::{
         Amplitudes, BoundaryProjectionError, ConstitutiveFieldReconstructionError,
         ConstitutiveSamplingError, ElectromagneticEnergy, EnergyConfinement,
@@ -29,7 +26,7 @@ use crate::{
         InterfaceWaveData, Interfaces, LayerBoundaries, LayerBoundaryStates, LayerBoundaryWaves,
         LayerConfinementError, LayerEnergy, LayerEnergyError, LayerIntegrationInput,
         LayerParticipation, LayerParticipationError, LayerProjectionError, Layers,
-        ProjectAmplitudes, ProjectPower, assemble_layer_integration_inputs,
+        ProjectAmplitudes, ProjectPower, SampledConstitutive, assemble_layer_integration_inputs,
         electromagnetic_dissipation_coefficients,
     },
     spatial::{FieldSampling, ResolvedFieldSampling, SpatialResponse},
@@ -342,13 +339,12 @@ where
         J: ComplexJet
             + RealScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveLift<RealAxis, M>
+            + TensorConstitutiveLift<RealAxis, M>
             + Clone,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         let integrated = self
@@ -371,13 +367,12 @@ where
         J: ComplexJet
             + RealScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<RealAxis, M>
+            + TensorConstitutiveSpectralFirstLift<RealAxis, M>
             + Clone,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         J::Dimension: Dimension,
-        RealAxis: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
@@ -495,14 +490,16 @@ where
         &self,
     ) -> Result<DifferentialResponseFor<J, Layers<LayerEnergy<J::RealJet>>>, LayerEnergyError>
     where
-        J: ComplexJet + RealScalarAlgebra + ScalarAlgebraExpRelExt + ConstitutiveLift<RealAxis, M>,
+        J: ComplexJet
+            + RealScalarAlgebra
+            + ScalarAlgebraExpRelExt
+            + TensorConstitutiveLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         J::Policy: DerivativePartsPolicy<Layers<LayerEnergy<J::RealJet>>>,
         Layers<LayerEnergy<J::RealJet>>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         Ok(self
@@ -518,14 +515,16 @@ where
         LayerParticipationError,
     >
     where
-        J: ComplexJet + RealScalarAlgebra + ScalarAlgebraExpRelExt + ConstitutiveLift<RealAxis, M>,
+        J: ComplexJet
+            + RealScalarAlgebra
+            + ScalarAlgebraExpRelExt
+            + TensorConstitutiveLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         J::Policy: DerivativePartsPolicy<Layers<LayerParticipation<J::RealJet>>>,
         Layers<LayerParticipation<J::RealJet>>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         Ok(self
@@ -539,14 +538,16 @@ where
         mut include: impl FnMut(FiniteLayerIndex) -> bool,
     ) -> Result<DifferentialResponseFor<J, EnergyConfinement<J::RealJet>>, LayerConfinementError>
     where
-        J: ComplexJet + RealScalarAlgebra + ScalarAlgebraExpRelExt + ConstitutiveLift<RealAxis, M>,
+        J: ComplexJet
+            + RealScalarAlgebra
+            + ScalarAlgebraExpRelExt
+            + TensorConstitutiveLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         J::Policy: DerivativePartsPolicy<EnergyConfinement<J::RealJet>>,
         EnergyConfinement<J::RealJet>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         Ok(self
@@ -563,14 +564,13 @@ where
         J: ComplexJet
             + RealScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<RealAxis, M>,
+            + TensorConstitutiveSpectralFirstLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Policy: DerivativePartsPolicy<Layers<LayerEnergy<J::RealJet>>>,
         Layers<LayerEnergy<J::RealJet>>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         J::Dimension: Dimension,
-        RealAxis: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
@@ -590,14 +590,13 @@ where
         J: ComplexJet
             + RealScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<RealAxis, M>,
+            + TensorConstitutiveSpectralFirstLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         J::Policy: DerivativePartsPolicy<Layers<LayerParticipation<J::RealJet>>>,
         Layers<LayerParticipation<J::RealJet>>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         Ok(self
@@ -614,14 +613,13 @@ where
         J: ComplexJet
             + RealScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<RealAxis, M>,
+            + TensorConstitutiveSpectralFirstLift<RealAxis, M>,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: One + FromPrimitive,
         J::Policy: DerivativePartsPolicy<EnergyConfinement<J::RealJet>>,
         EnergyConfinement<J::RealJet>: IntoDifferentialResponse<J::Policy, J::Mapping>,
         W: ReconstructLayerBoundaryWaves<Algebra = J> + RetainedIsotropicLayers<Algebra = J>,
-        RealAxis: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         Ok(self
@@ -887,9 +885,7 @@ where
         <<J as JetStack>::Stacked as ComplexJet>::RealJet: ScalarAlgebra,
 {
         let sampling = sampling.resolve(self.state.stack())?;
-        let electromagnetic_intensities = self
-            .raw_electromagnetic_fields(&sampling)?
-            .into_magnitude_squared();
+        let electromagnetic_fields = self.raw_electromagnetic_fields(&sampling)?;
 
         let constitutive = self.state.raw_constitutive_parameters(&sampling)?;
 
@@ -908,9 +904,17 @@ where
         .ok_or(ConstitutiveSamplingError::EmptySampling)
         .map_err(ConstitutiveFieldReconstructionError::Constitutive)?;
 
-        let coefficients = electromagnetic_dissipation_coefficients(&constitutive, &k0);
-
-        let reconstructed = electromagnetic_intensities.into_dissipation(&coefficients);
+        let reconstructed = match constitutive {
+            SampledConstitutive::Isotropic(constitutive) => electromagnetic_fields
+                .into_magnitude_squared()
+                .into_dissipation(&electromagnetic_dissipation_coefficients(
+                    &constitutive,
+                    &k0,
+                )),
+            SampledConstitutive::Diagonal { electric, magnetic } => {
+                electromagnetic_fields.into_diagonal_dissipation(&electric, &magnetic, &k0)
+            }
+        };
 
         let differential_response =
             reconstructed.into_differential_response(&J::Policy::default(), self.state.mapping());
@@ -948,23 +952,28 @@ where
         W::Entries: ProjectAmplitudes,
         <W::Entries as ProjectAmplitudes>::Amplitudes: Amplitudes<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
-        RealAxis: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveSpectralFirstLift<RealAxis, M>,
+        J: TensorConstitutiveSpectralFirstLift<RealAxis, M>,
         <<<J as JetStack>::Stacked as ComplexJet>::RealJet as Jet>::Scalar: num_traits::Float,
         <<J as JetStack>::Stacked as ComplexJet>::RealJet: ScalarAlgebra,
 {
         let sampling = sampling.resolve(self.state.stack())?;
-        let electromagnetic_intensities = self
-            .raw_electromagnetic_fields(&sampling)?
-            .into_magnitude_squared();
+        let electromagnetic_fields = self.raw_electromagnetic_fields(&sampling)?;
 
-        let coefficients = self
+        let reconstructed = match self
             .state
             .raw_constitutive_spectral_first_parameters::<RealAxis>(&sampling)?
-            .into_brillouin_factors()
-            .into_hermitian_energy_coefficients();
-
-        let reconstructed = electromagnetic_intensities.into_energy(&coefficients);
+        {
+            SampledConstitutive::Isotropic(data) => {
+                electromagnetic_fields.into_magnitude_squared().into_energy(
+                    &data
+                        .into_brillouin_factors()
+                        .into_hermitian_energy_coefficients(),
+                )
+            }
+            SampledConstitutive::Diagonal { electric, magnetic } => {
+                electromagnetic_fields.into_diagonal_energy(&electric, &magnetic)
+            }
+        };
 
         let differential_response =
             reconstructed.into_differential_response(&J::Policy::default(), self.state.mapping());

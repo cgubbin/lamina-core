@@ -4,10 +4,11 @@ use super::{
     mode::{ExteriorWaves, reconstruct_mode_fields},
 };
 use crate::{
-    AnalyticalMaterialStack, CanonicalCoordinates, ElectromagneticFields, ExteriorWavevectors,
-    FieldSampling, Polarisation, SpatialResponse, VectorField,
+    AnalyticalMaterialHandle, CanonicalCoordinates, ComplexPlane, ElectromagneticFields,
+    ExteriorWavevectors, FieldSampling, Polarisation, SpatialResponse, Stack, StackRegion,
+    TensorConstitutiveLift, VectorField,
     algebra::{ArrayJet0, HolomorphicParameter},
-    backend::{ModalSolutionSource, Scatter2, Transfer2},
+    backend::{LayerQuantities, ModalSolutionSource, Scatter2, Transfer2},
 };
 use ndarray::{Ix0, Ix1, arr0};
 use num_complex::Complex64 as C;
@@ -42,17 +43,18 @@ pub enum UnscaledFieldError {
     #[error("sampled fields are not representable")]
     NonFiniteOutput,
 }
-/// High-level recovery capability implemented by the built-in isotropic backends.
+/// High-level recovery capability implemented by the built-in 2×2 backends,
+/// for stacks of scalar materials or regions (`M`).
 /// Uses the backend's arbitrary seed gauge, then multiplies both E and H by
 /// `amplitude`. No energy integral or normalization factor is evaluated.
 /// Exterior roots are supplied in physical left/right order, in cm^-1, for
 /// open sides only: a side closed by a wall or a PML takes `None`, and its
 /// fields are the standing wave between the outermost interface and the wall.
-pub trait ModalFieldBackend {
+pub trait ModalFieldBackend<M = AnalyticalMaterialHandle<C>> {
     #[allow(clippy::too_many_arguments)] // explicit physical data; no parallel device representation
     fn unscaled_fields(
         &self,
-        stack: &AnalyticalMaterialStack<C>,
+        stack: &Stack<M, f64>,
         k0: C,
         beta: C,
         kappa: [Option<C>; 2],
@@ -63,10 +65,14 @@ pub trait ModalFieldBackend {
 }
 macro_rules! implementation {
     ($backend:ty) => {
-        impl ModalFieldBackend for $backend {
+        impl<M> ModalFieldBackend<M> for $backend
+        where
+            M: Clone,
+            J: TensorConstitutiveLift<ComplexPlane, M>,
+        {
             fn unscaled_fields(
                 &self,
-                stack: &AnalyticalMaterialStack<C>,
+                stack: &Stack<M, f64>,
                 k0: C,
                 beta: C,
                 kappa: [Option<C>; 2],
@@ -74,7 +80,6 @@ macro_rules! implementation {
                 sampling: &FieldSampling<f64>,
                 amplitude: C,
             ) -> Result<UnscaledFieldResult, UnscaledFieldError> {
-                use crate::material::EvaluateMeromorphicMaterial;
                 let finite = |v: C| v.re.is_finite() && v.im.is_finite();
                 if ![k0, beta, amplitude].into_iter().all(finite)
                     || !kappa.iter().flatten().copied().all(finite)
@@ -82,11 +87,21 @@ macro_rules! implementation {
                 {
                     return Err(UnscaledFieldError::InvalidInput);
                 }
+                let coordinates =
+                    CanonicalCoordinates::new(J::constant(arr0(k0)), J::constant(arr0(beta)));
                 let mut left_factor = C::new(0., 0.);
                 let mut left_kappa = C::new(0., 0.);
-                for (i, (m, open)) in [
-                    (stack.left_exterior(), stack.left_termination().is_open()),
-                    (stack.right_exterior(), stack.right_termination().is_open()),
+                for (i, (region, material, open)) in [
+                    (
+                        StackRegion::LeftExterior,
+                        stack.left_exterior(),
+                        stack.left_termination().is_open(),
+                    ),
+                    (
+                        StackRegion::RightExterior,
+                        stack.right_exterior(),
+                        stack.right_termination().is_open(),
+                    ),
                 ]
                 .into_iter()
                 .enumerate()
@@ -94,15 +109,22 @@ macro_rules! implementation {
                     if open != kappa[i].is_some() {
                         return Err(UnscaledFieldError::InvalidInput);
                     }
-                    let epsilon = m.evaluate_relative_permittivity_complex(arr0(k0))[()];
-                    let mu = m.evaluate_relative_permeability_complex(arr0(k0))[()];
-                    let q = epsilon * mu * k0 * k0 - beta * beta;
+                    let medium = LayerQuantities::evaluate::<ComplexPlane, _>(
+                        region,
+                        material,
+                        &coordinates,
+                        polarisation,
+                    )
+                    .map_err(super::shared_error)
+                    .map_err(UnscaledFieldError::Backend)?;
+                    let index_squared =
+                        medium.constitutive().index_squared(polarisation).value()[()];
+                    let q = medium.kappa_squared().value()[()];
                     // A closed side's wavevector enters only through q.
                     let root = kappa[i].unwrap_or_else(|| q.sqrt());
                     let scale =
-                        (epsilon * mu * k0 * k0).norm() + (beta * beta).norm() + root.norm_sqr();
-                    if !finite(epsilon)
-                        || !finite(mu)
+                        (index_squared * k0 * k0).norm() + (beta * beta).norm() + root.norm_sqr();
+                    if !finite(index_squared)
                         || !finite(q)
                         || !scale.is_finite()
                         || scale == 0.
@@ -112,10 +134,7 @@ macro_rules! implementation {
                     }
                     if i == 0 {
                         left_kappa = root;
-                        left_factor = match polarisation {
-                            Polarisation::TransverseElectric => mu,
-                            Polarisation::TransverseMagnetic => epsilon,
-                        };
+                        left_factor = medium.factor().value()[()];
                     }
                 }
                 let evaluator = ComplexPlaneEvaluator::<J, _, _>::compile(stack, self.clone())

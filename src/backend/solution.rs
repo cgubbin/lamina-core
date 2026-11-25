@@ -12,7 +12,7 @@
 
 use crate::{
     IncidentSide, Polarisation,
-    backend::ClosedSide,
+    backend::{ClosedSide, LayerQuantities},
     observable::{ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
 
@@ -25,29 +25,33 @@ pub trait ExteriorContextProvider {
     /// Scalar algebra representation used by the backend.
     type Algebra;
 
+    /// Return the left exterior medium quantities, with the supplied or
+    /// terminated normal wavenumber.
+    fn left(&self) -> &LayerQuantities<Self::Algebra>;
+
+    /// Return the right exterior medium quantities, with the supplied or
+    /// terminated normal wavenumber.
+    fn right(&self) -> &LayerQuantities<Self::Algebra>;
+
     /// Return the left exterior characteristic admittance.
-    fn left_admittance(&self) -> &Self::Algebra;
+    fn left_admittance(&self) -> &Self::Algebra {
+        self.left().admittance()
+    }
 
     /// Return the right exterior characteristic admittance.
-    fn right_admittance(&self) -> &Self::Algebra;
+    fn right_admittance(&self) -> &Self::Algebra {
+        self.right().admittance()
+    }
 
     /// Return the left exterior normal angular wavenumber.
-    fn left_kappa(&self) -> &Self::Algebra;
+    fn left_kappa(&self) -> &Self::Algebra {
+        self.left().kappa()
+    }
 
     /// Return the right exterior normal angular wavenumber.
-    fn right_kappa(&self) -> &Self::Algebra;
-
-    /// Return the left exterior relative permittivity.
-    fn left_epsilon(&self) -> &Self::Algebra;
-
-    /// Return the right exterior relative permittivity.
-    fn right_epsilon(&self) -> &Self::Algebra;
-
-    /// Return the left exterior relative permeability.
-    fn left_mu(&self) -> &Self::Algebra;
-
-    /// Return the right exterior relative permeability.
-    fn right_mu(&self) -> &Self::Algebra;
+    fn right_kappa(&self) -> &Self::Algebra {
+        self.right().kappa()
+    }
 
     /// Return the canonical vacuum angular wavenumber.
     fn vacuum_angular_wavenumber(&self) -> &Self::Algebra;

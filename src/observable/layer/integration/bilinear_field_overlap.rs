@@ -1,36 +1,20 @@
 use crate::{
-    Polarisation, algebra::ScalarAlgebra, backend::IsotropicLayerQuantities,
-    observable::layer::integration::bilinear_state_products::IntegratedBilinearCrossStateProducts,
+    algebra::ScalarAlgebra,
+    backend::LayerQuantities,
+    observable::layer::integration::{
+        IntegratedFieldParts, bilinear_state_products::IntegratedBilinearCrossStateProducts,
+    },
 };
-
-pub(crate) struct IntegratedBilinearFieldOverlap<A> {
-    electric: A,
-    magnetic: A,
-}
-
-impl<A> IntegratedBilinearFieldOverlap<A> {
-    pub(crate) const fn new(electric: A, magnetic: A) -> Self {
-        Self { electric, magnetic }
-    }
-
-    pub(crate) fn electric(&self) -> &A {
-        &self.electric
-    }
-
-    pub(crate) fn magnetic(&self) -> &A {
-        &self.magnetic
-    }
-}
 
 pub(crate) fn project_integrated_bilinear_field_overlap<A>(
     state: &IntegratedBilinearCrossStateProducts<A>,
-    reference_quantities: &IsotropicLayerQuantities<A>,
-    comparison_quantities: &IsotropicLayerQuantities<A>,
+    reference_quantities: &LayerQuantities<A>,
+    comparison_quantities: &LayerQuantities<A>,
     reference_vacuum_angular_wavenumber: &A,
     comparison_vacuum_angular_wavenumber: &A,
     reference_parallel_angular_wavenumber: &A,
     comparison_parallel_angular_wavenumber: &A,
-) -> IntegratedBilinearFieldOverlap<A>
+) -> IntegratedFieldParts<A>
 where
     A: ScalarAlgebra,
 {
@@ -51,14 +35,16 @@ where
     /*
      * Cross-longitudinal coefficient:
      *
-     *     [beta_reference / (k0_reference factor_reference)]
-     *     [beta_comparison / (k0_comparison factor_comparison)]
+     *     [beta_reference / (k0_reference normal_reference)]
+     *     [beta_comparison / (k0_comparison normal_comparison)]
      */
-    let reference_longitudinal = reference_parallel_angular_wavenumber
-        .divide(&reference_vacuum_angular_wavenumber.multiply(reference_quantities.factor()));
+    let reference_longitudinal = reference_parallel_angular_wavenumber.divide(
+        &reference_vacuum_angular_wavenumber.multiply(reference_quantities.normal_factor()),
+    );
 
-    let comparison_longitudinal = comparison_parallel_angular_wavenumber
-        .divide(&comparison_vacuum_angular_wavenumber.multiply(comparison_quantities.factor()));
+    let comparison_longitudinal = comparison_parallel_angular_wavenumber.divide(
+        &comparison_vacuum_angular_wavenumber.multiply(comparison_quantities.normal_factor()),
+    );
 
     let longitudinal = reference_longitudinal.multiply(&comparison_longitudinal);
 
@@ -79,36 +65,12 @@ where
      * The longitudinal component contains no factor of i, so it retains
      * the positive sign.
      */
-    let reconstructed_overlap = secondary
-        .multiply(&transverse)
-        .negate()
-        .add(&field.multiply(&longitudinal));
-
-    match reference_quantities.polarisation() {
-        Polarisation::TransverseElectric => {
-            /*
-             * Ey Ey is represented directly by field_field.
-             *
-             * H · H =
-             *     Hx Hx + Hz Hz
-             *   = - secondary_secondary / (k0_r k0_c)
-             *     + longitudinal * field_field.
-             */
-            IntegratedBilinearFieldOverlap::new(field.clone(), reconstructed_overlap)
-        }
-
-        Polarisation::TransverseMagnetic => {
-            /*
-             * Hy Hy is represented directly by field_field.
-             *
-             * E · E =
-             *     Ex Ex + Ez Ez
-             *   = - secondary_secondary / (k0_r k0_c)
-             *     + longitudinal * field_field.
-             */
-            IntegratedBilinearFieldOverlap::new(reconstructed_overlap, field.clone())
-        }
-    }
+    IntegratedFieldParts::new(
+        field.clone(),
+        secondary.multiply(&transverse).negate(),
+        field.multiply(&longitudinal),
+        reference_quantities.polarisation(),
+    )
 }
 
 #[cfg(test)]
@@ -122,7 +84,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
     };
 
     type A = ArrayJet0<Complex64, Ix0, RealParameter>;
@@ -142,8 +104,8 @@ mod tests {
         mu: Complex64,
         kappa: Complex64,
         polarisation: Polarisation,
-    ) -> IsotropicLayerQuantities<A> {
-        IsotropicLayerQuantities::from_parts(jet(kappa), jet(epsilon), jet(mu), polarisation)
+    ) -> LayerQuantities<A> {
+        LayerQuantities::test_fixture(jet(kappa), jet(epsilon), jet(mu), polarisation)
     }
 
     fn state(
@@ -198,7 +160,7 @@ mod tests {
             &jet(Complex64::new(0.0, 0.0)),
         );
 
-        assert_complex_close(scalar(projected.electric()), field_field);
+        assert_complex_close(scalar(&projected.electric()), field_field);
     }
 
     #[test]
@@ -225,7 +187,7 @@ mod tests {
             &jet(Complex64::new(0.0, 0.0)),
         );
 
-        assert_complex_close(scalar(projected.magnetic()), field_field);
+        assert_complex_close(scalar(&projected.magnetic()), field_field);
     }
 
     #[test]
@@ -266,7 +228,7 @@ mod tests {
          */
         let expected_magnetic = -secondary_secondary / Complex64::new(6.0, 0.0);
 
-        assert_complex_close(scalar(projected.magnetic()), expected_magnetic);
+        assert_complex_close(scalar(&projected.magnetic()), expected_magnetic);
     }
 
     #[test]
@@ -320,7 +282,7 @@ mod tests {
 
         let expected = -secondary_secondary * transverse + field_field * longitudinal;
 
-        assert_complex_close(scalar(projected.magnetic()), expected);
+        assert_complex_close(scalar(&projected.magnetic()), expected);
     }
 
     #[test]
@@ -375,7 +337,7 @@ mod tests {
 
         let expected = -secondary_secondary * transverse + field_field * longitudinal;
 
-        assert_complex_close(scalar(projected.electric()), expected);
+        assert_complex_close(scalar(&projected.electric()), expected);
     }
 
     #[test]
@@ -416,9 +378,15 @@ mod tests {
             &jet(Complex64::new(0.7, 0.1)),
         );
 
-        assert_complex_close(scalar(left_right.electric()), scalar(right_left.electric()));
+        assert_complex_close(
+            scalar(&left_right.electric()),
+            scalar(&right_left.electric()),
+        );
 
-        assert_complex_close(scalar(left_right.magnetic()), scalar(right_left.magnetic()));
+        assert_complex_close(
+            scalar(&left_right.magnetic()),
+            scalar(&right_left.magnetic()),
+        );
     }
 
     #[test]

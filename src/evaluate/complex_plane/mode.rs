@@ -14,7 +14,7 @@ use crate::{
         ReconstructLayerModeWaves, RetainedIsotropicLayers,
     },
     input::JetMapping,
-    material::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift},
+    material::TensorConstitutiveSpectralFirstLift,
     observable::{
         AggregateBilinearNormalization, ConstitutiveFieldReconstructionError,
         FieldReconstructionError, FieldSamplingContext, LayerAggregateError, LayerEnergyError,
@@ -84,14 +84,13 @@ where
         J: ComplexJet
             + ScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<ComplexPlane, M>
+            + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>
             + Clone
             + JetMapping,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         J::Dimension: Dimension,
-        ComplexPlane: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         W: PlaneWaveSolutionSource
             + ReconstructLayerModeWaves<Algebra = J>
             + RetainedIsotropicLayers<Algebra = J>
@@ -314,13 +313,12 @@ where
         + JetMapping
         + ScalarAlgebra
         + ScalarAlgebraExpRelExt
-        + ConstitutiveSpectralFirstLift<ComplexPlane, M>
+        + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>
         + Clone,
     J::RealJet: ScalarAlgebra,
     J::Scalar: ComplexScalar,
     <J::RealJet as Jet>::Scalar: FromPrimitive + One,
     J::Dimension: Dimension,
-    ComplexPlane: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
     W: PlaneWaveSolutionSource
         + RetainedIsotropicLayers<Algebra = J>
         + ReconstructLayerModeWaves<Algebra = J>,

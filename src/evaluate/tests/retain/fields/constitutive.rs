@@ -131,7 +131,8 @@ fn excitation_constitutive_fields_equal_epsilon_e_and_mu_h() {
 
                 let parameters = ConstitutiveSamplingContext::new(point.workspace())
                     .sample(&resolved)
-                    .unwrap();
+                    .unwrap()
+                    .isotropic();
 
                 assert_eq!(fields.sampling(), constitutive.sampling(),);
 
@@ -193,7 +194,8 @@ fn excitation_constitutive_first_derivatives_obey_product_rule() {
 
                     let parameters = ConstitutiveSamplingContext::new(point.workspace())
                         .sample(&resolved)
-                        .unwrap();
+                        .unwrap()
+                        .isotropic();
 
                     let expected_d = multiply_vector_first(
                         parameters.epsilon().value(),
@@ -258,7 +260,8 @@ fn excitation_constitutive_second_derivatives_obey_product_rule() {
 
                 let parameters = ConstitutiveSamplingContext::new(point.workspace())
                     .sample(&resolved)
-                    .unwrap();
+                    .unwrap()
+                    .isotropic();
 
                 let expected_d = multiply_vector_second(
                     parameters.epsilon().value(),
@@ -415,7 +418,8 @@ fn modal_constitutive_fields_equal_epsilon_e_and_mu_h() {
 
             let parameters = ConstitutiveSamplingContext::new(state.workspace())
                 .sample(&resolved)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             /*
              * Complex-plane field results retain their jet structure.
@@ -475,7 +479,8 @@ fn modal_constitutive_fields_equal_epsilon_e_and_mu_h() {
 
             let parameters = ConstitutiveSamplingContext::new(state.workspace())
                 .sample(&resolved)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             /*
              * Complex-plane field results retain their jet structure.
@@ -546,7 +551,8 @@ fn modal_constitutive_first_derivatives_obey_product_rule() {
 
             let parameters = ConstitutiveSamplingContext::new(state.workspace())
                 .sample(&resolved)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let epsilon = parameters.epsilon();
             let mu = parameters.mu();
@@ -606,7 +612,8 @@ fn modal_constitutive_first_derivatives_obey_product_rule() {
 
             let parameters = ConstitutiveSamplingContext::new(state.workspace())
                 .sample(&resolved)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let epsilon = parameters.epsilon();
             let mu = parameters.mu();

@@ -3,10 +3,10 @@ use num_traits::{FromPrimitive, One};
 use thiserror::Error;
 
 use crate::{
-    ComplexScalar,
+    ComplexScalar, FiniteLayerIndex, StackRegion,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::IsotropicLayerQuantities,
-    material::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift},
+    backend::{Channel, LayerQuantities, PrincipalConstitutive},
+    material::{ConstitutiveError, TensorConstitutiveSpectralFirstLift},
     observable::{
         LayerAggregateError,
         layer::{
@@ -31,6 +31,9 @@ pub enum LayerEnergyError {
 
     #[error(transparent)]
     Projection(#[from] LayerProjectionError),
+
+    #[error(transparent)]
+    Constitutive(#[from] ConstitutiveError),
 
     #[error(
         "integrated layer count {layer_count} does not match differentiable \
@@ -105,48 +108,16 @@ impl<R> LayerEnergy<R> {
     }
 }
 
-/// Constitutive values required for Brillouin layer energy.
-///
-/// The spectral derivative fields are intrinsic material derivatives with
-/// respect to the canonical vacuum angular wavenumber `k0`. They retain the
-/// outer jet representation independently.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct BrillouinConstitutiveDerivatives<A> {
-    epsilon_spectral_first: A,
-    mu_spectral_first: A,
-}
-
-impl<A> BrillouinConstitutiveDerivatives<A> {
-    pub(crate) const fn new(epsilon_spectral_first: A, mu_spectral_first: A) -> Self {
-        Self {
-            epsilon_spectral_first,
-            mu_spectral_first,
-        }
-    }
-
-    pub(crate) fn epsilon_spectral_first(&self) -> &A {
-        &self.epsilon_spectral_first
-    }
-
-    pub(crate) fn mu_spectral_first(&self) -> &A {
-        &self.mu_spectral_first
-    }
-
-    pub(crate) fn into_parts(self) -> (A, A) {
-        (self.epsilon_spectral_first, self.mu_spectral_first)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct BrillouinLayerInput<A> {
     integrated: IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>,
-    derivative: BrillouinConstitutiveDerivatives<A>,
+    derivative: PrincipalConstitutive<A>,
 }
 
 impl<A> BrillouinLayerInput<A> {
     pub(crate) const fn new(
         integrated: IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>,
-        derivative: BrillouinConstitutiveDerivatives<A>,
+        derivative: PrincipalConstitutive<A>,
     ) -> Self {
         Self {
             integrated,
@@ -155,7 +126,7 @@ impl<A> BrillouinLayerInput<A> {
     }
 
     #[cfg(test)]
-    pub(crate) fn derivative(&self) -> &BrillouinConstitutiveDerivatives<A> {
+    pub(crate) fn derivative(&self) -> &PrincipalConstitutive<A> {
         &self.derivative
     }
 
@@ -163,7 +134,7 @@ impl<A> BrillouinLayerInput<A> {
         self,
     ) -> (
         IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>,
-        BrillouinConstitutiveDerivatives<A>,
+        PrincipalConstitutive<A>,
     ) {
         (self.integrated, self.derivative)
     }
@@ -177,10 +148,9 @@ impl<A> Layers<IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>>
     ) -> Result<Layers<BrillouinLayerInput<A>>, LayerEnergyError>
     where
         M: 'a,
-        A: ScalarAlgebra + ConstitutiveSpectralFirstLift<E, M>,
+        A: ScalarAlgebra + TensorConstitutiveSpectralFirstLift<E, M> + Clone,
         A::Scalar: ComplexScalar,
         A::Dimension: Dimension,
-        E: ConstitutiveDerivativeEvaluator<A::Scalar, A::Dimension, M>,
     {
         if self.len() != materials.len() {
             return Err(LayerEnergyError::MaterialCountMismatch {
@@ -193,24 +163,15 @@ impl<A> Layers<IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>>
             self.into_inner()
                 .into_iter()
                 .zip(materials)
-                .map(|(layer, material)| {
-                    let epsilon_spectral_first = A::relative_permittivity_spectral_first(
-                        material,
-                        vacuum_angular_wavenumber,
-                    );
-
-                    let mu_spectral_first = A::relative_permeability_spectral_first(
-                        material,
-                        vacuum_angular_wavenumber,
-                    );
-
-                    let material = BrillouinConstitutiveDerivatives::new(
-                        epsilon_spectral_first,
-                        mu_spectral_first,
-                    );
-                    BrillouinLayerInput::new(layer, material)
+                .enumerate()
+                .map(|(index, (layer, material))| {
+                    let derivative = PrincipalConstitutive::new(
+                        StackRegion::Layer(FiniteLayerIndex::new(index)),
+                        A::constitutive_tensors_spectral_first(material, vacuum_angular_wavenumber),
+                    )?;
+                    Ok(BrillouinLayerInput::new(layer, derivative))
                 })
-                .collect(),
+                .collect::<Result<_, ConstitutiveError>>()?,
         ))
     }
 }
@@ -218,13 +179,13 @@ impl<A> Layers<IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>>
 #[derive(Clone, Debug)]
 pub(crate) struct BrillouinBilinearLayerInput<A> {
     integrated: IntegratedLayerData<IntegratedBilinearCrossStateProducts<A>, A>,
-    derivative: BrillouinConstitutiveDerivatives<A>,
+    derivative: PrincipalConstitutive<A>,
 }
 
 impl<A> BrillouinBilinearLayerInput<A> {
     pub(crate) const fn new(
         integrated: IntegratedLayerData<IntegratedBilinearCrossStateProducts<A>, A>,
-        derivative: BrillouinConstitutiveDerivatives<A>,
+        derivative: PrincipalConstitutive<A>,
     ) -> Self {
         Self {
             integrated,
@@ -236,7 +197,7 @@ impl<A> BrillouinBilinearLayerInput<A> {
         self,
     ) -> (
         IntegratedLayerData<IntegratedBilinearCrossStateProducts<A>, A>,
-        BrillouinConstitutiveDerivatives<A>,
+        PrincipalConstitutive<A>,
     ) {
         (self.integrated, self.derivative)
     }
@@ -250,10 +211,9 @@ impl<A> Layers<IntegratedLayerData<IntegratedBilinearCrossStateProducts<A>, A>> 
     ) -> Result<Layers<BrillouinBilinearLayerInput<A>>, LayerEnergyError>
     where
         M: 'a,
-        A: ScalarAlgebra + ConstitutiveSpectralFirstLift<E, M>,
+        A: ScalarAlgebra + TensorConstitutiveSpectralFirstLift<E, M> + Clone,
         A::Scalar: ComplexScalar,
         A::Dimension: Dimension,
-        E: ConstitutiveDerivativeEvaluator<A::Scalar, A::Dimension, M>,
     {
         if self.len() != materials.len() {
             return Err(LayerEnergyError::MaterialCountMismatch {
@@ -266,24 +226,15 @@ impl<A> Layers<IntegratedLayerData<IntegratedBilinearCrossStateProducts<A>, A>> 
             self.into_inner()
                 .into_iter()
                 .zip(materials)
-                .map(|(layer, material)| {
-                    let epsilon_spectral_first = A::relative_permittivity_spectral_first(
-                        material,
-                        vacuum_angular_wavenumber,
-                    );
-
-                    let mu_spectral_first = A::relative_permeability_spectral_first(
-                        material,
-                        vacuum_angular_wavenumber,
-                    );
-
-                    let material = BrillouinConstitutiveDerivatives::new(
-                        epsilon_spectral_first,
-                        mu_spectral_first,
-                    );
-                    BrillouinBilinearLayerInput::new(layer, material)
+                .enumerate()
+                .map(|(index, (layer, material))| {
+                    let derivative = PrincipalConstitutive::new(
+                        StackRegion::Layer(FiniteLayerIndex::new(index)),
+                        A::constitutive_tensors_spectral_first(material, vacuum_angular_wavenumber),
+                    )?;
+                    Ok(BrillouinBilinearLayerInput::new(layer, derivative))
                 })
-                .collect(),
+                .collect::<Result<_, ConstitutiveError>>()?,
         ))
     }
 }
@@ -316,24 +267,19 @@ impl<A> IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A> {
     {
         let (state_products, quantities) = self.into_parts();
 
-        let (electric_norm, magnetic_norm) = project_integrated_field_norms(
+        let (electric, magnetic) = project_integrated_field_norms(
             &state_products,
             &quantities,
             vacuum_angular_wavenumber,
             parallel_angular_wavenumber,
         )
-        .into_parts();
+        .weighted(
+            quantities
+                .channel()
+                .map(|entry| entry.real().multiply(normalization)),
+        );
 
-        let electric_coefficient = quantities.epsilon().real().multiply(normalization);
-
-        let magnetic_coefficient = quantities.mu().real().multiply(normalization);
-
-        project_energy(
-            electric_norm,
-            magnetic_norm,
-            electric_coefficient,
-            magnetic_coefficient,
-        )
+        project_energy(electric, magnetic)
     }
 }
 
@@ -360,44 +306,22 @@ impl<A> Layers<IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>>
     }
 }
 
-/// Construct Brillouin constitutive energy coefficients.
-///
-/// Ordinary constitutive values are taken from the retained isotropic layer
-/// quantities. `data` supplies the additional intrinsic derivatives.
-///
-/// The constitutive weights are:
-///
-/// ```text
-/// electric = Re[epsilon + k0 d epsilon/d k0]
-/// magnetic = Re[mu      + k0 d mu/d k0]
-/// ```
-/// The derivative is intrinsic to the constitutive material model. It is
-/// distinct from the outer derivative coordinates represented by `A`.
-fn brillouin_energy_coefficients<A>(
+/// Brillouin weights `∂(k0 x)/∂k0 = x + k0 ∂x/∂k0` of the entries
+/// `quantities` sees, from their intrinsic spectral derivatives
+/// `derivative`, which are distinct from the outer derivative coordinates of
+/// `A`.
+fn brillouin_weights<A>(
     vacuum_angular_wavenumber: &A,
-    quantities: &IsotropicLayerQuantities<A>,
-    data: &BrillouinConstitutiveDerivatives<A>,
-    normalization: &A::RealJet,
-) -> (A::RealJet, A::RealJet)
+    quantities: &LayerQuantities<A>,
+    derivative: &PrincipalConstitutive<A>,
+) -> Channel<A>
 where
-    A: RealScalarAlgebra,
-    A::RealJet: ScalarAlgebra,
+    A: ScalarAlgebra,
 {
-    let electric_weight = quantities
-        .epsilon()
-        .add(&vacuum_angular_wavenumber.multiply(data.epsilon_spectral_first()))
-        .real();
-
-    let magnetic_weight = quantities
-        .mu()
-        .add(&vacuum_angular_wavenumber.multiply(data.mu_spectral_first()))
-        .real();
-
-    let electric = electric_weight.multiply(normalization);
-
-    let magnetic = magnetic_weight.multiply(normalization);
-
-    (electric, magnetic)
+    quantities.channel().zip(
+        derivative.channel(quantities.polarisation()),
+        |value, first| value.add(&vacuum_angular_wavenumber.multiply(first)),
+    )
 }
 
 impl<A> BrillouinLayerInput<A> {
@@ -412,46 +336,28 @@ impl<A> BrillouinLayerInput<A> {
         A::RealJet: ScalarAlgebra,
         <A::RealJet as Jet>::Scalar: One,
     {
-        let (layer, data) = self.into_parts();
+        let (layer, derivative) = self.into_parts();
         let (state_products, quantities) = layer.into_parts();
 
-        let (electric_norm, magnetic_norm) = project_integrated_field_norms(
+        let weights = brillouin_weights(vacuum_angular_wavenumber, &quantities, &derivative)
+            .map(|weight| weight.real().multiply(normalization));
+
+        let (electric, magnetic) = project_integrated_field_norms(
             &state_products,
             &quantities,
             vacuum_angular_wavenumber,
             parallel_angular_wavenumber,
         )
-        .into_parts();
+        .weighted(weights);
 
-        let (electric_coefficient, magnetic_coefficient) = brillouin_energy_coefficients(
-            vacuum_angular_wavenumber,
-            &quantities,
-            &data,
-            normalization,
-        );
-
-        project_energy(
-            electric_norm,
-            magnetic_norm,
-            electric_coefficient,
-            magnetic_coefficient,
-        )
+        project_energy(electric, magnetic)
     }
 }
 
-fn project_energy<R>(
-    electric_norm: R,
-    magnetic_norm: R,
-    electric_coefficient: R,
-    magnetic_coefficient: R,
-) -> LayerEnergy<R>
+fn project_energy<R>(electric: R, magnetic: R) -> LayerEnergy<R>
 where
     R: ScalarAlgebra,
 {
-    let electric = electric_norm.multiply(&electric_coefficient);
-
-    let magnetic = magnetic_norm.multiply(&magnetic_coefficient);
-
     let total = electric.add(&magnetic);
 
     LayerEnergy::new(electric, magnetic, total)
@@ -466,7 +372,7 @@ impl<A> BrillouinBilinearLayerInput<A> {
     where
         A: ScalarAlgebra,
     {
-        let (layer, constitutive) = self.into_parts();
+        let (layer, derivative) = self.into_parts();
 
         let (state_products, quantities) = layer.into_parts();
 
@@ -486,23 +392,11 @@ impl<A> BrillouinBilinearLayerInput<A> {
             parallel_angular_wavenumber,
         );
 
-        let (epsilon_spectral_first, mu_spectral_first) = constitutive.into_parts();
-
-        /*
-         * ∂(k0 ε)/∂k0 = ε + k0 ∂ε/∂k0
-         * ∂(k0 μ)/∂k0 = μ + k0 ∂μ/∂k0
-         */
-        let electric_weight = quantities
-            .epsilon()
-            .add(&vacuum_angular_wavenumber.multiply(&epsilon_spectral_first));
-
-        let magnetic_weight = quantities
-            .mu()
-            .add(&vacuum_angular_wavenumber.multiply(&mu_spectral_first));
-
-        let electric = field_overlap.electric().multiply(&electric_weight);
-
-        let magnetic = field_overlap.magnetic().multiply(&magnetic_weight);
+        let (electric, magnetic) = field_overlap.weighted(brillouin_weights(
+            vacuum_angular_wavenumber,
+            &quantities,
+            &derivative,
+        ));
 
         BilinearLayerNormalization::new(electric, magnetic)
     }
@@ -557,7 +451,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, ArrayJet1, ComplexJet, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
         material::DifferentiableMaterialHandle,
         observable::layer::{
             IntegratedHermitianCrossStateProducts, Layers, project::IntegratedLayerData,
@@ -594,14 +488,6 @@ mod tests {
         A1::from_parts(arr0(value), arr0(first))
     }
 
-    fn constant_jet1(value: C) -> A1 {
-        jet1(value, C::new(0.0, 0.0))
-    }
-
-    fn real_jet1(value: f64, first: f64) -> R1 {
-        R1::from_parts(arr0(value), arr0(first))
-    }
-
     fn scalar1_value(value: &R1) -> f64 {
         value.value()[()]
     }
@@ -622,13 +508,8 @@ mod tests {
         )
     }
 
-    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> IsotropicLayerQuantities<A0> {
-        IsotropicLayerQuantities::test_fixture(
-            jet(c(3.0, 0.0)),
-            jet(epsilon),
-            jet(mu),
-            polarisation,
-        )
+    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> LayerQuantities<A0> {
+        LayerQuantities::test_fixture(jet(c(3.0, 0.0)), jet(epsilon), jet(mu), polarisation)
     }
 
     fn integrated_layer(
@@ -644,8 +525,11 @@ mod tests {
         )
     }
 
-    fn derivatives(epsilon_first: C, mu_first: C) -> BrillouinConstitutiveDerivatives<A0> {
-        BrillouinConstitutiveDerivatives::new(jet(epsilon_first), jet(mu_first))
+    fn derivatives(epsilon_first: C, mu_first: C) -> PrincipalConstitutive<A0> {
+        PrincipalConstitutive::Isotropic {
+            epsilon: jet(epsilon_first),
+            mu: jet(mu_first),
+        }
     }
 
     fn brillouin_layer(
@@ -733,34 +617,8 @@ mod tests {
     }
 
     #[test]
-    fn project_energy_applies_both_coefficients() {
-        let energy = project_energy(real_jet(2.0), real_jet(3.0), real_jet(5.0), real_jet(7.0));
-
-        assert_relative_eq!(
-            scalar(energy.electric()),
-            10.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(energy.magnetic()),
-            21.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(energy.total()),
-            31.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
     fn project_energy_total_is_exact_component_sum() {
-        let energy = project_energy(real_jet(2.5), real_jet(3.5), real_jet(4.0), real_jet(6.0));
+        let energy = project_energy(real_jet(2.5), real_jet(3.5));
 
         assert_relative_eq!(
             scalar(energy.total()),
@@ -881,17 +739,6 @@ mod tests {
     }
 
     #[test]
-    fn brillouin_derivatives_preserve_component_order() {
-        let derivatives = BrillouinConstitutiveDerivatives::new(1, 2);
-
-        assert_eq!(derivatives.epsilon_spectral_first(), &1,);
-
-        assert_eq!(derivatives.mu_spectral_first(), &2,);
-
-        assert_eq!(derivatives.into_parts(), (1, 2),);
-    }
-
-    #[test]
     fn brillouin_input_preserves_layer_and_derivative_data() {
         let integrated = integrated_layer(
             Polarisation::TransverseElectric,
@@ -906,120 +753,13 @@ mod tests {
         let input = BrillouinLayerInput::new(integrated, derivatives);
 
         assert_eq!(
-            input.derivative().epsilon_spectral_first().value()[()],
+            input.derivative().diagonal()[0][0].value()[()],
             c(11.0, 0.0),
         );
 
         assert_eq!(
-            input.derivative().mu_spectral_first().value()[()],
+            input.derivative().diagonal()[1][0].value()[()],
             c(13.0, 0.0),
-        );
-    }
-
-    #[test]
-    fn brillouin_coefficients_use_derivative_of_k0_times_constitutive_value() {
-        let quantities = quantities(
-            Polarisation::TransverseElectric,
-            c(2.0, 100.0),
-            c(3.0, -200.0),
-        );
-
-        let derivatives = derivatives(c(5.0, 101.0), c(7.0, -201.0));
-
-        let prefactor = real_jet(0.25);
-
-        let (electric, magnetic) = brillouin_energy_coefficients(
-            &jet(c(11.0, 0.0)),
-            &quantities,
-            &derivatives,
-            &prefactor,
-        );
-
-        /*
-         * electric:
-         *   1/4 Re[2 + 11*5]
-         * = 57 / 4
-         *
-         * magnetic:
-         *   1/4 Re[3 + 11*7]
-         * = 80 / 4
-         */
-        assert_relative_eq!(
-            scalar(&electric),
-            57.0 / 4.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&magnetic),
-            20.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
-    fn brillouin_coefficients_take_real_part_after_full_product() {
-        let quantities = quantities(Polarisation::TransverseElectric, c(2.0, 3.0), c(5.0, 7.0));
-
-        let derivatives = derivatives(c(11.0, 13.0), c(17.0, 19.0));
-
-        let prefactor = real_jet(0.25);
-
-        let (electric, magnetic) = brillouin_energy_coefficients(
-            &jet(c(23.0, 0.0)),
-            &quantities,
-            &derivatives,
-            &prefactor,
-        );
-
-        assert_relative_eq!(
-            scalar(&electric),
-            0.25 * (2.0 + 23.0 * 11.0),
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&magnetic),
-            0.25 * (5.0 + 23.0 * 17.0),
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
-    fn zero_intrinsic_derivatives_reduce_to_nondispersive_coefficients() {
-        let quantities = quantities(
-            Polarisation::TransverseElectric,
-            c(2.0, 100.0),
-            c(3.0, -200.0),
-        );
-
-        let derivatives = derivatives(c(0.0, 0.0), c(0.0, 0.0));
-
-        let prefactor = real_jet(0.25);
-
-        let (electric, magnetic) = brillouin_energy_coefficients(
-            &jet(c(11.0, 0.0)),
-            &quantities,
-            &derivatives,
-            &prefactor,
-        );
-
-        assert_relative_eq!(
-            scalar(&electric),
-            0.5,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&magnetic),
-            0.75,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
         );
     }
 
@@ -1115,60 +855,6 @@ mod tests {
         let energy = layers.into_brillouin_energy(&jet(c(2.0, 0.0)), &jet(c(0.6, 0.0)));
 
         assert!(energy.is_empty());
-    }
-
-    #[test]
-    fn brillouin_coefficients_propagate_first_derivatives() {
-        /*
-         * k0 = 2 + 0.5p
-         *
-         * epsilon = 3 + 0.7p
-         * epsilon_k = 5 + 1.1p
-         *
-         * W = epsilon + k0 epsilon_k
-         *
-         * W(0)  = 13
-         * W'(0) = 5.4
-         *
-         * coefficient = W / 4
-         *
-         * value = 3.25
-         * first = 1.35
-         */
-        let quantities = IsotropicLayerQuantities::test_fixture(
-            constant_jet1(c(3.0, 0.0)),
-            jet1(c(3.0, 0.0), c(0.7, 0.0)),
-            constant_jet1(c(4.0, 0.0)),
-            Polarisation::TransverseElectric,
-        );
-
-        let derivatives = BrillouinConstitutiveDerivatives::new(
-            jet1(c(5.0, 0.0), c(1.1, 0.0)),
-            constant_jet1(c(0.0, 0.0)),
-        );
-
-        let prefactor = real_jet1(0.25, 0.0);
-
-        let (electric, _magnetic) = brillouin_energy_coefficients(
-            &jet1(c(2.0, 0.0), c(0.5, 0.0)),
-            &quantities,
-            &derivatives,
-            &prefactor,
-        );
-
-        assert_relative_eq!(
-            scalar1_value(&electric),
-            3.25,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar1_first(&electric),
-            1.35,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
     }
 
     use crate::material::{DerivativeOrder, DifferentiableMaterial, Material, Sampled};
@@ -1342,42 +1028,22 @@ mod tests {
         assert_eq!(paired.len(), 2);
 
         assert_eq!(
-            paired
-                .first()
-                .unwrap()
-                .derivative()
-                .epsilon_spectral_first()
-                .value()[()],
+            paired.first().unwrap().derivative().diagonal()[0][0].value()[()],
             c(2.0, 0.0),
         );
 
         assert_eq!(
-            paired
-                .first()
-                .unwrap()
-                .derivative()
-                .mu_spectral_first()
-                .value()[()],
+            paired.first().unwrap().derivative().diagonal()[1][0].value()[()],
             c(3.0, 0.0),
         );
 
         assert_eq!(
-            paired
-                .last()
-                .unwrap()
-                .derivative()
-                .epsilon_spectral_first()
-                .value()[()],
+            paired.last().unwrap().derivative().diagonal()[0][0].value()[()],
             c(5.0, 0.0),
         );
 
         assert_eq!(
-            paired
-                .last()
-                .unwrap()
-                .derivative()
-                .mu_spectral_first()
-                .value()[()],
+            paired.last().unwrap().derivative().diagonal()[1][0].value()[()],
             c(7.0, 0.0),
         );
     }

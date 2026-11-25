@@ -54,4 +54,7 @@ pub enum Transfer2Error {
 
     #[error(transparent)]
     Termination(#[from] crate::backend::TerminationError),
+
+    #[error(transparent)]
+    Constitutive(#[from] crate::material::ConstitutiveError),
 }

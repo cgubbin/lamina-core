@@ -83,11 +83,12 @@ impl<'a, W, A> FieldSamplingContext<'a, W, A> {
                 CanonicalFieldPosition::LeftExterior { .. } => {
                     let state = waves.into_state(exterior.left_admittance());
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         polarisation,
                         exterior.left_kappa(),
                         exterior.left_admittance(),
+                        exterior.left().channel().normal,
                         k0,
                         beta,
                     )
@@ -103,11 +104,12 @@ impl<'a, W, A> FieldSamplingContext<'a, W, A> {
 
                     let state = waves.into_state(admittance);
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         quantities.polarisation(),
                         quantities.kappa(),
                         admittance,
+                        quantities.channel().normal,
                         k0,
                         beta,
                     )
@@ -116,11 +118,12 @@ impl<'a, W, A> FieldSamplingContext<'a, W, A> {
                 CanonicalFieldPosition::RightExterior { .. } => {
                     let state = waves.into_state(exterior.right_admittance());
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         polarisation,
                         exterior.right_kappa(),
                         exterior.right_admittance(),
+                        exterior.right().channel().normal,
                         k0,
                         beta,
                     )
@@ -223,11 +226,12 @@ impl<A> ElectromagneticFieldComponents<A> {
     }
 }
 
-pub(crate) fn project_isotropic_field_components<A>(
+pub(crate) fn project_field_components<A>(
     state: BoundaryState<A>,
     polarisation: Polarisation,
     kappa: &A,
     admittance: &A,
+    normal: Option<&A>,
     vacuum_angular_wavenumber: &A,
     parallel_angular_wavenumber: &A,
 ) -> ElectromagneticFieldComponents<A>
@@ -251,22 +255,25 @@ where
      *     factor = μ  for TE,
      *     factor = ε  for TM.
      *
-     * Since
-     *
-     *     Y = κ / factor,
-     *
-     * the longitudinal Cartesian component can be written without
-     * separately retaining ε or μ:
+     * The normal Cartesian component is β ψ / (k0 normal), with the normal
+     * entry μ_zz (TE) or ε_zz (TM). In an isotropic medium normal = factor,
+     * and since Y = κ / factor it is written without separately retaining
+     * ε or μ:
      *
      *     β ψ / (k0 factor)
      *       = β Y ψ / (k0 κ).
      */
     let transverse = secondary.divide(vacuum_angular_wavenumber);
 
-    let longitudinal = parallel_angular_wavenumber
-        .multiply(admittance)
-        .multiply(&field)
-        .divide(&vacuum_angular_wavenumber.multiply(kappa));
+    let longitudinal = match normal {
+        None => parallel_angular_wavenumber
+            .multiply(admittance)
+            .multiply(&field)
+            .divide(&vacuum_angular_wavenumber.multiply(kappa)),
+        Some(normal) => parallel_angular_wavenumber
+            .multiply(&field)
+            .divide(&vacuum_angular_wavenumber.multiply(normal)),
+    };
 
     match polarisation {
         Polarisation::TransverseElectric => {
@@ -276,7 +283,7 @@ where
              *     E = (0, ψ, 0)
              *
              *     Hx =  i secondary / k0
-             *     Hz =  β ψ / (k0 μ)
+             *     Hz =  β ψ / (k0 μ_zz)
              *
              * for the exp(-iωt) phasor convention.
              */
@@ -299,7 +306,7 @@ where
              *     H = (0, ψ, 0)
              *
              *     Ex = -i secondary / k0
-             *     Ez = -β ψ / (k0 ε)
+             *     Ez = -β ψ / (k0 ε_zz)
              *
              * for the exp(-iωt) phasor convention.
              */
@@ -353,11 +360,12 @@ mod tests {
 
         let state = BoundaryState::new(jet(field), jet(secondary));
 
-        let result = project_isotropic_field_components(
+        let result = project_field_components(
             state,
             Polarisation::TransverseElectric,
             &jet(kappa),
             &jet(admittance),
+            None,
             &jet(k0),
             &jet(beta),
         );
@@ -392,11 +400,12 @@ mod tests {
 
         let state = BoundaryState::new(jet(field), jet(secondary));
 
-        let result = project_isotropic_field_components(
+        let result = project_field_components(
             state,
             Polarisation::TransverseMagnetic,
             &jet(kappa),
             &jet(admittance),
+            None,
             &jet(k0),
             &jet(beta),
         );
@@ -426,11 +435,12 @@ mod tests {
             Polarisation::TransverseElectric,
             Polarisation::TransverseMagnetic,
         ] {
-            let result = project_isotropic_field_components(
+            let result = project_field_components(
                 state.clone(),
                 polarisation,
                 &jet(c(1.7, 0.0)),
                 &jet(c(1.1, 0.0)),
+                None,
                 &jet(c(2.0, 0.0)),
                 &jet(C::ZERO),
             );
@@ -453,11 +463,12 @@ mod tests {
         let k0 = c(2.5, 0.0);
         let beta = c(0.7, 0.0);
 
-        let projected = project_isotropic_field_components(
+        let projected = project_field_components(
             BoundaryState::new(jet(field), jet(secondary)),
             Polarisation::TransverseElectric,
             &jet(kappa),
             &jet(admittance),
+            None,
             &jet(k0),
             &jet(beta),
         );
@@ -490,11 +501,12 @@ mod tests {
         let secondary_first = c(-0.3, 0.4);
         let k0 = c(2.0, 0.0);
 
-        let result = project_isotropic_field_components(
+        let result = project_field_components(
             BoundaryState::new(jet1(c(1.0, 0.0), C::ZERO), jet1(secondary, secondary_first)),
             Polarisation::TransverseElectric,
             &jet1(c(1.5, 0.0), C::ZERO),
             &jet1(c(1.1, 0.0), C::ZERO),
+            None,
             &jet1(k0, C::ZERO),
             &jet1(c(0.2, 0.0), C::ZERO),
         );
@@ -715,8 +727,8 @@ mod integration_tests {
         FiniteLayerIndex, IncidentSide, Polarisation, RealAxis,
         algebra::{ArrayJet0, RealParameter},
         backend::{
-            ExteriorContextProvider, ExteriorWavevectors, IsotropicLayerQuantities,
-            RetainedIsotropicLayers, RunMode, Scatter2,
+            ExteriorContextProvider, ExteriorWavevectors, LayerQuantities, RetainedIsotropicLayers,
+            RunMode, Scatter2,
         },
         input::{CanonicalCoordinates, CanonicalStack},
         material::Constant,
@@ -728,7 +740,7 @@ mod integration_tests {
         waves::WaveSamplingContext,
     };
 
-    use super::{FieldSamplingContext, project_isotropic_field_components};
+    use super::{FieldSamplingContext, project_field_components};
 
     type A = ArrayJet0<C, Ix0, RealParameter>;
 
@@ -745,20 +757,12 @@ mod integration_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
         Scatter2::new()
             .accumulate::<A, RealAxis, _>(
@@ -858,11 +862,12 @@ mod integration_tests {
                 CanonicalFieldPosition::LeftExterior { .. } => {
                     let state = waves.into_state(exterior.left_admittance());
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         polarisation,
                         exterior.left_kappa(),
                         exterior.left_admittance(),
+                        None,
                         k0,
                         beta,
                     )
@@ -878,11 +883,12 @@ mod integration_tests {
 
                     let state = waves.into_state(admittance);
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         quantities.polarisation(),
                         quantities.kappa(),
                         admittance,
+                        None,
                         k0,
                         beta,
                     )
@@ -891,11 +897,12 @@ mod integration_tests {
                 CanonicalFieldPosition::RightExterior { .. } => {
                     let state = waves.into_state(exterior.right_admittance());
 
-                    project_isotropic_field_components(
+                    project_field_components(
                         state,
                         polarisation,
                         exterior.right_kappa(),
                         exterior.right_admittance(),
+                        None,
                         k0,
                         beta,
                     )

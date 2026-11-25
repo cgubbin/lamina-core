@@ -31,4 +31,9 @@ pub enum CoordinateCompileError<R> {
 
     #[error("incident-angle coordinates are not supported for complex input")]
     ComplexIncidentAngleUnsupported,
+
+    /// The incident exterior's refractive index is not a scalar, or cannot be
+    /// evaluated; an incident angle is defined for isotropic exteriors only.
+    #[error(transparent)]
+    IncidentMedium(#[from] crate::material::ConstitutiveError),
 }

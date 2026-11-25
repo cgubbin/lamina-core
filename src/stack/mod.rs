@@ -15,7 +15,6 @@ use crate::{
     material::{
         AnalyticalMaterialHandle, AnalyticalMaterialRegion, Constitutive,
         DifferentiableMaterialHandle, Material, MaterialHandle, MeromorphicMaterialHandle,
-        UnsupportedConstitutive,
     },
 };
 
@@ -266,41 +265,6 @@ impl<S, T, R, F> Stack<Constitutive<S, T, R>, F> {
             && self.right_exterior.is_separable()
             && self.iter().all(|layer| layer.material().is_separable())
     }
-
-    /// The stack of scalar materials, for the scalar (2×2) formulations,
-    /// when every region is isotropic; otherwise the first region that is
-    /// not, left to right.
-    pub fn to_isotropic(&self) -> Result<Stack<S, F>, UnsupportedConstitutive>
-    where
-        S: Clone,
-        F: Copy,
-    {
-        let scalar = |region, material: &Constitutive<S, T, R>| {
-            material.scalar().cloned().ok_or(UnsupportedConstitutive {
-                region,
-                class: material.class(),
-            })
-        };
-        let left_exterior = scalar(StackRegion::LeftExterior, &self.left_exterior)?;
-        let layers_left_to_right = self
-            .iter()
-            .enumerate()
-            .map(|(index, layer)| {
-                let region = StackRegion::Layer(FiniteLayerIndex::new(index));
-                Ok(Layer::new(
-                    scalar(region, layer.material())?,
-                    layer.thickness(),
-                ))
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Stack {
-            left_exterior,
-            right_exterior: scalar(StackRegion::RightExterior, &self.right_exterior)?,
-            layers_left_to_right,
-            left_termination: self.left_termination,
-            right_termination: self.right_termination,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -548,7 +512,19 @@ mod tests {
             let lifted = AnalyticalTensorStack::<Complex64>::from(scalar.clone());
 
             assert!(lifted.is_separable());
-            assert_eq!(lifted.to_isotropic(), Ok(scalar));
+            assert_eq!(
+                lifted.left_exterior().scalar(),
+                Some(scalar.left_exterior())
+            );
+            assert_eq!(
+                lifted.right_exterior().scalar(),
+                Some(scalar.right_exterior())
+            );
+            assert_eq!(
+                lifted.layers_left_to_right()[0].material().scalar(),
+                Some(scalar.layers_left_to_right()[0].material())
+            );
+            assert_eq!(lifted.right_termination(), scalar.right_termination());
         }
 
         #[test]
@@ -567,25 +543,6 @@ mod tests {
 
             let general = oriented(Rotation::from_euler(0.3, 0.6, 0.0));
             assert!(!stack_with(isotropic(1.0), general).is_separable());
-        }
-
-        #[test]
-        fn scalar_formulations_refuse_diagonal_and_full_regions_by_name() {
-            let full = oriented(Rotation::from_euler(0.3, 0.6, 0.0));
-            assert_eq!(
-                stack_with(isotropic(1.0), full).to_isotropic(),
-                Err(UnsupportedConstitutive {
-                    region: StackRegion::Layer(FiniteLayerIndex::new(1)),
-                    class: ConstitutiveClass::Full,
-                })
-            );
-            assert_eq!(
-                stack_with(diagonal(), isotropic(2.0)).to_isotropic(),
-                Err(UnsupportedConstitutive {
-                    region: StackRegion::LeftExterior,
-                    class: ConstitutiveClass::Diagonal,
-                })
-            );
         }
 
         #[test]

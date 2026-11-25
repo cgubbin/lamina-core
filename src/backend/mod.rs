@@ -9,8 +9,9 @@
 //! This module contains:
 //!
 //! - backend-independent solution and workspace contracts;
-//! - exterior-wavevector and isotropic-layer quantities;
-//! - isotropic 2×2 transfer- and scattering-matrix backends;
+//! - exterior-wavevector and per-polarisation medium quantities;
+//! - 2×2 transfer- and scattering-matrix backends for regions whose ε and μ
+//!   are isotropic or diagonal in the stack frame;
 //! - mode-reconstruction support shared by those backends.
 //!
 //! Callers normally select a concrete backend such as [`Scatter2`] or
@@ -18,16 +19,14 @@
 //! methods directly.
 
 use crate::{
-    CanonicalCoordinates, ComplexScalar, Polarisation,
-    algebra::Jet,
-    input::CanonicalStack,
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    CanonicalCoordinates, ComplexScalar, Polarisation, algebra::Jet, input::CanonicalStack,
+    material::TensorConstitutiveLift,
 };
 
 use ndarray::Dimension;
 
 mod exterior;
-mod isotropic;
+mod medium;
 mod mode;
 pub(crate) mod scatter2;
 mod solution;
@@ -35,11 +34,12 @@ mod termination;
 pub(crate) mod transfer2;
 mod workspace;
 
+pub(crate) use exterior::ExteriorContext;
 pub use exterior::ExteriorWavevectors;
 #[cfg(test)]
 pub(crate) use exterior::evaluate_exterior_wavevectors;
 pub(crate) use exterior::evaluate_stack_exterior_wavevectors;
-pub(crate) use isotropic::{IsotropicLayerQuantities, IsotropicMediumQuantities};
+pub(crate) use medium::{Channel, LayerQuantities, PrincipalConstitutive};
 pub(crate) use mode::{
     ModalSolutionSource, ModeReconstructionError, PlaneWaveModeCandidate,
     ReconstructExteriorModeWaves, ReconstructLayerModeWaves,
@@ -53,7 +53,7 @@ pub(crate) use solution::{
 #[doc(hidden)]
 pub use termination::ClosedSide;
 pub use termination::TerminationError;
-pub(crate) use termination::{exterior_parts, right_exterior_mode_waves, undefined_amplitudes};
+pub(crate) use termination::{right_exterior_mode_waves, undefined_amplitudes};
 pub use transfer2::{Transfer2, Transfer2Error};
 pub(crate) use workspace::{RetainedIsotropicLayers, SolutionWorkspace};
 
@@ -114,8 +114,7 @@ where
         polarisation: Polarisation,
     ) -> Result<PlaneWaveSolution<Self::Entries>, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>;
+        J: TensorConstitutiveLift<Domain, M>;
 
     /// Solve the problem while retaining intermediate state required for
     /// subsequent field or mode reconstruction.
@@ -127,6 +126,5 @@ where
         polarisation: Polarisation,
     ) -> Result<Self::Workspace, Self::Error>
     where
-        Domain: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveLift<Domain, M>;
+        J: TensorConstitutiveLift<Domain, M>;
 }

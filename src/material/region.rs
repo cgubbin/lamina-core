@@ -3,14 +3,15 @@
 
 use nalgebra::ComplexField;
 use ndarray::Dimension;
-use num_traits::Float;
+use num_traits::{Float, Zero};
 use thiserror::Error;
 
 use super::{
-    AnalyticalMaterialHandle, AnalyticalTensorMaterialHandle, ConstitutiveEvaluator,
-    ConstitutiveLift, DerivativeOrder, EvaluateDifferentiableMaterial,
+    AnalyticalMaterialHandle, AnalyticalTensorMaterialHandle, ConstitutiveDerivativeEvaluator,
+    ConstitutiveEvaluator, ConstitutiveLift, ConstitutiveSpectralFirstLift, DerivativeOrder,
+    DifferentiableMaterialHandle, EvaluateDifferentiableMaterial,
     EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
-    Rotation, Sampled, Tensor3,
+    Material, MaterialHandle, MeromorphicMaterialHandle, Rotation, Sampled, Tensor3,
 };
 use crate::{ComplexScalar, algebra::ScalarAlgebra, stack::StackRegion};
 
@@ -149,7 +150,32 @@ pub enum ConstitutiveTensor<J> {
     Full([[J; 3]; 3]),
 }
 
-/// A region's stack-frame tensors are unusable at an evaluated point.
+impl<J> ConstitutiveTensor<J> {
+    /// The diagonal `(xx, yy, zz)` of an isotropic or diagonal tensor.
+    pub(crate) fn into_diagonal(self) -> Option<[J; 3]>
+    where
+        J: Clone,
+    {
+        match self {
+            Self::Isotropic(value) => Some([value.clone(), value.clone(), value]),
+            Self::Diagonal(diagonal) => Some(diagonal),
+            Self::Full(_) => None,
+        }
+    }
+
+    /// Every stored entry.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = &J> {
+        let entries: Vec<&J> = match self {
+            Self::Isotropic(value) => vec![value],
+            Self::Diagonal(diagonal) => diagonal.iter().collect(),
+            Self::Full(full) => full.iter().flatten().collect(),
+        };
+        entries.into_iter()
+    }
+}
+
+/// A region's stack-frame tensors are unusable at an evaluated point, or its
+/// class is not supported by the formulation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum ConstitutiveError {
     #[error("{region:?}: a stack-frame permittivity or permeability entry is not finite")]
@@ -160,14 +186,12 @@ pub enum ConstitutiveError {
          the normal fields are eliminated through it"
     )]
     NormalComponentVanishes { region: StackRegion },
-}
 
-/// A region whose class the formulation does not support.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
-#[error("{region:?}: a {class:?} constitutive class is not supported by this formulation")]
-pub struct UnsupportedConstitutive {
-    pub region: StackRegion,
-    pub class: ConstitutiveClass,
+    #[error("{region:?}: a {class:?} constitutive class is not supported by this formulation")]
+    Unsupported {
+        region: StackRegion,
+        class: ConstitutiveClass,
+    },
 }
 
 /// One stack-frame entry `(R T Rᵀ)_{row, column}` of an oriented tensor
@@ -190,14 +214,7 @@ where
     C::RealField: Copy,
 {
     fn rotate(&self, tensor: Tensor3<C>) -> C {
-        let r = self.rotation.matrix();
-        let mut entry = C::zero();
-        for (k, tensor_row) in tensor.iter().enumerate() {
-            for (l, &value) in tensor_row.iter().enumerate() {
-                entry += value * C::from_real(r[self.row][k]) * C::from_real(r[self.column][l]);
-            }
-        }
-        entry
+        self.rotation.rotate(&tensor)[self.row][self.column]
     }
 }
 
@@ -243,10 +260,13 @@ rotated_entry!(EvaluateDifferentiableMeromorphicMaterial, C {}
 /// Class-preserving evaluation of a region's stack-frame ε and μ through the
 /// jet algebra.
 ///
-/// Isotropic regions evaluate exactly as through [`ConstitutiveLift`].
-/// Diagonal and full regions are validated at every sampled point: every
-/// entry finite, and `ε_zz ≠ 0`, `μ_zz ≠ 0`.
-#[doc(hidden)]
+/// A scalar material, or an isotropic region, evaluates exactly as through
+/// [`ConstitutiveLift`]. Diagonal and full regions are validated at every
+/// sampled point: every entry finite, and `ε_zz ≠ 0`, `μ_zz ≠ 0`.
+///
+/// This is the bound for code generic over a stack's material: the
+/// determinant and field evaluators require `J: TensorConstitutiveLift<E, M>`,
+/// which holds for every [`ScalarMaterial`] and for [`Constitutive`] regions.
 pub trait TensorConstitutiveLift<E, M>: ScalarAlgebra {
     /// Return `[ε, μ]` in the stack frame; `region` names the region in an
     /// error.
@@ -257,9 +277,70 @@ pub trait TensorConstitutiveLift<E, M>: ScalarAlgebra {
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError>;
 }
 
-impl<J, E, S, C>
-    TensorConstitutiveLift<E, Constitutive<S, AnalyticalTensorMaterialHandle<C>, C::RealField>>
-    for J
+/// `[∂ε/∂k0, ∂μ/∂k0]` of a region in the stack frame and its class, lifted
+/// through the jet algebra: the per-entry dispersive weights of the energy
+/// observables.
+#[doc(hidden)]
+pub trait TensorConstitutiveSpectralFirstLift<E, M>: ScalarAlgebra {
+    fn constitutive_tensors_spectral_first(
+        material: &M,
+        vacuum_angular_wavenumber: &Self,
+    ) -> [ConstitutiveTensor<Self>; 2];
+}
+
+/// A material with scalar ε and μ, which evaluates as an isotropic region:
+/// every [`Material`] and the erased scalar handles.
+pub trait ScalarMaterial {}
+
+impl<M: Material> ScalarMaterial for M {}
+impl<C: ComplexScalar> ScalarMaterial for MaterialHandle<C> {}
+impl<C: ComplexScalar> ScalarMaterial for DifferentiableMaterialHandle<C> {}
+impl<C: ComplexScalar> ScalarMaterial for MeromorphicMaterialHandle<C> {}
+impl<C: ComplexScalar> ScalarMaterial for AnalyticalMaterialHandle<C> {}
+
+impl<J, E, M> TensorConstitutiveLift<E, M> for J
+where
+    J: ConstitutiveLift<E, M>,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
+    M: ScalarMaterial,
+{
+    fn constitutive_tensors(
+        _: StackRegion,
+        material: &M,
+        k0: &Self,
+    ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
+        Ok([
+            ConstitutiveTensor::Isotropic(J::relative_permittivity(material, k0)),
+            ConstitutiveTensor::Isotropic(J::relative_permeability(material, k0)),
+        ])
+    }
+}
+
+impl<J, E, M> TensorConstitutiveSpectralFirstLift<E, M> for J
+where
+    J: ConstitutiveSpectralFirstLift<E, M>,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+    E: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
+    M: ScalarMaterial,
+{
+    fn constitutive_tensors_spectral_first(
+        material: &M,
+        k0: &Self,
+    ) -> [ConstitutiveTensor<Self>; 2] {
+        [
+            ConstitutiveTensor::Isotropic(J::relative_permittivity_spectral_first(material, k0)),
+            ConstitutiveTensor::Isotropic(J::relative_permeability_spectral_first(material, k0)),
+        ]
+    }
+}
+
+type Region<S, C> =
+    Constitutive<S, AnalyticalTensorMaterialHandle<C>, <C as ComplexField>::RealField>;
+
+impl<J, E, S, C> TensorConstitutiveLift<E, Region<S, C>> for J
 where
     J: ConstitutiveLift<E, S> + ConstitutiveLift<E, StackFrameEntry<C>>,
     J: ScalarAlgebra<Scalar = C>,
@@ -271,78 +352,133 @@ where
 {
     fn constitutive_tensors(
         region: StackRegion,
-        material: &Constitutive<S, AnalyticalTensorMaterialHandle<C>, C::RealField>,
+        material: &Region<S, C>,
         k0: &Self,
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
-        let (tensor, rotation, diagonal) = match &material.kind {
-            Kind::Isotropic(scalar) => {
-                return Ok([
-                    ConstitutiveTensor::Isotropic(
-                        <J as ConstitutiveLift<E, S>>::relative_permittivity(scalar, k0),
-                    ),
-                    ConstitutiveTensor::Isotropic(
-                        <J as ConstitutiveLift<E, S>>::relative_permeability(scalar, k0),
-                    ),
-                ]);
-            }
-            Kind::Oriented {
-                material,
-                rotation,
-                diagonal,
-                ..
-            } => (material, rotation, *diagonal),
-        };
+        let tensors = lift(
+            material,
+            |scalar| {
+                [
+                    <J as ConstitutiveLift<E, S>>::relative_permittivity(scalar, k0),
+                    <J as ConstitutiveLift<E, S>>::relative_permeability(scalar, k0),
+                ]
+            },
+            |entry| {
+                [
+                    <J as ConstitutiveLift<E, _>>::relative_permittivity(entry, k0),
+                    <J as ConstitutiveLift<E, _>>::relative_permeability(entry, k0),
+                ]
+            },
+        );
+        for tensor in &tensors {
+            validate(region, tensor)?;
+        }
+        Ok(tensors)
+    }
+}
 
-        let entry = |row: usize, column: usize| StackFrameEntry {
-            material: tensor.clone(),
+impl<J, E, S, C> TensorConstitutiveSpectralFirstLift<E, Region<S, C>> for J
+where
+    J: ConstitutiveSpectralFirstLift<E, S> + ConstitutiveSpectralFirstLift<E, StackFrameEntry<C>>,
+    J: ScalarAlgebra<Scalar = C>,
+    J::Dimension: Dimension,
+    C: ComplexScalar,
+    C::RealField: Copy,
+    E: ConstitutiveDerivativeEvaluator<C, J::Dimension, S>
+        + ConstitutiveDerivativeEvaluator<C, J::Dimension, StackFrameEntry<C>>,
+{
+    fn constitutive_tensors_spectral_first(
+        material: &Region<S, C>,
+        k0: &Self,
+    ) -> [ConstitutiveTensor<Self>; 2] {
+        lift(
+            material,
+            |scalar| {
+                [
+                    <J as ConstitutiveSpectralFirstLift<E, S>>::relative_permittivity_spectral_first(
+                        scalar, k0,
+                    ),
+                    <J as ConstitutiveSpectralFirstLift<E, S>>::relative_permeability_spectral_first(
+                        scalar, k0,
+                    ),
+                ]
+            },
+            |entry| {
+                [
+                    <J as ConstitutiveSpectralFirstLift<E, _>>::relative_permittivity_spectral_first(
+                        entry, k0,
+                    ),
+                    <J as ConstitutiveSpectralFirstLift<E, _>>::relative_permeability_spectral_first(
+                        entry, k0,
+                    ),
+                ]
+            },
+        )
+    }
+}
+
+/// `[ε, μ]` of `region` in its class: `scalar` lifts an isotropic region's
+/// material, `entry` each needed stack-frame entry of an oriented one.
+fn lift<J: Clone, S, C>(
+    region: &Region<S, C>,
+    scalar: impl Fn(&S) -> [J; 2],
+    entry: impl Fn(&StackFrameEntry<C>) -> [J; 2],
+) -> [ConstitutiveTensor<J>; 2]
+where
+    C: ComplexScalar,
+    C::RealField: Copy,
+{
+    let (material, rotation, diagonal) = match &region.kind {
+        Kind::Isotropic(material) => return scalar(material).map(ConstitutiveTensor::Isotropic),
+        Kind::Oriented {
+            material,
+            rotation,
+            diagonal,
+            ..
+        } => (material, rotation, *diagonal),
+    };
+    let cell = |row, column| {
+        entry(&StackFrameEntry {
+            material: material.clone(),
             rotation: *rotation,
             row,
             column,
-        };
-        let epsilon = |entry: &StackFrameEntry<C>| {
-            <J as ConstitutiveLift<E, _>>::relative_permittivity(entry, k0)
-        };
-        let mu = |entry: &StackFrameEntry<C>| {
-            <J as ConstitutiveLift<E, _>>::relative_permeability(entry, k0)
-        };
-
-        // Every entry finite; the last, row-major, is the normal component.
-        let validate = |entries: &[&J]| {
-            if !entries
-                .iter()
-                .all(|entry| entry.value().iter().all(|value| value.is_finite()))
-            {
-                return Err(ConstitutiveError::NonFinite { region });
-            }
-            match entries.last() {
-                Some(zz) if zz.value().iter().any(|value| *value == C::zero()) => {
-                    Err(ConstitutiveError::NormalComponentVanishes { region })
-                }
-                _ => Ok(()),
-            }
-        };
-
-        if diagonal {
-            let cells = [0, 1, 2].map(|axis| entry(axis, axis));
-            let [epsilon, mu] = [cells.each_ref().map(epsilon), cells.each_ref().map(mu)];
-            validate(&epsilon.each_ref())?;
-            validate(&mu.each_ref())?;
-            Ok([
-                ConstitutiveTensor::Diagonal(epsilon),
-                ConstitutiveTensor::Diagonal(mu),
-            ])
-        } else {
-            let cells = [0, 1, 2].map(|row| [0, 1, 2].map(|column| entry(row, column)));
-            let epsilon = cells.each_ref().map(|row| row.each_ref().map(epsilon));
-            let mu = cells.each_ref().map(|row| row.each_ref().map(mu));
-            validate(&epsilon.iter().flatten().collect::<Vec<_>>())?;
-            validate(&mu.iter().flatten().collect::<Vec<_>>())?;
-            Ok([
-                ConstitutiveTensor::Full(epsilon),
-                ConstitutiveTensor::Full(mu),
-            ])
-        }
+        })
+    };
+    if diagonal {
+        unzip([0, 1, 2].map(|axis| cell(axis, axis))).map(ConstitutiveTensor::Diagonal)
+    } else {
+        unzip([0, 1, 2].map(|row| unzip([0, 1, 2].map(|column| cell(row, column)))))
+            .map(ConstitutiveTensor::Full)
     }
+}
+
+fn unzip<J: Clone, const N: usize>(pairs: [[J; 2]; N]) -> [[J; N]; 2] {
+    [0, 1].map(|half| pairs.each_ref().map(|pair| pair[half].clone()))
+}
+
+/// Every entry of a diagonal or full tensor finite, and its `zz` entry
+/// nonzero at every sample.
+fn validate<J>(region: StackRegion, tensor: &ConstitutiveTensor<J>) -> Result<(), ConstitutiveError>
+where
+    J: ScalarAlgebra,
+    J::Scalar: ComplexScalar,
+{
+    let zz = match tensor {
+        ConstitutiveTensor::Isotropic(_) => return Ok(()),
+        ConstitutiveTensor::Diagonal(diagonal) => &diagonal[2],
+        ConstitutiveTensor::Full(full) => &full[2][2],
+    };
+    if !tensor
+        .entries()
+        .all(|entry| entry.value().iter().all(|value| value.is_finite()))
+    {
+        return Err(ConstitutiveError::NonFinite { region });
+    }
+    if zz.value().iter().any(|value| *value == J::Scalar::zero()) {
+        return Err(ConstitutiveError::NormalComponentVanishes { region });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

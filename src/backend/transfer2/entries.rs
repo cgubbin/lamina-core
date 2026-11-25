@@ -39,17 +39,13 @@ use num_traits::{One, Zero};
 
 use crate::{
     ComplexScalar, IncidentSide, PlaneWaveAmplitudes, PlaneWaveDeterminant, PlaneWavePower,
-    Polarisation,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
     backend::{
-        ClosedSide, ExteriorContextProvider, ExteriorWavevectors, PlaneWaveEntries,
-        PlaneWaveModeCandidate, TerminationError, exterior_parts,
-        isotropic::IsotropicLayerQuantities,
+        ExteriorContext, ExteriorContextProvider, PlaneWaveEntries, PlaneWaveModeCandidate,
+        medium::LayerQuantities,
         transfer2::{error::Transfer2Entry, state::right_outgoing_transfer_state},
         undefined_amplitudes,
     },
-    input::{CanonicalCoordinates, CanonicalStack},
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
     observable::{BoundaryState, ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
 
@@ -188,7 +184,7 @@ impl<A> Transfer2Entries<A> {
         Self::new(m11, m12, m21, m22)
     }
 
-    pub(crate) fn from_layer(quantities: &IsotropicLayerQuantities<A>, thickness: &A) -> Self
+    pub(crate) fn from_layer(quantities: &LayerQuantities<A>, thickness: &A) -> Self
     where
         A: ScalarAlgebra,
         A::Scalar: ComplexField + One,
@@ -210,173 +206,8 @@ impl<A> Transfer2Entries<A> {
     }
 }
 
-#[doc(hidden)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct Transfer2ExteriorContext<A> {
-    left_admittance: A,
-    right_admittance: A,
-    left_kappa: A,
-    right_kappa: A,
-    left_epsilon: A,
-    right_epsilon: A,
-    left_mu: A,
-    right_mu: A,
-    vacuum_angular_wavenumber: A,
-    parallel_angular_wavenumber: A,
-    polarisation: Polarisation,
-
-    left_closure: Option<ClosedSide<A>>,
-    right_closure: Option<ClosedSide<A>>,
-}
-
-impl<A> ExteriorContextProvider for Transfer2ExteriorContext<A> {
-    type Algebra = A;
-
-    fn left_admittance(&self) -> &A {
-        &self.left_admittance
-    }
-
-    fn right_admittance(&self) -> &A {
-        &self.right_admittance
-    }
-
-    fn left_kappa(&self) -> &A {
-        &self.left_kappa
-    }
-
-    fn right_kappa(&self) -> &A {
-        &self.right_kappa
-    }
-
-    fn left_epsilon(&self) -> &Self::Algebra {
-        &self.left_epsilon
-    }
-
-    fn right_epsilon(&self) -> &Self::Algebra {
-        &self.right_epsilon
-    }
-
-    fn left_mu(&self) -> &Self::Algebra {
-        &self.left_mu
-    }
-
-    fn right_mu(&self) -> &Self::Algebra {
-        &self.right_mu
-    }
-
-    fn vacuum_angular_wavenumber(&self) -> &Self::Algebra {
-        &self.vacuum_angular_wavenumber
-    }
-
-    fn parallel_angular_wavenumber(&self) -> &Self::Algebra {
-        &self.parallel_angular_wavenumber
-    }
-
-    fn polarisation(&self) -> Polarisation {
-        self.polarisation
-    }
-
-    fn left_closure(&self) -> Option<&ClosedSide<A>> {
-        self.left_closure.as_ref()
-    }
-
-    fn right_closure(&self) -> Option<&ClosedSide<A>> {
-        self.right_closure.as_ref()
-    }
-}
-
-impl<J> Transfer2ExteriorContext<J> {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_parts(
-        left_admittance: J,
-        right_admittance: J,
-        left_kappa: J,
-        right_kappa: J,
-        left_epsilon: J,
-        right_epsilon: J,
-        left_mu: J,
-        right_mu: J,
-        vacuum_angular_wavenumber: J,
-        parallel_angular_wavenumber: J,
-        polarisation: Polarisation,
-        left_closure: Option<ClosedSide<J>>,
-        right_closure: Option<ClosedSide<J>>,
-    ) -> Self {
-        Self {
-            left_admittance,
-            right_admittance,
-            left_kappa,
-            right_kappa,
-            left_epsilon,
-            right_epsilon,
-            left_mu,
-            right_mu,
-            vacuum_angular_wavenumber,
-            parallel_angular_wavenumber,
-            polarisation,
-            left_closure,
-            right_closure,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn new<E, M>(
-        coordinates: &CanonicalCoordinates<J>,
-        left_exterior: &M,
-        right_exterior: &M,
-        exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
-    ) -> Self
-    where
-        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
-        J::Scalar: ComplexScalar,
-        J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-        M: Clone,
-    {
-        let stack = CanonicalStack::new(left_exterior.clone(), right_exterior.clone(), Vec::new());
-
-        Self::for_stack::<E, M>(coordinates, &stack, exterior, polarisation)
-            .expect("an open stack takes both exterior wavevectors")
-    }
-
-    /// Construct the context for `stack`, whose open sides take their
-    /// wavevectors from `exterior` and whose closed sides take theirs from
-    /// the termination.
-    pub(crate) fn for_stack<E, M>(
-        coordinates: &CanonicalCoordinates<J>,
-        stack: &CanonicalStack<M, J>,
-        exterior: &ExteriorWavevectors<J>,
-        polarisation: Polarisation,
-    ) -> Result<Self, TerminationError>
-    where
-        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
-        J::Scalar: ComplexScalar,
-        J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
-    {
-        let parts = exterior_parts::<E, M, J>(coordinates, stack, exterior, polarisation)?;
-
-        Ok(Self::from_parts(
-            parts.left_admittance,
-            parts.right_admittance,
-            parts.left_kappa,
-            parts.right_kappa,
-            parts.left_epsilon,
-            parts.right_epsilon,
-            parts.left_mu,
-            parts.right_mu,
-            coordinates.vacuum_angular_wavenumber().clone(),
-            coordinates.parallel_angular_wavenumber().clone(),
-            polarisation,
-            parts.left_closure,
-            parts.right_closure,
-        ))
-    }
-}
-
 impl<A> PlaneWaveEntries for Transfer2Entries<A> {
-    type ExteriorContext = Transfer2ExteriorContext<A>;
+    type ExteriorContext = ExteriorContext<A>;
     type Algebra = A;
 }
 
@@ -475,7 +306,7 @@ where
 /// evaluators refuse it before projecting.
 fn closed_amplitudes<J>(
     entries: &Transfer2Entries<J>,
-    exterior: &Transfer2ExteriorContext<J>,
+    exterior: &ExteriorContext<J>,
     incident_side: IncidentSide,
 ) -> PlaneWaveAmplitudes<J>
 where
@@ -587,7 +418,7 @@ where
 /// carried through its gap and PML (see [`ClosedSide`]).
 pub(crate) fn right_gauged_mode_candidate<A>(
     entries: &Transfer2Entries<A>,
-    context: &Transfer2ExteriorContext<A>,
+    context: &ExteriorContext<A>,
 ) -> PlaneWaveModeCandidate<A>
 where
     A: ScalarAlgebra + Clone,
@@ -686,8 +517,7 @@ mod tests {
             (Polarisation::TransverseElectric, 1.0),
             (Polarisation::TransverseMagnetic, 4.0),
         ] {
-            let layer =
-                IsotropicLayerQuantities::complex_plane(&constant(4.0, 1.0), &coordinates, pol);
+            let layer = LayerQuantities::complex_plane(&constant(4.0, 1.0), &coordinates, pol);
             let m = Transfer2Entries::from_layer(&layer, &thickness);
             // Independent coefficients of cos(d sqrt(q)), sin(d sqrt(q))/sqrt(q),
             // q=4*k0^2-4 at k0=1. Axes are k0 and thickness.
@@ -793,11 +623,8 @@ mod tests {
         let material = constant(4.0, 1.0);
         let coordinates = coordinates(2.0, 0.3);
 
-        let quantities = IsotropicLayerQuantities::real_axis(
-            &material,
-            &coordinates,
-            Polarisation::TransverseElectric,
-        );
+        let quantities =
+            LayerQuantities::real_axis(&material, &coordinates, Polarisation::TransverseElectric);
 
         let matrix = Transfer2Entries::from_layer(&quantities, &real_j0(c(0.0)));
 
@@ -811,11 +638,8 @@ mod tests {
         let material = constant(4.0, 1.0);
         let coordinates = coordinates(2.0, 0.0);
 
-        let quantities = IsotropicLayerQuantities::real_axis(
-            &material,
-            &coordinates,
-            Polarisation::TransverseElectric,
-        );
+        let quantities =
+            LayerQuantities::real_axis(&material, &coordinates, Polarisation::TransverseElectric);
 
         let thickness = 0.2;
 
@@ -841,20 +665,12 @@ mod tests {
         let thickness = real_j0(c(0.1));
 
         let te = Transfer2Entries::from_layer(
-            &IsotropicLayerQuantities::real_axis(
-                &material,
-                &coordinates,
-                Polarisation::TransverseElectric,
-            ),
+            &LayerQuantities::real_axis(&material, &coordinates, Polarisation::TransverseElectric),
             &thickness,
         );
 
         let tm = Transfer2Entries::from_layer(
-            &IsotropicLayerQuantities::real_axis(
-                &material,
-                &coordinates,
-                Polarisation::TransverseMagnetic,
-            ),
+            &LayerQuantities::real_axis(&material, &coordinates, Polarisation::TransverseMagnetic),
             &thickness,
         );
 
@@ -867,7 +683,7 @@ mod tests {
         let material = linear(2.0, 0.4, 1.0, 0.1);
 
         let first = Transfer2Entries::from_layer(
-            &IsotropicLayerQuantities::real_axis(
+            &LayerQuantities::real_axis(
                 &material,
                 &coordinates(2.0, 0.2),
                 Polarisation::TransverseElectric,
@@ -876,7 +692,7 @@ mod tests {
         );
 
         let second = Transfer2Entries::from_layer(
-            &IsotropicLayerQuantities::real_axis(
+            &LayerQuantities::real_axis(
                 &material,
                 &coordinates(3.0, 0.2),
                 Polarisation::TransverseElectric,
@@ -912,9 +728,9 @@ mod projection_tests {
     use super::*;
 
     use crate::{
-        RealAxis,
+        ExteriorWavevectors, Polarisation, RealAxis,
         algebra::{ArrayJet0, Jet0, RealParameter},
-        backend::IsotropicMediumQuantities,
+        backend::{ExteriorContext, LayerQuantities},
         input::{CanonicalCoordinates, IncidentSide},
         test_support::materials::constant,
     };
@@ -956,29 +772,21 @@ mod projection_tests {
         left_epsilon: f64,
         right_epsilon: f64,
         polarisation: Polarisation,
-    ) -> Transfer2ExteriorContext<J> {
+    ) -> ExteriorContext<J> {
         let left_exterior = constant(left_epsilon, 1.0);
         let right_exterior = constant(right_epsilon, 1.0);
         let coordinates = coordinates();
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                &left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                &right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(&left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(&right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
-        Transfer2ExteriorContext::new::<crate::domain::RealAxis, _>(
+        ExteriorContext::new::<crate::domain::RealAxis, _>(
             &coordinates,
             &left_exterior,
             &right_exterior,
@@ -1076,8 +884,18 @@ mod projection_tests {
         let coordinates = coordinates();
 
         let ordinary = ExteriorWavevectors::new(
-            IsotropicMediumQuantities::real_axis(&left_exterior, &coordinates).into_kappa(),
-            IsotropicMediumQuantities::real_axis(&right_exterior, &coordinates).into_kappa(),
+            LayerQuantities::real_axis(
+                &left_exterior,
+                &coordinates,
+                Polarisation::TransverseElectric,
+            )
+            .into_kappa(),
+            LayerQuantities::real_axis(
+                &right_exterior,
+                &coordinates,
+                Polarisation::TransverseElectric,
+            )
+            .into_kappa(),
         );
 
         let flipped = ExteriorWavevectors::new(
@@ -1085,7 +903,7 @@ mod projection_tests {
             ordinary.right().unwrap().clone(),
         );
 
-        let ordinary_context = Transfer2ExteriorContext::new::<RealAxis, _>(
+        let ordinary_context = ExteriorContext::new::<RealAxis, _>(
             &coordinates,
             &left_exterior,
             &right_exterior,
@@ -1093,7 +911,7 @@ mod projection_tests {
             Polarisation::TransverseElectric,
         );
 
-        let flipped_context = Transfer2ExteriorContext::new::<RealAxis, _>(
+        let flipped_context = ExteriorContext::new::<RealAxis, _>(
             &coordinates,
             &left_exterior,
             &right_exterior,

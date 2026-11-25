@@ -18,7 +18,8 @@
 //!   in canonical complex coordinates, with caller-controlled holomorphic
 //!   derivative algebra and explicit exterior-wavevector branches.
 //!
-//! Two isotropic 2×2 numerical backends are provided:
+//! Two 2×2 numerical backends are provided, for stacks whose permittivity and
+//! permeability are isotropic or diagonal in the stack frame:
 //!
 //! - [`Scatter2`] uses scattering-matrix composition and is the recommended
 //!   default;
@@ -297,20 +298,21 @@
 //! therefore be sampled on either the real spectral axis or in the complex
 //! plane when its material models support the corresponding domain.
 //!
-//! Isotropic layer calculations propagate the constitutive parameters
+//! Layer calculations propagate the constitutive parameters
 //!
 //! ```text
 //! ε(k₀), μ(k₀)
 //! ```
 //!
-//! together with any derivatives required by the selected jet algebra.
+//! scalar, or the stack-frame diagonals of tensors, together with any
+//! derivatives required by the selected jet algebra.
 //!
 //! This makes dispersive material response part of the differentiated
 //! electromagnetic problem rather than a separate post-processing correction.
 //!
 //! ## Scattering and transfer backends
 //!
-//! [`Scatter2`] and [`Transfer2`] solve the same isotropic scalar-channel
+//! [`Scatter2`] and [`Transfer2`] solve the same scalar-channel (TE or TM)
 //! problem and expose the same backend-independent response and reconstruction
 //! interfaces.
 //!
@@ -352,7 +354,7 @@
 //! constitutive evaluation
 //!        │
 //!        ▼
-//! jet-valued isotropic layer quantities
+//! jet-valued per-polarisation layer quantities
 //!        │
 //!        ▼
 //! Scatter2 / Transfer2
@@ -381,7 +383,8 @@
 //! reconstruction, the constitutive traits that material models implement, and
 //! canonical coordinates, with derivatives of each with respect to spectral,
 //! in-plane, thickness and material parameters. The numerical backends
-//! implement isotropic 2×2 transfer and scattering formulations.
+//! implement 2×2 transfer and scattering formulations for isotropic and
+//! stack-frame-diagonal media.
 
 pub(crate) mod algebra;
 pub mod backend;
@@ -437,8 +440,8 @@ pub use material::{
     DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial,
     EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
     EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, MeromorphicTensorMaterial,
-    Rotation, RotationError, Sampled, Scalar, SignedAxis, TensorConstitutiveLift, TensorMaterial,
-    UnsupportedConstitutive,
+    Rotation, RotationError, Sampled, Scalar, ScalarMaterial, SignedAxis, TensorConstitutiveLift,
+    TensorMaterial,
 };
 
 pub use field::VectorField;
@@ -466,8 +469,8 @@ pub mod units {
 
 /// Normalization-independent homogeneous field recovery for supported backends.
 pub use evaluate::{
-    DirectionalModeFields, ModalCharacteristicDirection, ModalDerivativeBackend, ModalFieldBackend,
-    OwnedModeFields, UnscaledFieldError, UnscaledFieldResult,
+    ConstitutiveRates, DirectionalModeFields, ModalCharacteristicDirection, ModalDerivativeBackend,
+    ModalFieldBackend, OwnedModeFields, UnscaledFieldError, UnscaledFieldResult,
 };
 
 /// Complete scalar pole normalization with analytic outgoing boundary terms.

@@ -35,8 +35,8 @@ fn retained_backends_agree_on_exterior_constitutive_quantities() {
     let scatter = scatter.workspace().solution().context();
     let transfer = transfer.workspace().solution().context();
 
-    assert_first_jet_close(scatter.left_epsilon(), transfer.left_epsilon());
-    assert_first_jet_close(scatter.left_mu(), transfer.left_mu());
-    assert_first_jet_close(scatter.right_epsilon(), transfer.right_epsilon());
-    assert_first_jet_close(scatter.right_mu(), transfer.right_mu());
+    assert_first_jet_close(scatter.left().epsilon(), transfer.left().epsilon());
+    assert_first_jet_close(scatter.left().mu(), transfer.left().mu());
+    assert_first_jet_close(scatter.right().epsilon(), transfer.right().epsilon());
+    assert_first_jet_close(scatter.right().mu(), transfer.right().mu());
 }

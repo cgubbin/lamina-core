@@ -23,7 +23,6 @@ use crate::{
     backend::{Backend, PlaneWaveSolution, evaluate_stack_exterior_wavevectors},
     domain::RealAxis,
     input::{CompileJet, CompilePlaneWaveError, CoordinateInput, ValidationConfig, compile_real},
-    material::ConstitutiveEvaluator,
     parameter::{DerivativeMapping, Parameter},
     scalar::ComplexScalar,
     stack::Stack,
@@ -82,7 +81,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         ValueJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<ValueJet<Complex<R>, D>, RealAxis>,
     {
         let mapping = DerivativeMapping::none();
@@ -102,7 +100,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         ValueJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<ValueJet<Complex<R>, D>, RealAxis>,
     {
         let mapping = DerivativeMapping::none();
@@ -126,7 +123,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         FirstJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<FirstJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -150,7 +146,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         FirstJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<FirstJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -176,7 +171,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         SecondJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<SecondJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -200,7 +194,6 @@ impl<B> RealAxisEvaluator<B> {
         D: Dimension,
         M: Clone,
         SecondJet<Complex<R>, D>: Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<SecondJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -231,7 +224,6 @@ impl<B> RealAxisEvaluator<B> {
         M: Clone,
         BivariateFirstJet<Complex<R>, D>:
             Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<BivariateFirstJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -257,7 +249,6 @@ impl<B> RealAxisEvaluator<B> {
         M: Clone,
         BivariateFirstJet<Complex<R>, D>:
             Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<BivariateFirstJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -287,7 +278,6 @@ impl<B> RealAxisEvaluator<B> {
         M: Clone,
         BivariateSecondJet<Complex<R>, D>:
             Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<BivariateSecondJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -313,7 +303,6 @@ impl<B> RealAxisEvaluator<B> {
         M: Clone,
         BivariateSecondJet<Complex<R>, D>:
             Jet<Scalar = Complex<R>, Dimension = D> + CompileJet<M, RealAxis>,
-        RealAxis: ConstitutiveEvaluator<Complex<R>, D, M>,
         B: Backend<BivariateSecondJet<Complex<R>, D>, RealAxis>,
     {
         let mapping =
@@ -344,7 +333,6 @@ impl<B> RealAxisEvaluator<B> {
         <J::Scalar as ComplexField>::RealField: Float + FloatConst + FromPrimitive + Debug + Copy,
         J::Dimension: Dimension,
         M: Clone,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, RealAxis>,
     {
         let (canonical_problem, context) =
@@ -354,7 +342,9 @@ impl<B> RealAxisEvaluator<B> {
         let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
             canonical_problem.stack(),
-        );
+            polarisation,
+        )
+        .map_err(RealAxisEvaluationError::Constitutive)?;
 
         let solution = self
             .backend
@@ -389,7 +379,6 @@ impl<B> RealAxisEvaluator<B> {
         <J::Scalar as ComplexField>::RealField: Float + FloatConst + FromPrimitive + Debug + Copy,
         J::Dimension: Dimension,
         M: Clone,
-        RealAxis: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
         B: Backend<J, RealAxis>,
     {
         let (canonical_problem, context) =
@@ -399,7 +388,9 @@ impl<B> RealAxisEvaluator<B> {
         let exterior = evaluate_stack_exterior_wavevectors::<RealAxis, M, J>(
             canonical_problem.coordinates(),
             canonical_problem.stack(),
-        );
+            polarisation,
+        )
+        .map_err(RealAxisEvaluationError::Constitutive)?;
 
         let workspace = self
             .backend

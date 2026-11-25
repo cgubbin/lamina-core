@@ -504,6 +504,20 @@ where
     }
 }
 
+impl<T, D> JetMultiplyByScalar<VectorField<T, D>> for VectorField<T, D>
+where
+    T: ComplexField + Copy,
+    D: Dimension,
+{
+    fn jet_multiply_by_scalar(&self, factor: &Self) -> Self {
+        Self::new_unchecked(
+            &self.x * &factor.x,
+            &self.y * &factor.y,
+            &self.z * &factor.z,
+        )
+    }
+}
+
 impl<C, D> JetScaleBy for VectorField<C, D>
 where
     C: ComplexField + Copy,

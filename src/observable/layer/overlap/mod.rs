@@ -12,7 +12,7 @@ pub(crate) use bilinear::{BilinearLayerOverlap, BilinearLayerOverlapInput};
 pub(crate) use error::OverlapError;
 pub(crate) use hermitian::{HermitianLayerOverlap, HermitianLayerOverlapInput};
 
-use crate::{backend::IsotropicLayerQuantities, observable::BoundaryWaves};
+use crate::{backend::LayerQuantities, observable::BoundaryWaves};
 
 /// Matched left and right solution data for one physical finite layer.
 ///
@@ -54,18 +54,15 @@ impl<A> LayerOverlapInput<A> {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct LayerOverlapOperand<A> {
     waves: BoundaryWaves<A>,
-    quantities: IsotropicLayerQuantities<A>,
+    quantities: LayerQuantities<A>,
 }
 
 impl<A> LayerOverlapOperand<A> {
-    pub(crate) const fn new(
-        waves: BoundaryWaves<A>,
-        quantities: IsotropicLayerQuantities<A>,
-    ) -> Self {
+    pub(crate) const fn new(waves: BoundaryWaves<A>, quantities: LayerQuantities<A>) -> Self {
         Self { waves, quantities }
     }
 
-    fn into_parts(self) -> (BoundaryWaves<A>, IsotropicLayerQuantities<A>) {
+    fn into_parts(self) -> (BoundaryWaves<A>, LayerQuantities<A>) {
         (self.waves, self.quantities)
     }
 }

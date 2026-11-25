@@ -1,9 +1,9 @@
-//! Internal evaluation kernel for the isotropic 2×2 transfer backend.
+//! Internal evaluation kernel for the 2×2 transfer backend.
 //!
 //! This module evaluates the native transfer matrix of a finite planar stack.
 //! It is responsible for:
 //!
-//! - evaluating isotropic quantities once per finite layer;
+//! - evaluating medium quantities once per finite layer;
 //! - constructing each finite-layer transfer matrix;
 //! - composing layer matrices in physical propagation order;
 //! - retaining finite-layer state when reconstruction is requested;
@@ -34,18 +34,16 @@ use nalgebra::ComplexField;
 use ndarray::Dimension;
 
 use crate::{
-    ComplexScalar, Polarisation,
+    ComplexScalar, FiniteLayerIndex, Polarisation,
     algebra::ScalarAlgebra,
     backend::{
-        ExteriorWavevectors, RunMode,
-        isotropic::IsotropicLayerQuantities,
-        transfer2::{
-            Transfer2Entries, Transfer2Error, TransferStabilityCheck,
-            entries::Transfer2ExteriorContext,
-        },
+        ExteriorContext, ExteriorWavevectors, RunMode,
+        medium::LayerQuantities,
+        transfer2::{Transfer2Entries, Transfer2Error, TransferStabilityCheck},
     },
     input::{CanonicalCoordinates, CanonicalStack},
-    material::{ConstitutiveEvaluator, ConstitutiveLift},
+    material::TensorConstitutiveLift,
+    stack::StackRegion,
 };
 
 use super::{Transfer2, Transfer2Workspace};
@@ -60,13 +58,12 @@ impl Transfer2 {
         request: RunMode,
     ) -> Result<Transfer2Workspace<J>, Transfer2Error>
     where
-        J: ScalarAlgebra + ConstitutiveLift<E, M> + Clone,
+        J: ScalarAlgebra + TensorConstitutiveLift<E, M> + Clone,
         J::Scalar: ComplexScalar,
         <J::Scalar as ComplexField>::RealField: Copy,
         J::Dimension: Dimension,
-        E: ConstitutiveEvaluator<J::Scalar, J::Dimension, M>,
     {
-        let context = Transfer2ExteriorContext::for_stack::<E, M>(
+        let context = ExteriorContext::for_stack::<E, M, Transfer2Error>(
             coordinates,
             stack,
             exterior,
@@ -81,11 +78,12 @@ impl Transfer2 {
         );
 
         for (layer_index, layer) in stack.layers().iter().enumerate() {
-            let quantities = IsotropicLayerQuantities::evaluate::<E, M>(
+            let quantities = LayerQuantities::evaluate::<E, M>(
+                StackRegion::Layer(FiniteLayerIndex::new(layer_index)),
                 layer.material(),
                 coordinates,
                 polarisation,
-            );
+            )?;
 
             let layer_matrix = Transfer2Entries::from_layer(&quantities, layer.thickness_cm());
 
@@ -221,7 +219,7 @@ mod tests {
             )
             .unwrap();
 
-        let quantities = IsotropicLayerQuantities::real_axis(
+        let quantities = LayerQuantities::real_axis(
             stack.layers()[0].material(),
             &coordinates,
             Polarisation::TransverseElectric,
@@ -248,13 +246,13 @@ mod tests {
             )
             .unwrap();
 
-        let first_quantities = IsotropicLayerQuantities::real_axis(
+        let first_quantities = LayerQuantities::real_axis(
             stack.layers()[0].material(),
             &coordinates,
             Polarisation::TransverseElectric,
         );
 
-        let second_quantities = IsotropicLayerQuantities::real_axis(
+        let second_quantities = LayerQuantities::real_axis(
             stack.layers()[1].material(),
             &coordinates,
             Polarisation::TransverseElectric,
@@ -389,14 +387,14 @@ mod tests {
                 &first_coordinates,
                 &stack,
                 &ExteriorWavevectors::new(
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.left_exterior(),
                         &first_coordinates,
                         polarisation,
                     )
                     .kappa()
                     .clone(),
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.right_exterior(),
                         &first_coordinates,
                         polarisation,
@@ -416,14 +414,14 @@ mod tests {
                 &second_coordinates,
                 &stack,
                 &ExteriorWavevectors::new(
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.left_exterior(),
                         &second_coordinates,
                         polarisation,
                     )
                     .kappa()
                     .clone(),
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.right_exterior(),
                         &second_coordinates,
                         polarisation,
@@ -486,7 +484,7 @@ mod stability_tests {
 
     use super::*;
     use crate::{
-        Constant, RealAxis,
+        Constant,
         algebra::{ArrayJet0, Jet0, RealParameter},
         backend::transfer2::error::Transfer2Entry,
         input::canonical::{CanonicalCoordinates, CanonicalLayer, CanonicalStack},
@@ -540,20 +538,12 @@ mod stability_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         for policy in [
@@ -587,20 +577,12 @@ mod stability_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         let error = Transfer2::with_stability_check(TransferStabilityCheck::PerLayer)
@@ -628,20 +610,12 @@ mod stability_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         let error = Transfer2::with_stability_check(TransferStabilityCheck::Final)
@@ -666,20 +640,12 @@ mod stability_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         let workspace = Transfer2::with_stability_check(TransferStabilityCheck::Disabled)
@@ -704,20 +670,12 @@ mod stability_tests {
         let polarisation = Polarisation::TransverseElectric;
 
         let exterior = ExteriorWavevectors::new(
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                left_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
-            IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                right_exterior,
-                &coordinates,
-                polarisation,
-            )
-            .kappa()
-            .clone(),
+            LayerQuantities::real_axis(left_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
+            LayerQuantities::real_axis(right_exterior, &coordinates, polarisation)
+                .kappa()
+                .clone(),
         );
 
         let per_layer = Transfer2::with_stability_check(TransferStabilityCheck::PerLayer)

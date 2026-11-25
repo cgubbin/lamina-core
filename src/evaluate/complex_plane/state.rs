@@ -6,16 +6,18 @@ use num_traits::{FromPrimitive, One};
 use crate::observable::IsotropicConstitutiveSpectralData;
 use crate::{
     CanonicalCoordinates, ComplexPlane, ComplexScalar, ExteriorWavevectors, Polarisation,
-    algebra::{ComplexJet, Jet, JetStack, ScalarAlgebra, ScalarAlgebraExpRelExt},
+    algebra::{
+        CartesianScalarAlgebra, ComplexJet, Jet, JetStack, ScalarAlgebra, ScalarAlgebraExpRelExt,
+    },
     backend::{
         ExteriorContextProvider, ModalSolutionSource, PlaneWaveEntries, PlaneWaveSolutionSource,
         PlaneWaveSolutionView, ReconstructLayerModeWaves, RetainedIsotropicLayers,
     },
     input::{CanonicalStack, JetMapping},
-    material::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift},
+    material::TensorConstitutiveSpectralFirstLift,
     observable::{
         ConstitutiveSamplingContext, ConstitutiveSamplingError, IsotropicConstitutiveParameters,
-        ProjectPlaneWaveModeDeterminant,
+        ProjectPlaneWaveModeDeterminant, SampledWeights,
     },
     spatial::ResolvedFieldSampling,
 };
@@ -86,14 +88,13 @@ where
         J: ComplexJet
             + ScalarAlgebra
             + ScalarAlgebraExpRelExt
-            + ConstitutiveSpectralFirstLift<ComplexPlane, M>
+            + TensorConstitutiveSpectralFirstLift<ComplexPlane, M>
             + Clone
             + JetMapping,
         J::RealJet: ScalarAlgebra,
         J::Scalar: ComplexScalar,
         <J::RealJet as Jet>::Scalar: FromPrimitive + One,
         J::Dimension: Dimension,
-        ComplexPlane: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
         W: PlaneWaveSolutionSource
             + ReconstructLayerModeWaves<Algebra = J>
             + RetainedIsotropicLayers<Algebra = J>
@@ -106,12 +107,16 @@ where
     pub(crate) fn raw_constitutive_parameters(
         &self,
         sampling: &ResolvedFieldSampling<<J::Scalar as ComplexField>::RealField>,
-    ) -> Result<IsotropicConstitutiveParameters<J::Stacked>, ConstitutiveSamplingError>
+    ) -> Result<
+        SampledWeights<J, IsotropicConstitutiveParameters<J::Stacked>>,
+        ConstitutiveSamplingError,
+    >
     where
         W: PlaneWaveSolutionSource + RetainedIsotropicLayers<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
         J: JetStack + Clone,
         J::Dimension: Dimension,
+        J::Stacked: CartesianScalarAlgebra,
     {
         let context = ConstitutiveSamplingContext::new(self.workspace());
 
@@ -122,15 +127,18 @@ where
     pub(crate) fn raw_constitutive_spectral_first_parameters<E>(
         &self,
         sampling: &ResolvedFieldSampling<<J::Scalar as ComplexField>::RealField>,
-    ) -> Result<IsotropicConstitutiveSpectralData<J::Stacked>, ConstitutiveSamplingError>
+    ) -> Result<
+        SampledWeights<J, IsotropicConstitutiveSpectralData<J::Stacked>>,
+        ConstitutiveSamplingError,
+    >
     where
         W: PlaneWaveSolutionSource + RetainedIsotropicLayers<Algebra = J>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
         J: JetStack + Clone,
         J::Dimension: Dimension,
+        J::Stacked: CartesianScalarAlgebra,
         J::Scalar: ComplexScalar,
-        E: ConstitutiveDerivativeEvaluator<J::Scalar, J::Dimension, M>,
-        J: ConstitutiveSpectralFirstLift<E, M>,
+        J: TensorConstitutiveSpectralFirstLift<E, M>,
     {
         let context = ConstitutiveSamplingContext::new(self.workspace());
 

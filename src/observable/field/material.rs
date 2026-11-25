@@ -4,17 +4,19 @@ use ndarray::Dimension;
 
 use crate::{
     ComplexScalar,
-    algebra::{Jet, JetStack},
+    algebra::{CartesianScalarAlgebra, Jet, JetStack},
     backend::{
-        ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolutionSource, RetainedIsotropicLayers,
+        ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolutionSource, PrincipalConstitutive,
+        RetainedIsotropicLayers,
     },
     input::CanonicalStack,
-    material::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift},
+    material::{ConstitutiveError, ConstitutiveTensor, TensorConstitutiveSpectralFirstLift},
     observable::{
         FieldReconstructionError, IsotropicConstitutiveParameters,
         IsotropicConstitutiveSpectralData, field::constitutive::IsotropicConstitutiveSpectralFirst,
     },
     spatial::{FieldPosition, FieldSamplingError, ResolvedFieldSampling},
+    stack::StackRegion,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +35,10 @@ pub enum ConstitutiveFieldReconstructionError<R> {
 /// spatial field request.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum ConstitutiveSamplingError {
+    /// A sampled region's spectral derivatives are not isotropic or diagonal.
+    #[error(transparent)]
+    Constitutive(#[from] ConstitutiveError),
+
     /// A finite-layer position referred to retained data which were absent.
     #[error("retained constitutive data are missing for finite layer {index}")]
     MissingLayerData { index: usize },
@@ -67,11 +73,29 @@ impl<'a, W, A> ConstitutiveSamplingContext<'a, W, A> {
             algebra: PhantomData,
         }
     }
+}
 
-    pub(crate) const fn workspace(&self) -> &'a W {
-        self.workspace
+/// Constitutive weights sampled at field positions: scalars when every
+/// sampled region is isotropic, otherwise per Cartesian component, stacked
+/// as vectors of `(xx, yy, zz)`.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SampledConstitutive<I, V> {
+    Isotropic(I),
+    Diagonal { electric: V, magnetic: V },
+}
+
+#[cfg(test)]
+impl<I, V> SampledConstitutive<I, V> {
+    pub(crate) fn isotropic(self) -> I {
+        match self {
+            Self::Isotropic(isotropic) => isotropic,
+            Self::Diagonal { .. } => panic!("expected isotropic samples"),
+        }
     }
 }
+
+pub(crate) type SampledWeights<A, I> =
+    SampledConstitutive<I, <<A as JetStack>::Stacked as CartesianScalarAlgebra>::Vector>;
 
 impl<'a, W, A> ConstitutiveSamplingContext<'a, W, A>
 where
@@ -79,7 +103,40 @@ where
     <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = A>,
     A: JetStack + Clone,
     A::Dimension: Dimension,
+    A::Stacked: CartesianScalarAlgebra,
 {
+    /// Call `f` with the region and retained constitutive entries of every
+    /// requested position, in order.
+    fn for_each_region<R>(
+        &self,
+        sampling: &ResolvedFieldSampling<R>,
+        mut f: impl FnMut(
+            StackRegion,
+            &PrincipalConstitutive<A>,
+        ) -> Result<(), ConstitutiveSamplingError>,
+    ) -> Result<(), ConstitutiveSamplingError> {
+        let solution = self.workspace.solution();
+        let exterior = solution.context();
+
+        for position in sampling.positions() {
+            match position {
+                FieldPosition::LeftExterior { .. } => {
+                    f(StackRegion::LeftExterior, exterior.left().constitutive())?;
+                }
+                FieldPosition::Layer { index, .. } => {
+                    let quantities = self.workspace.layer_quantities(index.get()).ok_or(
+                        ConstitutiveSamplingError::MissingLayerData { index: index.get() },
+                    )?;
+                    f(StackRegion::Layer(*index), quantities.constitutive())?;
+                }
+                FieldPosition::RightExterior { .. } => {
+                    f(StackRegion::RightExterior, exterior.right().constitutive())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Sample relative permittivity and permeability at the requested
     /// resolved spatial positions.
     ///
@@ -88,137 +145,143 @@ where
     pub(crate) fn sample<R>(
         &self,
         sampling: &ResolvedFieldSampling<R>,
-    ) -> Result<IsotropicConstitutiveParameters<A::Stacked>, ConstitutiveSamplingError> {
-        let solution = self.workspace().solution();
-        let exterior = solution.context();
+    ) -> Result<
+        SampledWeights<A, IsotropicConstitutiveParameters<A::Stacked>>,
+        ConstitutiveSamplingError,
+    > {
+        let mut regions = Vec::with_capacity(sampling.len());
+        self.for_each_region(sampling, |_, constitutive| {
+            regions.push(constitutive.clone());
+            Ok(())
+        })?;
 
         let mut sampled = ConstitutiveSequences::with_capacity(sampling.len());
-
-        for position in sampling.positions() {
-            match position {
-                FieldPosition::LeftExterior { .. } => {
-                    sampled.push(exterior.left_epsilon(), exterior.left_mu());
-                }
-
-                FieldPosition::Layer { index, .. } => {
-                    let quantities = self.workspace.layer_quantities(index.get()).ok_or(
-                        ConstitutiveSamplingError::MissingLayerData { index: index.get() },
-                    )?;
-
-                    sampled.push(quantities.epsilon(), quantities.mu());
-                }
-
-                FieldPosition::RightExterior { .. } => {
-                    sampled.push(exterior.right_epsilon(), exterior.right_mu());
+        for region in &regions {
+            match region {
+                PrincipalConstitutive::Isotropic { epsilon, mu } => sampled.push(epsilon, mu),
+                PrincipalConstitutive::Diagonal { .. } => {
+                    return stack_diagonal(
+                        regions
+                            .iter()
+                            .map(|region| region.diagonal().map(|entries| entries.map(A::clone)))
+                            .collect(),
+                    );
                 }
             }
         }
-
-        sampled.stack()
+        Ok(SampledConstitutive::Isotropic(sampled.stack()?))
     }
 
+    /// Sample the constitutive parameters and their spectral derivatives at
+    /// the requested positions; where a sampled region is diagonal, the
+    /// per-component dispersive weights `∂(k0 ε_ii)/∂k0` and `∂(k0 μ_ii)/∂k0`.
     pub(crate) fn sample_spectral_first<R, M, E>(
         &self,
         sampling: &ResolvedFieldSampling<R>,
         stack: &CanonicalStack<M, A>,
-    ) -> Result<IsotropicConstitutiveSpectralData<A::Stacked>, ConstitutiveSamplingError>
+    ) -> Result<
+        SampledWeights<A, IsotropicConstitutiveSpectralData<A::Stacked>>,
+        ConstitutiveSamplingError,
+    >
     where
         M: 'a,
-        A: Jet + ConstitutiveSpectralFirstLift<E, M> + Clone,
+        A: Jet + TensorConstitutiveSpectralFirstLift<E, M>,
         A::Scalar: ComplexScalar,
-        A::Dimension: Dimension,
-        E: ConstitutiveDerivativeEvaluator<A::Scalar, A::Dimension, M>,
     {
         let solution = self.workspace.solution();
-        let exterior = solution.context();
+        let k0 = solution.context().vacuum_angular_wavenumber();
+
+        let mut regions = Vec::with_capacity(sampling.len());
+        self.for_each_region(sampling, |region, constitutive| {
+            let material = match region {
+                StackRegion::LeftExterior => stack.left_exterior(),
+                StackRegion::Layer(index) => stack
+                    .layer(index)
+                    .ok_or(ConstitutiveSamplingError::MissingLayerData { index: index.get() })?
+                    .material(),
+                StackRegion::RightExterior => stack.right_exterior(),
+            };
+            regions.push((
+                region,
+                constitutive.clone(),
+                A::constitutive_tensors_spectral_first(material, k0),
+            ));
+            Ok(())
+        })?;
 
         let mut sampled = ConstitutiveSequences::with_capacity(sampling.len());
         let mut sampled_derivatives = ConstitutiveSequences::with_capacity(sampling.len());
-
-        for position in sampling.positions() {
-            match position {
-                FieldPosition::LeftExterior { .. } => {
-                    sampled.push(exterior.left_epsilon(), exterior.left_mu());
-
-                    let epsilon_spectral_first = A::relative_permittivity_spectral_first(
-                        stack.left_exterior(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    let mu_spectral_first = A::relative_permeability_spectral_first(
-                        stack.left_exterior(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    sampled_derivatives.push(&epsilon_spectral_first, &mu_spectral_first);
+        for (_, constitutive, derivative) in &regions {
+            match (constitutive, derivative) {
+                (
+                    PrincipalConstitutive::Isotropic { epsilon, mu },
+                    [
+                        ConstitutiveTensor::Isotropic(epsilon_spectral_first),
+                        ConstitutiveTensor::Isotropic(mu_spectral_first),
+                    ],
+                ) => {
+                    sampled.push(epsilon, mu);
+                    sampled_derivatives.push(epsilon_spectral_first, mu_spectral_first);
                 }
-
-                FieldPosition::Layer { index, .. } => {
-                    let quantities = self.workspace.layer_quantities(index.get()).ok_or(
-                        ConstitutiveSamplingError::MissingLayerData { index: index.get() },
-                    )?;
-
-                    sampled.push(quantities.epsilon(), quantities.mu());
-
-                    let layer =
-                        stack
-                            .layer(*index)
-                            .ok_or(ConstitutiveSamplingError::MissingLayerData {
-                                index: index.get(),
-                            })?;
-
-                    let epsilon_spectral_first = A::relative_permittivity_spectral_first(
-                        layer.material(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    let mu_spectral_first = A::relative_permeability_spectral_first(
-                        layer.material(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    sampled_derivatives.push(&epsilon_spectral_first, &mu_spectral_first);
-                }
-
-                FieldPosition::RightExterior { .. } => {
-                    sampled.push(exterior.right_epsilon(), exterior.right_mu());
-
-                    let epsilon_spectral_first = A::relative_permittivity_spectral_first(
-                        stack.right_exterior(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    let mu_spectral_first = A::relative_permeability_spectral_first(
-                        stack.right_exterior(),
-                        exterior.vacuum_angular_wavenumber(),
-                    );
-
-                    sampled_derivatives.push(&epsilon_spectral_first, &mu_spectral_first);
+                _ => {
+                    let weights = regions
+                        .into_iter()
+                        .map(|(region, constitutive, derivative)| {
+                            let derivative = PrincipalConstitutive::new(region, derivative)?;
+                            let brillouin = |value: [&A; 3], first: [&A; 3]| {
+                                [0, 1, 2].map(|axis| value[axis].add(&k0.multiply(first[axis])))
+                            };
+                            let [epsilon, mu] = constitutive.diagonal();
+                            let [epsilon_first, mu_first] = derivative.diagonal();
+                            Ok([brillouin(epsilon, epsilon_first), brillouin(mu, mu_first)])
+                        })
+                        .collect::<Result<_, ConstitutiveError>>()?;
+                    return stack_diagonal(weights);
                 }
             }
         }
 
         let parameters = sampled.stack()?;
-
-        let spectral_first = sampled_derivatives.stack()?;
-
-        let (epsilon_spectral_first, mu_spectral_first) = spectral_first.into_parts();
-
+        let (epsilon_spectral_first, mu_spectral_first) = sampled_derivatives.stack()?.into_parts();
         let spectral_first =
             IsotropicConstitutiveSpectralFirst::new(epsilon_spectral_first, mu_spectral_first);
 
-        let k0 = A::stack(
-            std::iter::repeat_n(exterior.vacuum_angular_wavenumber().clone(), sampling.len())
-                .collect(),
-        )?
-        .ok_or(ConstitutiveSamplingError::EmptySampling)?;
+        let k0 = A::stack(std::iter::repeat_n(k0.clone(), sampling.len()).collect())?
+            .ok_or(ConstitutiveSamplingError::EmptySampling)?;
 
-        Ok(IsotropicConstitutiveSpectralData::new(
-            parameters,
-            spectral_first,
-            k0,
+        Ok(SampledConstitutive::Isotropic(
+            IsotropicConstitutiveSpectralData::new(parameters, spectral_first, k0),
         ))
     }
+}
+
+/// Stack per-position `[electric, magnetic]` diagonals into vectors along the
+/// spatial axis.
+fn stack_diagonal<A, I>(
+    positions: Vec<[[A; 3]; 2]>,
+) -> Result<SampledWeights<A, I>, ConstitutiveSamplingError>
+where
+    A: JetStack,
+    A::Dimension: Dimension,
+    A::Stacked: CartesianScalarAlgebra,
+{
+    let mut columns: [[Vec<A>; 3]; 2] = Default::default();
+    for position in positions {
+        for (quantity, diagonal) in columns.iter_mut().zip(position) {
+            for (column, entry) in quantity.iter_mut().zip(diagonal) {
+                column.push(entry);
+            }
+        }
+    }
+    let [electric, magnetic] = columns.map(|quantity| {
+        let [x, y, z] = quantity
+            .map(|column| A::stack(column)?.ok_or(ConstitutiveSamplingError::EmptySampling));
+        Ok::<_, ConstitutiveSamplingError>(A::Stacked::cartesian_vector(x?, y?, z?))
+    });
+    Ok(SampledConstitutive::Diagonal {
+        electric: electric?,
+        magnetic: magnetic?,
+    })
 }
 
 struct ConstitutiveSequences<A> {
@@ -372,7 +435,8 @@ mod tests {
 
             let sampled = ConstitutiveSamplingContext::new(workspace)
                 .sample(&sampling)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let solution = workspace.solution();
             let exterior = solution.context();
@@ -395,17 +459,17 @@ mod tests {
              *   layer 0.
              */
             let expected_epsilon = [
-                exterior.right_epsilon().value()[()],
+                exterior.right().epsilon().value()[()],
                 layer_0.epsilon().value()[()],
-                exterior.left_epsilon().value()[()],
+                exterior.left().epsilon().value()[()],
                 layer_1.epsilon().value()[()],
                 layer_0.epsilon().value()[()],
             ];
 
             let expected_mu = [
-                exterior.right_mu().value()[()],
+                exterior.right().mu().value()[()],
                 layer_0.mu().value()[()],
-                exterior.left_mu().value()[()],
+                exterior.left().mu().value()[()],
                 layer_1.mu().value()[()],
                 layer_0.mu().value()[()],
             ];
@@ -443,7 +507,8 @@ mod tests {
 
             let sampled = ConstitutiveSamplingContext::new(workspace)
                 .sample(&sampling)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let layer = workspace
                 .layer_quantities(0)
@@ -489,7 +554,8 @@ mod tests {
 
             let sampled = ConstitutiveSamplingContext::new(workspace)
                 .sample(&sampling)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let solution = workspace.solution();
             let exterior = solution.context();
@@ -503,33 +569,33 @@ mod tests {
                 .expect("layer 1 quantities should be retained");
 
             let expected_epsilon_value = [
-                exterior.right_epsilon().value()[()],
+                exterior.right().epsilon().value()[()],
                 layer_0.epsilon().value()[()],
-                exterior.left_epsilon().value()[()],
+                exterior.left().epsilon().value()[()],
                 layer_1.epsilon().value()[()],
                 layer_0.epsilon().value()[()],
             ];
 
             let expected_epsilon_first = [
-                exterior.right_epsilon().first()[()],
+                exterior.right().epsilon().first()[()],
                 layer_0.epsilon().first()[()],
-                exterior.left_epsilon().first()[()],
+                exterior.left().epsilon().first()[()],
                 layer_1.epsilon().first()[()],
                 layer_0.epsilon().first()[()],
             ];
 
             let expected_mu_value = [
-                exterior.right_mu().value()[()],
+                exterior.right().mu().value()[()],
                 layer_0.mu().value()[()],
-                exterior.left_mu().value()[()],
+                exterior.left().mu().value()[()],
                 layer_1.mu().value()[()],
                 layer_0.mu().value()[()],
             ];
 
             let expected_mu_first = [
-                exterior.right_mu().first()[()],
+                exterior.right().mu().first()[()],
                 layer_0.mu().first()[()],
-                exterior.left_mu().first()[()],
+                exterior.left().mu().first()[()],
                 layer_1.mu().first()[()],
                 layer_0.mu().first()[()],
             ];
@@ -576,7 +642,8 @@ mod tests {
 
             let sampled = ConstitutiveSamplingContext::new(workspace)
                 .sample(&sampling)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let solution = workspace.solution();
             let exterior = solution.context();
@@ -586,17 +653,17 @@ mod tests {
             let layer_1 = workspace.layer_quantities(1).unwrap();
 
             let expected_epsilon_first = [
-                exterior.right_epsilon().first()[()],
+                exterior.right().epsilon().first()[()],
                 layer_0.epsilon().first()[()],
-                exterior.left_epsilon().first()[()],
+                exterior.left().epsilon().first()[()],
                 layer_1.epsilon().first()[()],
                 layer_0.epsilon().first()[()],
             ];
 
             let expected_mu_first = [
-                exterior.right_mu().first()[()],
+                exterior.right().mu().first()[()],
                 layer_0.mu().first()[()],
-                exterior.left_mu().first()[()],
+                exterior.left().mu().first()[()],
                 layer_1.mu().first()[()],
                 layer_0.mu().first()[()],
             ];
@@ -665,11 +732,13 @@ mod tests {
 
         let scatter = ConstitutiveSamplingContext::new(scatter_point.workspace())
             .sample(&sampling)
-            .unwrap();
+            .unwrap()
+            .isotropic();
 
         let transfer = ConstitutiveSamplingContext::new(transfer_point.workspace())
             .sample(&sampling)
-            .unwrap();
+            .unwrap()
+            .isotropic();
 
         assert_eq!(
             scatter.epsilon().value().shape(),
@@ -803,7 +872,8 @@ mod spectral_first_tests {
 
             let sampled = ConstitutiveSamplingContext::new(workspace)
                 .sample_spectral_first::<_, _, RealAxis>(&sampling, canonical_stack)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let layer_0 = canonical_stack.layer(FiniteLayerIndex::new(0)).unwrap();
 
@@ -936,11 +1006,12 @@ mod spectral_first_tests {
 
             let context = ConstitutiveSamplingContext::new(point.workspace());
 
-            let basic = context.sample(&sampling).unwrap();
+            let basic = context.sample(&sampling).unwrap().isotropic();
 
             let spectral = context
                 .sample_spectral_first::<_, _, RealAxis>(&sampling, point.problem().stack())
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             assert_complex_slice_close(
                 spectral.parameters().epsilon().value().iter().copied(),
@@ -974,7 +1045,8 @@ mod spectral_first_tests {
 
             let sampled = ConstitutiveSamplingContext::new(point.workspace())
                 .sample_spectral_first::<_, _, RealAxis>(&sampling, point.problem().stack())
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             for &value in sampled.epsilon_spectral_first().value() {
                 assert_complex_close(value, C::new(0.0, 0.0), VALUE_TOLERANCE);
@@ -1011,7 +1083,8 @@ mod spectral_first_tests {
 
             let sampled = ConstitutiveSamplingContext::new(point.workspace())
                 .sample_spectral_first::<_, _, RealAxis>(&sampling, canonical_stack)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             let layer_0 = canonical_stack.layer(FiniteLayerIndex::new(0)).unwrap();
 
@@ -1089,7 +1162,8 @@ mod spectral_first_tests {
 
             let sampled = ConstitutiveSamplingContext::new(point.workspace())
                 .sample_spectral_first::<_, _, RealAxis>(&sampling, canonical_stack)
-                .unwrap();
+                .unwrap()
+                .isotropic();
 
             /*
              * Pick one finite-layer position and compare the complete
@@ -1179,11 +1253,13 @@ mod spectral_first_tests {
 
         let scatter_data = ConstitutiveSamplingContext::new(scatter.workspace())
             .sample_spectral_first::<_, _, RealAxis>(&sampling, scatter.problem().stack())
-            .unwrap();
+            .unwrap()
+            .isotropic();
 
         let transfer_data = ConstitutiveSamplingContext::new(transfer.workspace())
             .sample_spectral_first::<_, _, RealAxis>(&sampling, transfer.problem().stack())
-            .unwrap();
+            .unwrap()
+            .isotropic();
 
         for (actual, expected) in [
             (

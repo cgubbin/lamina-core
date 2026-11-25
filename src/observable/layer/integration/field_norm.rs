@@ -8,7 +8,7 @@
 //!
 //! The remaining vector components are reconstructed from the canonical
 //! secondary state, the parallel angular wavenumber, the vacuum angular
-//! wavenumber, and the active constitutive factor.
+//! wavenumber, and the normal constitutive entry.
 //!
 //! This module implements Hermitian real-input analysis. It is not used for
 //! bilinear complex-modal overlaps.
@@ -18,43 +18,80 @@ use num_traits::One;
 use crate::{
     Polarisation,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::IsotropicLayerQuantities,
+    backend::{Channel, LayerQuantities},
 };
 
 use super::IntegratedHermitianCrossStateProducts;
 
-/// Spatially integrated squared electromagnetic field magnitudes.
-///
-/// Both components use the real-jet representation because Hermitian field
-/// norms are real-valued for real-input analysis.
+/// Spatially integrated field products of one layer, such as
 ///
 /// ```text
 /// electric = ∫ |E|² dz
 /// magnetic = ∫ |H|² dz
 /// ```
+///
+/// with the canonical component (`E_y` for TE, `H_y` for TM) and the
+/// transverse and normal reconstructed components kept apart, so that each
+/// can be weighted by its own constitutive entry.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct IntegratedFieldNorms<R> {
-    electric: R,
-    magnetic: R,
+pub(crate) struct IntegratedFieldParts<R> {
+    canonical: R,
+    transverse: R,
+    normal: R,
+    polarisation: Polarisation,
 }
 
-impl<R> IntegratedFieldNorms<R> {
-    pub(crate) const fn new(electric: R, magnetic: R) -> Self {
-        Self { electric, magnetic }
+impl<R> IntegratedFieldParts<R>
+where
+    R: ScalarAlgebra,
+{
+    #[cfg(test)]
+    pub(crate) fn electric(&self) -> R {
+        self.clone().into_parts().0
     }
 
     #[cfg(test)]
-    pub(crate) fn electric(&self) -> &R {
-        &self.electric
+    pub(crate) fn magnetic(&self) -> R {
+        self.clone().into_parts().1
     }
 
-    #[cfg(test)]
-    pub(crate) fn magnetic(&self) -> &R {
-        &self.magnetic
-    }
-
+    /// Return the unweighted `(electric, magnetic)` norms.
     pub(crate) fn into_parts(self) -> (R, R) {
-        (self.electric, self.magnetic)
+        let reconstructed = self.transverse.add(&self.normal);
+        match self.polarisation {
+            Polarisation::TransverseElectric => (self.canonical, reconstructed),
+            Polarisation::TransverseMagnetic => (reconstructed, self.canonical),
+        }
+    }
+
+    pub(crate) fn new(canonical: R, transverse: R, normal: R, polarisation: Polarisation) -> Self {
+        Self {
+            canonical,
+            transverse,
+            normal,
+            polarisation,
+        }
+    }
+
+    /// Return `(electric, magnetic)` with each component weighted by its
+    /// entry of `weights`; an isotropic weight multiplies the summed
+    /// reconstructed components.
+    pub(crate) fn weighted(self, weights: Channel<R>) -> (R, R) {
+        let canonical = self.canonical.multiply(&weights.canonical);
+        let reconstructed = match weights.normal {
+            None => self
+                .transverse
+                .add(&self.normal)
+                .multiply(&weights.transverse),
+            Some(normal) => self
+                .transverse
+                .multiply(&weights.transverse)
+                .add(&self.normal.multiply(&normal)),
+        };
+        match self.polarisation {
+            Polarisation::TransverseElectric => (canonical, reconstructed),
+            Polarisation::TransverseMagnetic => (reconstructed, canonical),
+        }
     }
 }
 
@@ -66,14 +103,14 @@ impl<R> IntegratedFieldNorms<R> {
 /// ```text
 /// k0     = vacuum angular wavenumber
 /// beta   = parallel angular wavenumber
-/// factor = mu for TE, epsilon for TM
+/// normal = μ_zz for TE, ε_zz for TM
 /// ```
 ///
-/// The common reconstruction weights are:
+/// The reconstruction weights are:
 ///
 /// ```text
-/// transverse   = 1 / |k0|²
-/// longitudinal = |beta / (k0 factor)|².
+/// transverse = 1 / |k0|²
+/// normal     = |beta / (k0 normal)|².
 /// ```
 ///
 /// For TE:
@@ -81,16 +118,16 @@ impl<R> IntegratedFieldNorms<R> {
 /// ```text
 /// electric = ∫ |field|² dz
 /// magnetic = transverse ∫ |secondary|² dz
-///          + longitudinal ∫ |field|² dz.
+///          + normal ∫ |field|² dz.
 /// ```
 ///
 /// For TM, the electric and magnetic roles are exchanged.
 pub(crate) fn project_integrated_field_norms<A>(
     state: &IntegratedHermitianCrossStateProducts<A>,
-    quantities: &IsotropicLayerQuantities<A>,
+    quantities: &LayerQuantities<A>,
     vacuum_angular_wavenumber: &A,
     parallel_angular_wavenumber: &A,
-) -> IntegratedFieldNorms<A::RealJet>
+) -> IntegratedFieldParts<A::RealJet>
 where
     A: RealScalarAlgebra,
     A::RealJet: ScalarAlgebra,
@@ -106,28 +143,18 @@ where
     let transverse = one.divide(&vacuum_angular_wavenumber_squared);
 
     let longitudinal = parallel_angular_wavenumber
-        .divide(&vacuum_angular_wavenumber.multiply(quantities.factor()))
+        .divide(&vacuum_angular_wavenumber.multiply(quantities.normal_factor()))
         .magnitude_squared();
 
     let field = state.field_field().real();
     let secondary = state.secondary_secondary().real();
 
-    match quantities.polarisation() {
-        Polarisation::TransverseElectric => {
-            let magnetic = secondary
-                .multiply(&transverse)
-                .add(&field.multiply(&longitudinal));
-
-            IntegratedFieldNorms::new(field, magnetic)
-        }
-        Polarisation::TransverseMagnetic => {
-            let electric = secondary
-                .multiply(&transverse)
-                .add(&field.multiply(&longitudinal));
-
-            IntegratedFieldNorms::new(electric, field)
-        }
-    }
+    IntegratedFieldParts::new(
+        field.clone(),
+        secondary.multiply(&transverse),
+        field.multiply(&longitudinal),
+        quantities.polarisation(),
+    )
 }
 
 #[cfg(test)]
@@ -141,7 +168,7 @@ mod tests {
     use crate::{
         Polarisation,
         algebra::{ArrayJet0, ArrayJet1, ArrayJetBivariate2, ComplexJet, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        backend::LayerQuantities,
         differential::{BivariateGradient, BivariateHessian},
     };
 
@@ -252,22 +279,8 @@ mod tests {
         )
     }
 
-    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> IsotropicLayerQuantities<A0> {
-        IsotropicLayerQuantities::test_fixture(
-            jet(c(3.0, 0.2)),
-            jet(epsilon),
-            jet(mu),
-            polarisation,
-        )
-    }
-
-    #[test]
-    fn integrated_field_norms_preserve_component_order() {
-        let norms = IntegratedFieldNorms::new(1, 2);
-
-        assert_eq!(&norms.electric, &1);
-        assert_eq!(&norms.magnetic, &2);
-        assert_eq!(norms.into_parts(), (1, 2));
+    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> LayerQuantities<A0> {
+        LayerQuantities::test_fixture(jet(c(3.0, 0.2)), jet(epsilon), jet(mu), polarisation)
     }
 
     #[test]
@@ -299,14 +312,14 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar(&norms.electric),
+            scalar(&norms.electric()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar(&norms.magnetic),
+            scalar(&norms.magnetic()),
             1.8,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
@@ -341,14 +354,14 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar(&norms.electric),
+            scalar(&norms.electric()),
             1.8625,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar(&norms.magnetic),
+            scalar(&norms.magnetic()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
@@ -381,14 +394,14 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar(first.magnetic()),
-            scalar(changed_epsilon.magnetic()),
+            scalar(&first.magnetic()),
+            scalar(&changed_epsilon.magnetic()),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert!(
-            (scalar(first.magnetic()) - scalar(changed_mu.magnetic())).abs() > 1.0e-6,
+            (scalar(&first.magnetic()) - scalar(&changed_mu.magnetic())).abs() > 1.0e-6,
             "changing mu must change the TE longitudinal contribution",
         );
     }
@@ -419,14 +432,14 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar(first.electric()),
-            scalar(changed_mu.electric()),
+            scalar(&first.electric()),
+            scalar(&changed_mu.electric()),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert!(
-            (scalar(first.electric()) - scalar(changed_epsilon.electric())).abs() > 1.0e-6,
+            (scalar(&first.electric()) - scalar(&changed_epsilon.electric())).abs() > 1.0e-6,
             "changing epsilon must change the TM longitudinal contribution",
         );
     }
@@ -450,28 +463,28 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar(te.electric()),
+            scalar(&te.electric()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar(te.magnetic()),
+            scalar(&te.magnetic()),
             7.0 / 4.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar(tm.electric()),
+            scalar(&tm.electric()),
             7.0 / 4.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar(tm.magnetic()),
+            scalar(&tm.magnetic()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
@@ -496,7 +509,7 @@ mod tests {
          * = 1 / 100.
          */
         assert_relative_eq!(
-            scalar(&norms.magnetic),
+            scalar(&norms.magnetic()),
             5.0 / 100.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
@@ -534,7 +547,7 @@ mod tests {
             jet1(c(0.0, 0.0), c(0.0, 0.0)),
         );
 
-        let quantities = IsotropicLayerQuantities::test_fixture(
+        let quantities = LayerQuantities::test_fixture(
             constant_jet1(c(3.0, 0.2)),
             constant_jet1(c(2.0, 0.0)),
             constant_jet1(c(3.0, 0.0)),
@@ -549,28 +562,28 @@ mod tests {
         );
 
         assert_relative_eq!(
-            scalar1_value(&norms.electric),
+            scalar1_value(&norms.electric()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar1_first(&norms.electric),
+            scalar1_first(&norms.electric()),
             11.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar1_value(&norms.magnetic),
+            scalar1_value(&norms.magnetic()),
             1.8,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar1_first(&norms.magnetic),
+            scalar1_first(&norms.magnetic()),
             13.0 / 4.0 + 11.0 / 100.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
@@ -609,7 +622,7 @@ mod tests {
             constant_bivariate2(c(0.0, 0.0)),
         );
 
-        let quantities = IsotropicLayerQuantities::test_fixture(
+        let quantities = LayerQuantities::test_fixture(
             constant_bivariate2(c(3.0, 0.2)),
             constant_bivariate2(c(2.0, 0.0)),
             constant_bivariate2(c(3.0, 0.0)),
@@ -626,84 +639,84 @@ mod tests {
         let magnetic_branch = |field: f64, secondary: f64| secondary / 4.0 + field / 100.0;
 
         assert_relative_eq!(
-            scalar_b2_value(&norms.electric),
+            scalar_b2_value(&norms.electric()),
             5.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0(&norms.electric),
+            scalar_b2_axis0(&norms.electric()),
             11.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis1(&norms.electric),
+            scalar_b2_axis1(&norms.electric()),
             13.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0_axis0(&norms.electric),
+            scalar_b2_axis0_axis0(&norms.electric()),
             17.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0_axis1(&norms.electric),
+            scalar_b2_axis0_axis1(&norms.electric()),
             19.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis1_axis1(&norms.electric),
+            scalar_b2_axis1_axis1(&norms.electric()),
             23.0,
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_value(&norms.magnetic),
+            scalar_b2_value(&norms.magnetic()),
             magnetic_branch(5.0, 7.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0(&norms.magnetic),
+            scalar_b2_axis0(&norms.magnetic()),
             magnetic_branch(11.0, 29.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis1(&norms.magnetic),
+            scalar_b2_axis1(&norms.magnetic()),
             magnetic_branch(13.0, 31.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0_axis0(&norms.magnetic),
+            scalar_b2_axis0_axis0(&norms.magnetic()),
             magnetic_branch(17.0, 37.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis0_axis1(&norms.magnetic),
+            scalar_b2_axis0_axis1(&norms.magnetic()),
             magnetic_branch(19.0, 41.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,
         );
 
         assert_relative_eq!(
-            scalar_b2_axis1_axis1(&norms.magnetic),
+            scalar_b2_axis1_axis1(&norms.magnetic()),
             magnetic_branch(23.0, 43.0),
             epsilon = TOLERANCE,
             max_relative = TOLERANCE,

@@ -72,7 +72,12 @@ fn determinant(
     polarisation: Polarisation,
 ) -> Result<J, String> {
     let coordinates = CanonicalCoordinates::new(k0, beta);
-    let exterior = evaluate_stack_exterior_wavevectors::<ComplexPlane, _, J>(&coordinates, &stack);
+    let exterior = evaluate_stack_exterior_wavevectors::<ComplexPlane, _, J>(
+        &coordinates,
+        &stack,
+        polarisation,
+    )
+    .unwrap();
     match backend {
         Backend::Transfer => ComplexPlaneEvaluator::from_canonical_stack(stack, Transfer2::new())
             .checked_determinant(&coordinates, &exterior, polarisation)

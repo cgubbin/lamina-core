@@ -17,9 +17,8 @@ use crate::{
     ComplexScalar, IncidentSide, PlaneWaveAmplitudes, PlaneWaveDeterminant, PlaneWavePower,
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
     backend::{
-        ExteriorContextProvider, PlaneWaveEntries, PlaneWaveModeCandidate,
-        scatter2::{Scatter2ExteriorContext, entries::transfer_state_slope},
-        undefined_amplitudes,
+        ExteriorContext, ExteriorContextProvider, PlaneWaveEntries, PlaneWaveModeCandidate,
+        scatter2::entries::transfer_state_slope, undefined_amplitudes,
     },
     observable::{BoundaryState, ProjectAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
 };
@@ -49,7 +48,7 @@ pub struct Scatter2ProjectiveEntries<A> {
 }
 
 impl<A> PlaneWaveEntries for Scatter2ProjectiveEntries<A> {
-    type ExteriorContext = Scatter2ExteriorContext<A>;
+    type ExteriorContext = ExteriorContext<A>;
     type Algebra = A;
 }
 
@@ -182,7 +181,7 @@ where
 {
     pub(crate) fn right_gauged_mode_candidate(
         &self,
-        context: &Scatter2ExteriorContext<A>,
+        context: &ExteriorContext<A>,
     ) -> PlaneWaveModeCandidate<A> {
         let slope = transfer_state_slope(context.left_admittance());
 
@@ -236,7 +235,7 @@ where
 
     /// The left waves and the residual of a stack with a closed side. A
     /// closed left side requires `forward = ρ̂_L backward`.
-    fn closed_left_waves(&self, context: &Scatter2ExteriorContext<A>, slope: &A) -> (A, A, A) {
+    fn closed_left_waves(&self, context: &ExteriorContext<A>, slope: &A) -> (A, A, A) {
         let right_load = context.right_closure().map(|closure| closure.load());
 
         let (forward, backward) = self.left_port_waves(right_load.as_ref());
@@ -257,7 +256,7 @@ where
     /// The candidate of a stack with a closed side, gauged by `n21`.
     fn closed_mode_candidate(
         &self,
-        context: &Scatter2ExteriorContext<A>,
+        context: &ExteriorContext<A>,
         slope: &A,
     ) -> PlaneWaveModeCandidate<A> {
         let (forward, backward, residual) = self.closed_left_waves(context, slope);
@@ -300,7 +299,7 @@ where
     /// `c_R = 1`, without load or exponent, and each closed side contributes its
     /// coefficient, its load `ρ̂ = ρ exp(2iκ̃ℓ)` and its exponent `e = −iκ̃ℓ`.
     /// `c_L` times the bracket is the candidate's residual.
-    fn closed_determinant(&self, context: &Scatter2ExteriorContext<A>) -> A {
+    fn closed_determinant(&self, context: &ExteriorContext<A>) -> A {
         let slope = transfer_state_slope(context.left_admittance());
 
         let (_, _, residual) = self.closed_left_waves(context, &slope);
@@ -423,7 +422,7 @@ where
     /// evaluators refuse it before projecting.
     fn closed_amplitudes(
         &self,
-        exterior: &Scatter2ExteriorContext<J>,
+        exterior: &ExteriorContext<J>,
         incident_side: IncidentSide,
     ) -> PlaneWaveAmplitudes<J> {
         let zero = self.denominator().zero_like();
@@ -485,9 +484,7 @@ mod tests {
     use crate::{
         Polarisation, RealAxis,
         algebra::ScalarAlgebra,
-        backend::{
-            ExteriorWavevectors, IsotropicLayerQuantities, scatter2::Scatter2ExteriorContext,
-        },
+        backend::{ExteriorContext, ExteriorWavevectors, LayerQuantities},
         input::CanonicalCoordinates,
         material::Constant,
         observable::BoundaryState,
@@ -524,24 +521,24 @@ mod tests {
         )
     }
 
-    fn make_context() -> Scatter2ExteriorContext<RealJ0> {
+    fn make_context() -> ExteriorContext<RealJ0> {
         let source = jet(c(1.7));
 
         let coordinates = CanonicalCoordinates::new(source.clone(), source);
 
-        Scatter2ExteriorContext::new::<RealAxis, _>(
+        ExteriorContext::new::<RealAxis, _>(
             &coordinates,
             &Constant::vacuum(),
             &Constant::vacuum(),
             &ExteriorWavevectors::new(
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                LayerQuantities::real_axis(
                     &Constant::vacuum(),
                     &coordinates,
                     Polarisation::TransverseElectric,
                 )
                 .kappa()
                 .clone(),
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                LayerQuantities::real_axis(
                     &Constant::vacuum(),
                     &coordinates,
                     Polarisation::TransverseElectric,

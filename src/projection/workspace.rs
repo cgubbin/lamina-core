@@ -1,15 +1,13 @@
 use crate::{
     ScalarAlgebra,
     backend::{
-        ExteriorContextProvider, IsotropicLayerQuantities, IsotropicMediumQuantities,
-        PlaneWaveEntries, PlaneWaveSolution,
+        ExteriorContext, LayerQuantities, PlaneWaveEntries, PlaneWaveSolution,
         scatter2::{
-            RetainedScatterComponents, Scatter2Entries, Scatter2ExteriorContext,
-            Scatter2ProjectiveEntries, Scatter2Workspace,
+            RetainedScatterComponents, Scatter2Entries, Scatter2ProjectiveEntries,
+            Scatter2Workspace,
         },
         transfer2::{
-            RetainedTransferLayer, RetainedTransferLayers, Transfer2Entries,
-            Transfer2ExteriorContext, Transfer2Workspace,
+            RetainedTransferLayer, RetainedTransferLayers, Transfer2Entries, Transfer2Workspace,
         },
     },
 };
@@ -123,39 +121,6 @@ where
     }
 }
 
-impl<J> ProjectPoint for Scatter2ExteriorContext<J>
-where
-    J: ProjectPoint,
-{
-    type Dimension = J::Dimension;
-    type Point = Scatter2ExteriorContext<J::Point>;
-
-    fn project_point<I>(&self, index: &I) -> Result<Self::Point, PointProjectionError>
-    where
-        I: ndarray::NdIndex<Self::Dimension> + Clone,
-    {
-        Ok(Scatter2ExteriorContext::from_parts(
-            self.left_admittance().project_point(index)?,
-            self.right_admittance().project_point(index)?,
-            self.left_kappa().project_point(index)?,
-            self.right_kappa().project_point(index)?,
-            self.left_epsilon().project_point(index)?,
-            self.right_epsilon().project_point(index)?,
-            self.left_mu().project_point(index)?,
-            self.right_mu().project_point(index)?,
-            self.vacuum_angular_wavenumber().project_point(index)?,
-            self.parallel_angular_wavenumber().project_point(index)?,
-            self.polarisation(),
-            self.left_closure()
-                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
-                .transpose()?,
-            self.right_closure()
-                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
-                .transpose()?,
-        ))
-    }
-}
-
 impl<J> ProjectPoint for Transfer2Entries<J>
 where
     J: ProjectPoint,
@@ -176,36 +141,18 @@ where
     }
 }
 
-impl<J> ProjectPoint for Transfer2ExteriorContext<J>
+impl<J> ProjectPoint for ExteriorContext<J>
 where
     J: ProjectPoint,
 {
     type Dimension = J::Dimension;
-    type Point = Transfer2ExteriorContext<J::Point>;
+    type Point = ExteriorContext<J::Point>;
 
     fn project_point<I>(&self, index: &I) -> Result<Self::Point, PointProjectionError>
     where
         I: ndarray::NdIndex<Self::Dimension> + Clone,
     {
-        Ok(Transfer2ExteriorContext::from_parts(
-            self.left_admittance().project_point(index)?,
-            self.right_admittance().project_point(index)?,
-            self.left_kappa().project_point(index)?,
-            self.right_kappa().project_point(index)?,
-            self.left_epsilon().project_point(index)?,
-            self.right_epsilon().project_point(index)?,
-            self.left_mu().project_point(index)?,
-            self.right_mu().project_point(index)?,
-            self.vacuum_angular_wavenumber().project_point(index)?,
-            self.parallel_angular_wavenumber().project_point(index)?,
-            self.polarisation(),
-            self.left_closure()
-                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
-                .transpose()?,
-            self.right_closure()
-                .map(|closure| closure.try_map(|jet| jet.project_point(index)))
-                .transpose()?,
-        ))
+        self.try_map(|jet| jet.project_point(index))
     }
 }
 
@@ -280,42 +227,18 @@ where
     }
 }
 
-impl<J> ProjectPoint for IsotropicLayerQuantities<J>
+impl<J> ProjectPoint for LayerQuantities<J>
 where
     J: ProjectPoint,
-    J::Point: ScalarAlgebra,
 {
     type Dimension = J::Dimension;
-    type Point = IsotropicLayerQuantities<J::Point>;
+    type Point = LayerQuantities<J::Point>;
 
     fn project_point<I>(&self, index: &I) -> Result<Self::Point, PointProjectionError>
     where
         I: ndarray::NdIndex<Self::Dimension> + Clone,
     {
-        Ok(self
-            .medium()
-            .project_point(index)?
-            .with_polarisation(self.polarisation()))
-    }
-}
-
-impl<J> ProjectPoint for IsotropicMediumQuantities<J>
-where
-    J: ProjectPoint,
-    J::Point: ScalarAlgebra,
-{
-    type Dimension = J::Dimension;
-    type Point = IsotropicMediumQuantities<J::Point>;
-
-    fn project_point<I>(&self, index: &I) -> Result<Self::Point, PointProjectionError>
-    where
-        I: ndarray::NdIndex<Self::Dimension> + Clone,
-    {
-        Ok(IsotropicMediumQuantities::from_parts(
-            self.epsilon().project_point(index)?,
-            self.mu().project_point(index)?,
-            self.kappa().project_point(index)?,
-        ))
+        self.try_map(|jet| jet.project_point(index))
     }
 }
 
@@ -330,9 +253,8 @@ mod tests {
         Polarisation,
         algebra::{ArrayJet0, Jet0, RealParameter},
         backend::{
-            IsotropicLayerQuantities,
-            scatter2::{Scatter2Entries, Scatter2ExteriorContext},
-            transfer2::{Transfer2Entries, Transfer2ExteriorContext},
+            ExteriorContextProvider, LayerQuantities, scatter2::Scatter2Entries,
+            transfer2::Transfer2Entries,
         },
     };
 
@@ -389,7 +311,7 @@ mod tests {
 
     #[test]
     fn scatter_exterior_context_projects_both_admittances() {
-        let context = Scatter2ExteriorContext::from_parts(
+        let context = ExteriorContext::from_parts(
             jet(&[2.0, 3.0]),
             jet(&[5.0, 7.0]),
             jet(&[0.0, 0.0]),
@@ -420,7 +342,7 @@ mod tests {
 
     #[test]
     fn transfer_exterior_context_projects_both_admittances() {
-        let context = Transfer2ExteriorContext::from_parts(
+        let context = ExteriorContext::from_parts(
             jet(&[2.0, 3.0]),
             jet(&[5.0, 7.0]),
             jet(&[0.0, 0.0]),
@@ -451,7 +373,7 @@ mod tests {
 
     #[test]
     fn isotropic_quantities_project_every_sampled_quantity() {
-        let quantities = IsotropicLayerQuantities::from_parts(
+        let quantities = LayerQuantities::test_fixture(
             jet(&[11.0, 13.0]),
             jet(&[2.0, 3.0]),
             jet(&[5.0, 7.0]),
@@ -471,7 +393,7 @@ mod tests {
 
     #[test]
     fn scatter_exterior_context_projects_explicit_wavevectors() {
-        let context = Scatter2ExteriorContext::from_parts(
+        let context = ExteriorContext::from_parts(
             jet(&[2.0, 3.0]),   // left Y
             jet(&[5.0, 7.0]),   // right Y
             jet(&[11.0, 13.0]), // left κ

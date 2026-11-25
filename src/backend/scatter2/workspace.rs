@@ -2,13 +2,13 @@ use crate::{
     ComplexScalar,
     algebra::ScalarAlgebra,
     backend::{
-        ExteriorContextProvider, IsotropicLayerQuantities, ModalSolutionSource,
+        ExteriorContext, ExteriorContextProvider, LayerQuantities, ModalSolutionSource,
         ModeReconstructionError, PlaneWaveModeCandidate, PlaneWaveSolution,
         PlaneWaveSolutionSource, PlaneWaveSolutionView, ReconstructExteriorModeWaves,
         ReconstructLayerModeWaves, RetainedIsotropicLayers, RunMode, SolutionWorkspace,
         right_exterior_mode_waves,
         scatter2::{
-            Scatter2ExteriorContext, Scatter2ProjectiveEntries, cascade_projection,
+            Scatter2ProjectiveEntries, cascade_projection,
             entries::{Scatter2Entries, cascade},
         },
     },
@@ -94,7 +94,7 @@ impl<A> RetainedIsotropicLayers for Scatter2Workspace<A> {
         self.retained.as_ref().map(|x| x.num_layers())
     }
 
-    fn layer_quantities(&self, index: usize) -> Option<&IsotropicLayerQuantities<Self::Algebra>> {
+    fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>> {
         self.retained.as_ref()?.get_quantities(index)
     }
 
@@ -107,14 +107,14 @@ impl<A> RetainedIsotropicLayers for Scatter2Workspace<A> {
 pub(crate) struct RetainedScatterComponents<A> {
     pub(super) components: Vec<Scatter2Entries<A>>,
     pub(super) layer_cuts: Vec<LayerCutIndices>,
-    pub(super) quantities: Vec<IsotropicLayerQuantities<A>>,
+    pub(super) quantities: Vec<LayerQuantities<A>>,
     pub(super) thicknesses: Vec<A>,
 }
 
 impl<A> Scatter2Workspace<A> {
     pub(crate) fn new(
         source: &ArrayBase<OwnedRepr<A::Scalar>, A::Dimension>,
-        context: Scatter2ExteriorContext<A>,
+        context: ExteriorContext<A>,
         mode: RunMode,
         layer_count: usize,
     ) -> Self
@@ -184,7 +184,7 @@ impl<A> Scatter2Workspace<A> {
         &mut self,
         interface: impl Into<Scatter2ProjectiveEntries<A>>,
         propagation: impl Into<Scatter2ProjectiveEntries<A>>,
-        quantities: IsotropicLayerQuantities<A>,
+        quantities: LayerQuantities<A>,
         thickness: A,
     ) where
         A: ScalarAlgebra,
@@ -269,7 +269,7 @@ impl<A> RetainedScatterComponents<A> {
         self.reconstruct_from_incoming_waves(&left_incoming, &right_incoming, source)
     }
 
-    fn get_quantities(&self, layer_index: usize) -> Option<&IsotropicLayerQuantities<A>> {
+    fn get_quantities(&self, layer_index: usize) -> Option<&LayerQuantities<A>> {
         self.quantities.get(layer_index)
     }
 
@@ -289,7 +289,7 @@ impl<A> RetainedScatterComponents<A> {
         &self.layer_cuts
     }
 
-    pub(crate) fn quantities(&self) -> &[IsotropicLayerQuantities<A>] {
+    pub(crate) fn quantities(&self) -> &[LayerQuantities<A>] {
         &self.quantities
     }
 
@@ -300,7 +300,7 @@ impl<A> RetainedScatterComponents<A> {
     pub(crate) fn from_parts(
         components: Vec<Scatter2Entries<A>>,
         layer_cuts: Vec<LayerCutIndices>,
-        quantities: Vec<IsotropicLayerQuantities<A>>,
+        quantities: Vec<LayerQuantities<A>>,
         thicknesses: Vec<A>,
     ) -> Self {
         Self {
@@ -582,12 +582,9 @@ mod tests {
         Polarisation, RealAxis,
         algebra::ScalarAlgebra,
         backend::{
-            ExteriorContextProvider, ExteriorWavevectors, IsotropicLayerQuantities,
+            ExteriorContext, ExteriorContextProvider, ExteriorWavevectors, LayerQuantities,
             ModalSolutionSource, ReconstructLayerModeWaves, RunMode, Scatter2, SolutionWorkspace,
-            scatter2::{
-                Scatter2ExteriorContext,
-                entries::{Scatter2Entries, cascade},
-            },
+            scatter2::entries::{Scatter2Entries, cascade},
         },
         input::{CanonicalCoordinates, CanonicalStack, IncidentSide},
         material::{Constant, ConstitutiveLift},
@@ -634,7 +631,7 @@ mod tests {
         scalar_entries(c(-0.08), c(0.83), c(0.79), c(0.06))
     }
 
-    fn make_context<J>(source: &J) -> Scatter2ExteriorContext<J>
+    fn make_context<J>(source: &J) -> ExteriorContext<J>
     where
         J: ScalarAlgebra<Scalar = C> + ConstitutiveLift<RealAxis, Constant<f64>>,
         J::Dimension: ndarray::Dimension,
@@ -646,25 +643,17 @@ mod tests {
 
         let polarisation = Polarisation::TransverseMagnetic;
 
-        Scatter2ExteriorContext::new::<RealAxis, _>(
+        ExteriorContext::new::<RealAxis, _>(
             &coordinates,
             &left_exterior,
             &right_exterior,
             &ExteriorWavevectors::new(
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                    &left_exterior,
-                    &coordinates,
-                    polarisation,
-                )
-                .kappa()
-                .clone(),
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-                    &right_exterior,
-                    &coordinates,
-                    polarisation,
-                )
-                .kappa()
-                .clone(),
+                LayerQuantities::real_axis(&left_exterior, &coordinates, polarisation)
+                    .kappa()
+                    .clone(),
+                LayerQuantities::real_axis(&right_exterior, &coordinates, polarisation)
+                    .kappa()
+                    .clone(),
             ),
             polarisation,
         )
@@ -1161,7 +1150,7 @@ mod tests {
             s22: RealJ1::from_parts(arr0(c(-0.2)), arr0(c(0.01))),
         };
 
-        let quantities = IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        let quantities = LayerQuantities::real_axis(
             &Constant::vacuum(),
             &CanonicalCoordinates::new(
                 RealJ1::from_parts(arr0(c(0.1)), arr0(c(0.0))),
@@ -1204,14 +1193,14 @@ mod tests {
                 &test_coordinates(),
                 &stack,
                 &ExteriorWavevectors::new(
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.left_exterior(),
                         &test_coordinates(),
                         Polarisation::TransverseElectric,
                     )
                     .kappa()
                     .clone(),
-                    IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                    LayerQuantities::real_axis(
                         stack.right_exterior(),
                         &test_coordinates(),
                         Polarisation::TransverseElectric,
@@ -1298,16 +1287,12 @@ mod tests {
         )
     }
 
-    fn sample_quantities() -> IsotropicLayerQuantities<RealJ0> {
+    fn sample_quantities() -> LayerQuantities<RealJ0> {
         let material = Constant::vacuum();
 
         let coordinates = CanonicalCoordinates::new(real_j0_from_real(1.0), real_j0_from_real(0.5));
 
-        IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            &material,
-            &coordinates,
-            Polarisation::TransverseElectric,
-        )
+        LayerQuantities::real_axis(&material, &coordinates, Polarisation::TransverseElectric)
     }
 
     fn sample_thickness() -> RealJ0 {
@@ -1318,20 +1303,20 @@ mod tests {
         ndarray::arr0(c(0.0))
     }
 
-    fn sample_context() -> Scatter2ExteriorContext<RealJ0> {
-        Scatter2ExteriorContext::new::<RealAxis, _>(
+    fn sample_context() -> ExteriorContext<RealJ0> {
+        ExteriorContext::new::<RealAxis, _>(
             &test_coordinates(),
             &Constant::vacuum(),
             &Constant::vacuum(),
             &ExteriorWavevectors::new(
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                LayerQuantities::real_axis(
                     &Constant::vacuum(),
                     &test_coordinates(),
                     Polarisation::TransverseElectric,
                 )
                 .kappa()
                 .clone(),
-                IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+                LayerQuantities::real_axis(
                     &Constant::vacuum(),
                     &test_coordinates(),
                     Polarisation::TransverseElectric,

@@ -41,14 +41,49 @@ Added:
   separability are decided structurally from the material's declaration and
   the rotation's exact entries. `AnalyticalTensorStack` mixes isotropic and
   tensor regions in layers and exteriors, including the gaps behind walls;
-  `Stack::is_separable`. A scalar stack lifts to a region stack with `From`,
-  and `Stack::to_isotropic` returns it, or names the first diagonal or full
-  region (`UnsupportedConstitutive`, `StackRegion`).
+  `Stack::is_separable`. A scalar stack lifts to a region stack with `From`
+  (`StackRegion` names a region).
 - Class-preserving stack-frame evaluation of ε and μ through the jet algebra,
   refusing non-finite entries or a vanishing `ε_zz` or `μ_zz`
-  (`ConstitutiveError`).
+  (`ConstitutiveError`). A scalar material evaluates as an isotropic region.
+- `Rotation::rotate`: the stack-frame image `R T Rᵀ` of a material-frame
+  tensor.
+- Transfer2 and Scatter2 solve stacks whose ε and μ are diagonal in the stack
+  frame, isotropic regions included: TE with
+  `κ² = μ_xx (ε_yy k₀² − k∥²/μ_zz)` and admittance `κ/μ_xx`, TM with
+  `κ² = ε_xx (μ_yy k₀² − k∥²/ε_zz)` and admittance `κ/ε_xx`. Exterior
+  wavevectors are evaluated per polarisation, so the guided thresholds are
+  `k∥² = ε_yy μ_zz k₀²` (TE) and `ε_zz μ_yy k₀²` (TM). Walls and PMLs in a
+  diagonal exterior use its per-polarisation `κ` and admittance. A full region
+  is refused with `ConstitutiveError::Unsupported`, naming the region and its
+  class.
+- Fields of diagonal stacks take each eliminated component from its own entry
+  (`H_z = k∥ E_y/(k₀ μ_zz)`, `E_z = −k∥ H_y/(k₀ ε_zz)`); `D = εE`, `B = μH`,
+  energy and dissipation densities, and layer energy, dissipation,
+  participation, confinement and QNM normalisation weight each field
+  component by its own entry, with per-entry dispersive weights
+  `∂(k₀ ε_ii)/∂k₀`. Overlaps and norms use the normal entry in the normal
+  component.
+- Modal field recovery, pole normalisation and directional derivatives accept
+  region stacks; a modal direction takes per-entry stack-frame rates
+  `[ε', μ']` (`ConstitutiveRates`) as well as isotropic `(ε', μ')`.
 
 Changed (breaking):
+
+- The determinant and field evaluators (`checked_determinant`, `determinant` and
+  friends) require `J: TensorConstitutiveLift<E, M>` in place of
+  `ConstitutiveLift`. It holds for every `ScalarMaterial` (every `Material` and
+  the erased scalar handles) and for `Constitutive` regions; generic callers
+  replace the old bound with it.
+- New error variants: `Transfer2Error::Constitutive`,
+  `Scatter2Error::Constitutive`, `RealAxisEvaluationError::Constitutive`,
+  `LayerEnergyError::Constitutive`, and
+  `CoordinateCompileError::IncidentMedium` for an incident angle in an
+  exterior that is not isotropic.
+- `ModalFieldBackend` and `ModalNormalizationBackend` take the stack's region
+  material as a type parameter (defaulting to `AnalyticalMaterialHandle`);
+  `ModalCharacteristicDirection` takes the material and rate types, and the
+  `ModalDerivativeBackend` methods are generic over them.
 
 - `ExteriorWavevectors::left`/`right` return `Option<&A>`: a wavevector is
   supplied for open sides only (`closed_left`, `closed_right`, `closed`,
@@ -60,7 +95,8 @@ Changed (breaking):
 - Real-axis `amplitudes`, `power` and `excitation` return `SolveRequestError`,
   which now wraps `ProjectionConstraintError`.
 
-Open stacks keep their numerical results bit for bit.
+Open stacks keep their numerical results bit for bit, and isotropic stacks
+through every observable.
 
 ## 0.1.0 (unreleased)
 

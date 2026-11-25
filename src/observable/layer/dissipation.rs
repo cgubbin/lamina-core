@@ -4,7 +4,6 @@ use num_traits::{FromPrimitive, One};
 
 use crate::{
     algebra::{Jet, RealScalarAlgebra, ScalarAlgebra},
-    backend::IsotropicLayerQuantities,
     observable::layer::IntegratedHermitianCrossStateProducts,
 };
 
@@ -84,21 +83,22 @@ impl<A> IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A> {
     {
         let (state, quantities) = self.into_parts();
 
-        let field_norms = project_integrated_field_norms(
+        let half =
+            <A::RealJet as Jet>::Scalar::from_f64(0.5).expect("one half must be representable");
+
+        let common = vacuum_angular_wavenumber.real().scale(half);
+
+        let (electric, magnetic) = project_integrated_field_norms(
             &state,
             &quantities,
             vacuum_angular_wavenumber,
             parallel_angular_wavenumber,
+        )
+        .weighted(
+            quantities
+                .channel()
+                .map(|entry| common.multiply(&entry.imaginary())),
         );
-
-        let (electric_coeff, magnetic_coeff) =
-            isotropic_dissipation_coefficients(vacuum_angular_wavenumber, &quantities);
-
-        let (electric_norm, magnetic_norm) = field_norms.into_parts();
-
-        let electric = electric_norm.multiply(&electric_coeff);
-
-        let magnetic = magnetic_norm.multiply(&magnetic_coeff);
 
         let total = electric.add(&magnetic);
 
@@ -126,26 +126,6 @@ impl<A> Layers<IntegratedLayerData<IntegratedHermitianCrossStateProducts<A>, A>>
     }
 }
 
-pub(crate) fn isotropic_dissipation_coefficients<A>(
-    vacuum_angular_wavenumber: &A,
-    quantities: &IsotropicLayerQuantities<A>,
-) -> (A::RealJet, A::RealJet)
-where
-    A: RealScalarAlgebra,
-    A::RealJet: ScalarAlgebra,
-    <A::RealJet as Jet>::Scalar: FromPrimitive,
-{
-    let half = <A::RealJet as Jet>::Scalar::from_f64(0.5).expect("one half must be representable");
-
-    let common = vacuum_angular_wavenumber.real().scale(half);
-
-    let electric = common.multiply(&quantities.epsilon().imaginary());
-
-    let magnetic = common.multiply(&quantities.mu().imaginary());
-
-    (electric, magnetic)
-}
-
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
@@ -156,8 +136,8 @@ mod tests {
 
     use crate::{
         Polarisation,
-        algebra::{ArrayJet0, ArrayJet1, ComplexJet, Jet0, RealParameter},
-        backend::IsotropicLayerQuantities,
+        algebra::{ArrayJet0, ComplexJet, Jet0, RealParameter},
+        backend::LayerQuantities,
         observable::layer::{
             IntegratedHermitianCrossStateProducts, Layers, project::IntegratedLayerData,
         },
@@ -167,9 +147,6 @@ mod tests {
 
     type A0 = ArrayJet0<C, Ix0, RealParameter>;
     type R0 = <A0 as ComplexJet>::RealJet;
-
-    type A1 = ArrayJet1<C, Ix0, RealParameter>;
-    type R1 = <A1 as ComplexJet>::RealJet;
 
     const TOLERANCE: f64 = 1.0e-12;
 
@@ -185,25 +162,8 @@ mod tests {
         value.value()[()]
     }
 
-    fn jet1(value: C, first: C) -> A1 {
-        A1::from_parts(arr0(value), arr0(first))
-    }
-
-    fn scalar1_value(value: &R1) -> f64 {
-        value.value()[()]
-    }
-
-    fn scalar1_first(value: &R1) -> f64 {
-        value.first()[()]
-    }
-
-    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> IsotropicLayerQuantities<A0> {
-        IsotropicLayerQuantities::test_fixture(
-            jet(c(3.0, 0.0)),
-            jet(epsilon),
-            jet(mu),
-            polarisation,
-        )
+    fn quantities(polarisation: Polarisation, epsilon: C, mu: C) -> LayerQuantities<A0> {
+        LayerQuantities::test_fixture(jet(c(3.0, 0.0)), jet(epsilon), jet(mu), polarisation)
     }
 
     fn state_products(
@@ -251,110 +211,6 @@ mod tests {
         assert_eq!(mapped.electric(), &10);
         assert_eq!(mapped.magnetic(), &20);
         assert_eq!(mapped.total(), &30);
-    }
-
-    #[test]
-    fn electric_only_loss_produces_zero_magnetic_coefficient() {
-        let quantities = quantities(Polarisation::TransverseElectric, c(2.0, 0.4), c(3.0, 0.0));
-
-        let (electric, magnetic) =
-            isotropic_dissipation_coefficients(&jet(c(2.0, 0.0)), &quantities);
-
-        /*
-         * electric =
-         *
-         *     k0 / 2 * Im(epsilon)
-         *
-         * = 2 / 2 * 0.4
-         * = 0.4
-         */
-        assert_relative_eq!(
-            scalar(&electric),
-            0.4,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&magnetic),
-            0.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
-    fn magnetic_only_loss_produces_zero_electric_coefficient() {
-        let quantities = quantities(Polarisation::TransverseMagnetic, c(2.0, 0.0), c(3.0, 0.7));
-
-        let (electric, magnetic) =
-            isotropic_dissipation_coefficients(&jet(c(2.0, 0.0)), &quantities);
-
-        assert_relative_eq!(
-            scalar(&electric),
-            0.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        /*
-         * magnetic =
-         *
-         *     2 / 2 * 0.7
-         *
-         * = 0.7
-         */
-        assert_relative_eq!(
-            scalar(&magnetic),
-            0.7,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
-    fn gain_preserves_negative_dissipation_coefficient() {
-        let quantities = quantities(Polarisation::TransverseElectric, c(2.0, -0.4), c(3.0, 0.0));
-
-        let (electric, magnetic) =
-            isotropic_dissipation_coefficients(&jet(c(2.0, 0.0)), &quantities);
-
-        assert_relative_eq!(
-            scalar(&electric),
-            -0.4,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&magnetic),
-            0.0,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-    }
-
-    #[test]
-    fn dissipation_coefficients_scale_linearly_with_k0() {
-        let quantities = quantities(Polarisation::TransverseElectric, c(2.0, 0.5), c(3.0, 0.25));
-
-        let first = isotropic_dissipation_coefficients(&jet(c(2.0, 0.0)), &quantities);
-
-        let second = isotropic_dissipation_coefficients(&jet(c(4.0, 0.0)), &quantities);
-
-        assert_relative_eq!(
-            scalar(&second.0),
-            2.0 * scalar(&first.0),
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar(&second.1),
-            2.0 * scalar(&first.1),
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
     }
 
     #[test]
@@ -441,82 +297,6 @@ mod tests {
         assert!(
             scalar(first.total()) < scalar(second.total()),
             "larger electric loss should remain in the second layer",
-        );
-    }
-
-    #[test]
-    fn dissipation_coefficients_propagate_first_derivatives() {
-        let quantities = IsotropicLayerQuantities::test_fixture(
-            jet1(c(3.0, 0.0), c(0.0, 0.0)),
-            jet1(c(2.0, 0.4), c(0.0, 0.3)),
-            jet1(c(3.0, 0.2), c(0.0, 0.5)),
-            Polarisation::TransverseElectric,
-        );
-
-        let vacuum = jet1(c(2.0, 0.0), c(0.5, 0.0));
-
-        let (electric, magnetic) = isotropic_dissipation_coefficients(&vacuum, &quantities);
-
-        /*
-         * C_e =
-         *
-         *     k0 eps_i / 2
-         *
-         * value:
-         *
-         *     2 * 0.4 / 2 = 0.4
-         *
-         * derivative:
-         *
-         *     (k0' eps_i + k0 eps_i') / 2
-         *
-         *     = (0.5*0.4 + 2*0.3) / 2
-         *     = 0.4
-         */
-        let expected_electric_first = (0.5 * 0.4 + 2.0 * 0.3) / 2.0;
-
-        /*
-         * C_m =
-         *
-         *     k0 mu_i / 2
-         *
-         * value:
-         *
-         *     2 * 0.2 / 2 = 0.2
-         *
-         * derivative:
-         *
-         *     (0.5*0.2 + 2*0.5) / 2
-         *     = 0.55
-         */
-        let expected_magnetic_first = (0.5 * 0.2 + 2.0 * 0.5) / 2.0;
-
-        assert_relative_eq!(
-            scalar1_value(&electric),
-            0.4,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar1_first(&electric),
-            expected_electric_first,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar1_value(&magnetic),
-            0.2,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
-        );
-
-        assert_relative_eq!(
-            scalar1_first(&magnetic),
-            expected_magnetic_first,
-            epsilon = TOLERANCE,
-            max_relative = TOLERANCE,
         );
     }
 }

@@ -4,7 +4,7 @@
 //! layer, and modal reconstruction. These traits expose only the common
 //! capabilities needed by backend-independent evaluator and observable code.
 
-use crate::backend::IsotropicLayerQuantities;
+use crate::backend::LayerQuantities;
 
 use super::{PlaneWaveSolution, PlaneWaveSolutionSource};
 
@@ -29,7 +29,7 @@ pub trait RetainedIsotropicLayers {
     fn retained_layer_count(&self) -> Option<usize>;
 
     /// Return the evaluated quantities for finite layer `index`.
-    fn layer_quantities(&self, index: usize) -> Option<&IsotropicLayerQuantities<Self::Algebra>>;
+    fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>>;
 
     /// Return the canonical thickness jet for finite layer `index`.
     fn layer_thickness(&self, index: usize) -> Option<&Self::Algebra>;

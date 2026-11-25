@@ -3,10 +3,10 @@ use ndarray::Dimension;
 use num_traits::{One, Zero};
 
 use crate::{
-    ComplexScalar, PlaneWaveAmplitudes, RealAxis,
+    ComplexScalar, PlaneWaveAmplitudes,
     algebra::{ComplexJet, ScalarAlgebra, ScaleBy},
     backend::{
-        ExteriorContextProvider, IsotropicLayerQuantities, Scatter2, Transfer2,
+        ExteriorContextProvider, LayerQuantities, Scatter2, Transfer2,
         transfer2::{
             TransferState, bidirectional_waves_from_state, right_exterior_waves,
             transfer_state_from_waves, transfer_state_slope,
@@ -642,24 +642,16 @@ fn transfer_single_layer_waves_match_boundary_continuity() {
 
     let expected = analytic_single_layer_boundary_waves(
         &amplitudes,
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.left_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        &LayerQuantities::real_axis(stack.left_exterior(), &coordinates, polarisation)
+            .into_admittance(),
+        &LayerQuantities::real_axis(
             stack.iter().next().unwrap().material(),
             &coordinates,
             polarisation,
         )
         .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.right_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
+        &LayerQuantities::real_axis(stack.right_exterior(), &coordinates, polarisation)
+            .into_admittance(),
         IncidentSide::Left,
     );
 
@@ -690,24 +682,16 @@ fn scatter_single_layer_waves_match_boundary_continuity() {
 
     let expected = analytic_single_layer_boundary_waves(
         &amplitudes,
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.left_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        &LayerQuantities::real_axis(stack.left_exterior(), &coordinates, polarisation)
+            .into_admittance(),
+        &LayerQuantities::real_axis(
             stack.iter().next().unwrap().material(),
             &coordinates,
             polarisation,
         )
         .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.right_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
+        &LayerQuantities::real_axis(stack.right_exterior(), &coordinates, polarisation)
+            .into_admittance(),
         IncidentSide::Left,
     );
 
@@ -738,24 +722,16 @@ fn transfer_single_layer_reconstruction_localises_boundary_error() {
 
     let expected = analytic_single_layer_boundary_waves(
         &amplitudes,
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.left_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
+        &LayerQuantities::real_axis(stack.left_exterior(), &coordinates, polarisation)
+            .into_admittance(),
+        &LayerQuantities::real_axis(
             stack.iter().next().unwrap().material(),
             &coordinates,
             polarisation,
         )
         .into_admittance(),
-        &IsotropicLayerQuantities::evaluate::<RealAxis, _>(
-            stack.right_exterior(),
-            &coordinates,
-            polarisation,
-        )
-        .into_admittance(),
+        &LayerQuantities::real_axis(stack.right_exterior(), &coordinates, polarisation)
+            .into_admittance(),
         IncidentSide::Left,
     );
 
