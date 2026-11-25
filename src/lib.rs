@@ -409,7 +409,8 @@ mod test_support;
 pub use algebra::{Jet, ModeJet1, ScalarAlgebra, SeedJet};
 
 pub use backend::{
-    Backend, Channel, ChannelError, ExteriorBranch, ExteriorWavevectors, Scatter2, Transfer2,
+    Backend, Channel, ChannelError, ExteriorBranch, ExteriorSelectionError, ExteriorWavevectors,
+    Scatter2, Scatter4, Scatter4Error, Transfer2, Transfer4, Transfer4Error,
 };
 
 pub use domain::{ComplexPlane, RealAxis};
@@ -451,8 +452,9 @@ pub use field::VectorField;
 pub use observable::{
     AggregateBilinearNormalization, ConstitutiveFields, DirectedPower, ElectromagneticDissipation,
     ElectromagneticEnergy, ElectromagneticFields, ElectromagneticIntensities, FieldIndexError,
-    FieldReconstructionError, InterfacePower, LayerDissipation, LayerPower, PlaneWaveAmplitudes,
-    PlaneWaveDeterminant, PlaneWavePower, ProjectPlaneWaveModeDeterminant,
+    FieldReconstructionError, InterfacePower, JonesAmplitudes, LayerDissipation, LayerPower,
+    PlaneWaveAmplitudes, PlaneWaveDeterminant, PlaneWavePower, ProjectJonesAmplitudes,
+    ProjectPlaneWaveModeDeterminant,
 };
 pub use parameter::{FiniteLayerIndex, Parameter};
 pub use scalar::ComplexScalar;

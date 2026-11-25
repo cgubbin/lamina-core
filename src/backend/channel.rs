@@ -2,7 +2,10 @@
 
 use thiserror::Error;
 
-use crate::{Polarisation, stack::StackSide};
+use crate::{
+    Polarisation,
+    stack::{StackRegion, StackSide},
+};
 
 /// The field subspace a backend solves: one scalar polarisation, or the
 /// coupled TE/TM field of a stack whose regions mix them.
@@ -48,6 +51,14 @@ pub enum ChannelError {
     /// The backend does not solve this channel.
     #[error("the {channel:?} channel is not supported by this backend")]
     Unsupported { channel: Channel },
+
+    /// A region couples TE and TM, so a scalar channel is not an invariant
+    /// subspace of the stack.
+    #[error("{region:?} couples TE and TM: the {channel:?} channel is not invariant")]
+    NotInvariant {
+        region: StackRegion,
+        channel: Channel,
+    },
 
     /// An exterior supplies a scalar branch for the coupled channel, or a pair
     /// for a scalar one.

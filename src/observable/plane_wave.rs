@@ -174,6 +174,61 @@ impl<R> PlaneWavePower<R> {
     }
 }
 
+/// Projection of coupled-channel entries onto Jones reflection and
+/// transmission matrices.
+pub trait ProjectJonesAmplitudes: PlaneWaveEntries {
+    fn project_jones_amplitudes(
+        &self,
+        exterior: &Self::ExteriorContext,
+        incident_side: IncidentSide,
+    ) -> JonesAmplitudes<Self::Algebra>;
+}
+
+/// Reflection and transmission matrices between exterior eigen-waves.
+///
+/// Column `j` is the response to unit amplitude in incoming eigen-wave `j`
+/// of the incident side; row `i` is outgoing eigen-wave `i` of the reflected
+/// or the transmitted side. Each exterior's eigen-waves are the spectral
+/// projections of `E_y` and `Z₀H_y` onto its incoming or outgoing waves, so
+/// an isotropic exterior orders them TE then TM and a scalar channel has one.
+/// In a separable stack with isotropic exteriors the matrices are diagonal and
+/// equal the TE and TM [`PlaneWaveAmplitudes`]. Nothing is transmitted into a
+/// closed side.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JonesAmplitudes<C> {
+    size: usize,
+    reflection: Vec<C>,
+    transmission: Vec<C>,
+}
+
+impl<C> JonesAmplitudes<C> {
+    /// Construct `size × size` matrices from row-major entries.
+    pub(crate) fn new(size: usize, reflection: Vec<C>, transmission: Vec<C>) -> Self {
+        Self {
+            size,
+            reflection,
+            transmission,
+        }
+    }
+
+    /// The number of eigen-waves on each side.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Reflected amplitude in outgoing wave `row` for incident wave `column`.
+    pub fn reflection(&self, row: usize, column: usize) -> Option<&C> {
+        (row < self.size && column < self.size).then(|| &self.reflection[row * self.size + column])
+    }
+
+    /// Transmitted amplitude in outgoing wave `row` for incident wave
+    /// `column`.
+    pub fn transmission(&self, row: usize, column: usize) -> Option<&C> {
+        (row < self.size && column < self.size)
+            .then(|| &self.transmission[row * self.size + column])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ndarray::Ix0;

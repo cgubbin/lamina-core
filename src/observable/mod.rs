@@ -62,7 +62,9 @@ pub use layer::{
     LayerDissipation, LayerEnergy, LayerEnergyError, LayerParticipation, LayerParticipationError,
     LayerPower, LayerProjectionError, Layers,
 };
-pub use plane_wave::{PlaneWaveAmplitudes, PlaneWavePower};
+pub use plane_wave::{
+    JonesAmplitudes, PlaneWaveAmplitudes, PlaneWavePower, ProjectJonesAmplitudes,
+};
 
 pub(crate) use boundary::{
     project_layer_boundary_states, project_layer_boundary_waves, project_layer_mode_waves,

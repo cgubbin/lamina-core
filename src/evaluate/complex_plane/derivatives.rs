@@ -79,6 +79,10 @@ impl TensorConstitutiveLift<SeededConstitutive, SeededMaterial> for J {
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
         Ok(material.0.clone())
     }
+
+    fn is_separable(_: &SeededMaterial) -> bool {
+        true
+    }
 }
 
 /// Seed one stack-frame tensor `value` with its stack-frame `rate`.

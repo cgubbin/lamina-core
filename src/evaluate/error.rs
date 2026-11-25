@@ -67,6 +67,21 @@ pub enum RealAxisEvaluationError<C, B> {
 
     #[error(transparent)]
     Constitutive(crate::material::ConstitutiveError),
+
+    /// The principal exterior branches could not be selected.
+    #[error(transparent)]
+    Exterior(crate::backend::ExteriorSelectionError),
+}
+
+impl<C, B> From<crate::backend::ExteriorSelectionError> for RealAxisEvaluationError<C, B> {
+    fn from(error: crate::backend::ExteriorSelectionError) -> Self {
+        match error {
+            crate::backend::ExteriorSelectionError::Constitutive(error) => {
+                Self::Constitutive(error)
+            }
+            error => Self::Exterior(error),
+        }
+    }
 }
 
 impl<C, B> RealAxisEvaluationError<C, B> {

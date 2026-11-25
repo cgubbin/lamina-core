@@ -4,7 +4,7 @@ use ndarray::Dimension;
 use crate::{
     IncidentSide,
     algebra::Jet,
-    backend::PlaneWaveSolutionSource,
+    backend::{ExteriorContextProvider, PlaneWaveEntries, PlaneWaveSolutionSource},
     derivative_parts::DerivativePartsPolicy,
     differential::IntoDifferentialResponse,
     evaluate::{SolveRequestError, error::check_open_incidence},
@@ -85,6 +85,7 @@ where
     J::Policy: Default,
     <J::Scalar as ComplexField>::RealField: ComplexField,
     S: PlaneWaveSolutionSource,
+    <S::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider,
 {
     pub fn amplitudes(
         &self,
