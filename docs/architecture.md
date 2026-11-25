@@ -141,7 +141,7 @@ A separable region has no `xy`, `yx`, `yz` or `zy` component in `ε` or `μ`, so
 
 Canonical compilation copies regions, with their class and rotation, into the canonical stack: the exterior media, which also fill the gaps behind walls and the PML layers, are regions like the finite layers. Constitutive evaluation through the jet algebra preserves the class (`Isotropic(J)`, `Diagonal([J; 3])`, `Full([[J; 3]; 3])`); isotropic regions evaluate through exactly the scalar path. Diagonal and full regions must have finite entries and nonzero `ε_zz` and `μ_zz` at every evaluated point, since the normal fields are eliminated through them.
 
-The 2×2 backends solve scalar TE and TM channels and take stacks of scalar materials only. A region stack enters them through `Stack::to_isotropic`, which returns its scalar materials or names the first diagonal or full region and its class; scalar evaluation of a tensor region is therefore not representable.
+A scalar material evaluates as an isotropic region, so the backends, evaluators and observables take scalar and region stacks alike. The 2×2 backends accept isotropic and diagonal regions and refuse a full one with `ConstitutiveError::Unsupported`, naming the region and its class.
 
 ---
 
@@ -202,12 +202,21 @@ This separation prevents every physical observable from implementing its own res
 
 A backend implements the planar electromagnetic propagation algorithm.
 
-Current isotropic backends include:
+The 2×2 backends solve one polarisation of a stack whose `ε` and `μ` are diagonal in the stack frame (isotropic regions included):
 
 ```text
 Transfer2
 Scatter2
 ```
+
+With `ε = diag(ε_xx, ε_yy, ε_zz)` and `μ = diag(μ_xx, μ_yy, μ_zz)`, TE `(E_y, H_x, H_z)` and TM `(H_y, E_x, E_z)` stay decoupled, and each layer carries a `±κ` pair:
+
+```text
+TE: κ² = μ_xx (ε_yy k0² − k∥²/μ_zz),   Y = κ / μ_xx
+TM: κ² = ε_xx (μ_yy k0² − k∥²/ε_zz),   Y = κ / ε_xx
+```
+
+Each polarisation sees a canonical entry (`ε_yy`, `μ_yy`) weighting the canonical field, a transverse entry (`μ_xx`, `ε_xx`) weighting the in-plane reconstructed component, and a normal entry (`μ_zz`, `ε_zz`) dividing the normal component. An isotropic region evaluates `κ² = εμk0² − k∥²` and `Y = κ/μ` or `κ/ε` by the same operations as a scalar material. Exterior wavevectors depend on the polarisation: the guided threshold is `k∥² = ε_yy μ_zz k0²` for TE and `ε_zz μ_yy k0²` for TM. A wall or PML in a diagonal exterior uses that exterior's per-polarisation `κ` and admittance in its gap and stretched layer, and the PML normalisation `κ_ref` is its `κ` at `k∥ = 0`. Field reconstruction takes each eliminated component from its own entry (`H_z = k∥ E_y/(k0 μ_zz)`, `E_z = −k∥ H_y/(k0 ε_zz)`), and `D = εE`, `B = μH` entry by entry.
 
 Both implement a shared backend interface:
 
@@ -661,10 +670,10 @@ A corresponding bilinear state-product projection can operate on modal left-righ
 
 ## 14. Integrated electromagnetic field norms
 
-For real-input isotropic analysis, canonical state products are converted into complete vector-field norms.
+For real-input analysis, canonical state products are converted into complete vector-field norms.
 
 ```rust
-IntegratedFieldNorms<R>
+IntegratedFieldParts<R>
 ```
 
 contains:
@@ -681,8 +690,8 @@ Let:
 ```text
 k0     = vacuum angular wavenumber
 β      = parallel propagation constant
-factor = μ for TE
-factor = ε for TM
+normal = μ_zz for TE
+normal = ε_zz for TM
 ```
 
 The shared Hermitian weights are:
@@ -692,8 +701,10 @@ transverse weight:
     1 / |k0|²
 
 longitudinal weight:
-    |β / (k0 factor)|²
+    |β / (k0 normal)|²
 ```
+
+The canonical, transverse and longitudinal parts are kept apart, so constitutive-weighted observables weight each by its own entry; an isotropic weight multiplies the summed reconstructed parts.
 
 ### TE
 
@@ -729,7 +740,7 @@ electric norm
     + longitudinal weight × field norm
 ```
 
-Cross-state products are not required for the isotropic field norms, though they remain available for more general observables.
+Cross-state products are not required for the field norms, though they remain available for more general observables.
 
 ---
 
@@ -765,7 +776,7 @@ magnetic coefficient:
     |k0|² Im(μ) / incident_flux
 ```
 
-The projected components are:
+For a diagonal medium each field component takes the coefficient of its own entry (`Im ε_ii`, `Im μ_ii`). The projected components are:
 
 ```text
 electric dissipation
@@ -814,7 +825,7 @@ This is tested for:
 Integrated real-frequency energy reuses:
 
 ```text
-IntegratedFieldNorms
+IntegratedFieldParts
 ```
 
 but applies energy-specific constitutive coefficients.
@@ -859,6 +870,8 @@ For Brillouin energy, the constitutive weights involve:
 ∂(ωε) / ∂ω
 ∂(ωμ) / ∂ω
 ```
+
+For a diagonal medium they are taken entry by entry, `∂(ωε_ii)/∂ω` weighting `|E_i|²`, for layer integrals and pointwise densities alike.
 
 These intrinsic constitutive derivatives are not the same as caller-requested response derivatives.
 
