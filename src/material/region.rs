@@ -263,7 +263,10 @@ rotated_entry!(EvaluateDifferentiableMeromorphicMaterial, C {}
 /// A scalar material, or an isotropic region, evaluates exactly as through
 /// [`ConstitutiveLift`]. Diagonal and full regions are validated at every
 /// sampled point: every entry finite, and `ε_zz ≠ 0`, `μ_zz ≠ 0`.
-#[doc(hidden)]
+///
+/// This is the bound for code generic over a stack's material: the
+/// determinant and field evaluators require `J: TensorConstitutiveLift<E, M>`,
+/// which holds for every [`ScalarMaterial`] and for [`Constitutive`] regions.
 pub trait TensorConstitutiveLift<E, M>: ScalarAlgebra {
     /// Return `[ε, μ]` in the stack frame; `region` names the region in an
     /// error.
@@ -287,7 +290,6 @@ pub trait TensorConstitutiveSpectralFirstLift<E, M>: ScalarAlgebra {
 
 /// A material with scalar ε and μ, which evaluates as an isotropic region:
 /// every [`Material`] and the erased scalar handles.
-#[doc(hidden)]
 pub trait ScalarMaterial {}
 
 impl<M: Material> ScalarMaterial for M {}

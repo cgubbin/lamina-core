@@ -70,6 +70,11 @@ Added:
 
 Changed (breaking):
 
+- The determinant and field evaluators (`checked_determinant`, `determinant` and
+  friends) require `J: TensorConstitutiveLift<E, M>` in place of
+  `ConstitutiveLift`. It holds for every `ScalarMaterial` (every `Material` and
+  the erased scalar handles) and for `Constitutive` regions; generic callers
+  replace the old bound with it.
 - New error variants: `Transfer2Error::Constitutive`,
   `Scatter2Error::Constitutive`, `RealAxisEvaluationError::Constitutive`,
   `LayerEnergyError::Constitutive`, and

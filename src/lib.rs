@@ -440,7 +440,8 @@ pub use material::{
     DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial,
     EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
     EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, MeromorphicTensorMaterial,
-    Rotation, RotationError, Sampled, Scalar, SignedAxis, TensorConstitutiveLift, TensorMaterial,
+    Rotation, RotationError, Sampled, Scalar, ScalarMaterial, SignedAxis, TensorConstitutiveLift,
+    TensorMaterial,
 };
 
 pub use field::VectorField;
