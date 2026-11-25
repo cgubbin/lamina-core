@@ -24,6 +24,29 @@ Added:
   `k∥`-independent `exp(iκ_ref τ)`; fields inside it follow the stretched
   coordinate. `TerminationError::PmlScaleOutOfRange` reports a scale that
   cannot be represented.
+- Tensor materials: `TensorMaterial`, `DifferentiableTensorMaterial`,
+  `MeromorphicTensorMaterial` and `DifferentiableMeromorphicTensorMaterial`
+  return ε and μ as 3×3 tensors in the material's own frame; every scalar
+  material implements them as `ε I`, `μ I`. A model declares
+  `PRINCIPAL_AXES` when its tensors are diagonal in that frame. Erased form:
+  `AnalyticalTensorMaterialHandle`.
+- `Rotation`: a proper rotation `R` from the material frame to the stack frame
+  (`z` normal, `x` along `k∥`, `y` invariant), with `T_stack = R T Rᵀ`. Built
+  from a matrix validated to `1e-12` (`RotationError`), intrinsic z-y′-z″ Euler
+  angles, an optic-axis direction `(θ, φ)` or one of the 24 proper signed axis
+  permutations; the matrix is what is recorded. Angles within an ulp of a
+  multiple of `π/2` give exact quarter turns.
+- `Constitutive` regions (`AnalyticalMaterialRegion`): a scalar material, or a
+  tensor material with a rotation. The class (isotropic, diagonal, full) and
+  separability are decided structurally from the material's declaration and
+  the rotation's exact entries. `AnalyticalTensorStack` mixes isotropic and
+  tensor regions in layers and exteriors, including the gaps behind walls;
+  `Stack::is_separable`. A scalar stack lifts to a region stack with `From`,
+  and `Stack::to_isotropic` returns it, or names the first diagonal or full
+  region (`UnsupportedConstitutive`, `StackRegion`).
+- Class-preserving stack-frame evaluation of ε and μ through the jet algebra,
+  refusing non-finite entries or a vanishing `ε_zz` or `μ_zz`
+  (`ConstitutiveError`).
 
 Changed (breaking):
 

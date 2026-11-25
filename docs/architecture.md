@@ -110,6 +110,39 @@ where:
 
 The backend should not depend on the original caller-facing coordinate representation.
 
+### Constitutive regions
+
+The stack frame has `z` along the stack normal, with layers running towards `+z`, `x` along the in-plane wavevector (`k∥ = β x̂`) and `y` invariant; phasors vary as `exp(+iβx − iωt)`.
+
+A material representation `M` is either a scalar material handle or a `Constitutive` region, which holds one of:
+
+* a scalar material, with scalar `ε` and `μ`;
+* a tensor material and a proper rotation `R` from the material's own (crystal) frame to the stack frame.
+
+Tensor materials return `ε` and `μ` as 3×3 tensors in their own frame. Column `k` of `R` holds the stack-frame components of crystal axis `k`, and the stack-frame tensors are
+
+```text
+ε = R ε_c Rᵀ,    μ = R μ_c Rᵀ
+```
+
+`R` is real and constant, so it commutes with dispersion and with jets in `k₀`. Every orientation constructor (validated matrix, intrinsic z-y′-z″ Euler angles, optic-axis direction, signed axis permutation) resolves to the matrix, which is what the region records. A matrix is accepted when `‖RᵀR − I‖_max ≤ 1e-12` and `|det R − 1| ≤ 1e-12`. The angle constructors take exact sines and cosines (`0`, `±1`) for angles within an ulp of a multiple of `π/2`, so a quarter turn is an exact signed permutation. The optic-axis constructor maps the crystal c axis onto `(sin θ cos φ, sin θ sin φ, cos θ)` by the minimal rotation, a turn by `θ` about `(−sin φ, cos φ, 0)`.
+
+Each region has a structural class, decided when it is built from the material's principal-axes declaration and the exact entries of `R`, never from tensor values:
+
+| material | rotation | class | separable |
+| --- | --- | --- | --- |
+| scalar | none | isotropic | yes |
+| principal axes | signed axis permutation | diagonal | yes |
+| principal axes | a crystal axis exactly on `y` | full | yes |
+| principal axes | other | full | no |
+| general | any | full | no |
+
+A separable region has no `xy`, `yx`, `yz` or `zy` component in `ε` or `μ`, so TE and TM decouple in it; a stack is separable when every region, exteriors included, is. A numerical test would switch the formulation, and the mode labels, discontinuously under round-off, so a tensor that happens to be diagonal under an inexact rotation is still full.
+
+Canonical compilation copies regions, with their class and rotation, into the canonical stack: the exterior media, which also fill the gaps behind walls and the PML layers, are regions like the finite layers. Constitutive evaluation through the jet algebra preserves the class (`Isotropic(J)`, `Diagonal([J; 3])`, `Full([[J; 3]; 3])`); isotropic regions evaluate through exactly the scalar path. Diagonal and full regions must have finite entries and nonzero `ε_zz` and `μ_zz` at every evaluated point, since the normal fields are eliminated through them.
+
+The 2×2 backends solve scalar TE and TM channels and take stacks of scalar materials only. A region stack enters them through `Stack::to_isotropic`, which returns its scalar materials or names the first diagonal or full region and its class; scalar evaluation of a tensor region is therefore not representable.
+
 ---
 
 ## 3. Scalar algebra and differential representation
