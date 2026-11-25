@@ -113,6 +113,23 @@ Added:
   stay with the 2×2 backends.
 - `CoupledWorkspace::fields`: all six components of `E` and `Z₀H` in any
   region for a driven 4×4 solution.
+- Closed-form layer integrals of the 4×4 backends: Hermitian and bilinear
+  forms of the tangential state over a layer of thickness `d` from the block
+  exponential `exp([[−X, Q], [0, Y]] d)` (Van Loan), entire in the layer
+  generator and so exact at degenerate and defective layer eigenvalues,
+  including a layer cutoff; over an exterior holding only decaying outgoing
+  waves, from the Sylvester equation `X I + I Y = −Q`.
+- `CoupledSolution` (`CoupledWorkspace::excitation`): one 4×4 solution with
+  its six-component fields, weighted Hermitian and bilinear overlaps, field
+  norms, longitudinal power `½ Re ∫ (E_y Z₀H_z* − E_z Z₀H_y*) dz` and interface
+  flux, per finite layer, wall gap or decaying exterior.
+- `CoupledWorkspace::layer_power`, `layer_energy` (with the Hermitian parts of
+  caller-supplied weights: `[ε, μ]`, or `[∂(k₀ε)/∂k₀, ∂(k₀μ)/∂k₀]` for the
+  dispersive energy) and `layer_dissipation` (from `(ε − ε†)/2i`), per unit
+  incident flux; participation and confinement follow from the energy. On
+  separable stacks they equal the 2×2 results.
+- `Layers`, `LayerEnergy`, `LayerParticipation`, `EnergyConfinement`,
+  `HermitianLayerOverlap` and `BilinearLayerOverlap` are exported.
 - Real-axis evaluation of the coupled channel selects the principal
   outgoing pair (decaying, or carrying flux away from the stack) of each open
   exterior; `ExteriorSelectionError`, `RealAxisEvaluationError::Exterior`.

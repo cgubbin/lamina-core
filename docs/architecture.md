@@ -241,6 +241,8 @@ Each open exterior contributes its outgoing subspace: the spectral projector `P 
 
 `Transfer4` composes `exp(−i k0 d Δ)` by scaling and squaring on the jet-valued matrix and evaluates `det[V_L | M V_R]`. `Scatter4` splits each layer's eigenvalues into a forward and a backward pair (by `Im n`, or the sign of `S_z` for real `n`, at the real point `(Re k0, Re k∥)`, continued to the evaluation point by nearest-root matching), refined through the jets by Newton's method on the factorisation of the characteristic polynomial, and composes bounded eigen-wave amplitudes; its characteristic is the product of the pivot determinants of that elimination. A layer with no split (a cutoff) is refused, and `Transfer4` is authoritative there.
 
+Retained 4×4 solutions hold the tangential state at every interface. Inside a region `ψ(t) = exp(tA) ψ₀`, `A = iK` (`−iK` outward on the left), and `(E, η) = T ψ` with `T` the region's `6 × n` field map. A Hermitian (`X = A_a†`) or bilinear (`X = A_aᵀ`) form `ψ_a^{†,ᵀ} Q ψ_b`, `Q = T_a^{†,ᵀ} M T_b` for a `6 × 6` weight `M`, integrates over a layer of thickness `d` to `e^{Xd} G` with `G` the upper-right block of `exp([[−X, Q], [0, A_b]] d)` (Van Loan), on the same entire kernel as the propagator; over an exterior holding only decaying outgoing waves, the state is written in the outgoing basis `V`, with restricted generator `V⁻¹ A V` from the reference rows, and the integral solves the Sylvester equation `X I + I Y = −Q`. The same restricted generator propagates exterior fields, so rounding in the incoming waves does not grow with depth. Weights `[W_e, W_m]` per region give overlaps and norms (unit weights), energy (Hermitian part of `[ε, μ]` or of the dispersive weights) and dissipation (`(ε − ε†)/2i`), and the longitudinal power `½ Re ∫ (E_y η_z* − E_z η_y*) dz`. Driven layer observables are normalised by the incident flux `½ |Re ψ_in† Γ ψ_in|`, as in the 2×2 backends.
+
 All four implement a shared backend interface:
 
 ```rust
@@ -309,8 +311,11 @@ Retained workspaces similarly expose reconstruction capabilities through traits 
 
 ```text
 ReconstructLayerBoundaryWaves
+RetainedLayers
 RetainedIsotropicLayers
 ```
+
+`RetainedLayers` gives every backend's retained layers: the stack-frame `[ε, μ]`, the thickness jet and the backend's evaluated layer (`κ` and admittance of one polarisation for the 2×2 backends, the Berreman generator and the `E_z`, `η_z` elimination for the 4×4 ones). `RetainedIsotropicLayers` is its 2×2 specialisation.
 
 The evaluator depends on these capabilities rather than concrete backend types.
 
@@ -1258,7 +1263,7 @@ Current equivalence tests compare:
 * retained layer boundary waves;
 * derivative branches.
 
-The 4×4 backends are compared with each other on full-tensor stacks (Jones matrices, power, characteristic zeros and their zero-free ratio, derivatives in `k0`, `k∥` and thickness), and with the 2×2 backends on separable stacks: their TE and TM channels give the scalar amplitudes and zeros, the coupled channel diagonal Jones matrices and a characteristic equal to a zero-free gauge times the TE and TM characteristics. Fields of the 4×4 backends are checked against Maxwell's equations directly.
+The 4×4 backends are compared with each other on full-tensor stacks (Jones matrices, power, characteristic zeros and their zero-free ratio, derivatives in `k0`, `k∥` and thickness), and with the 2×2 backends on separable stacks: their TE and TM channels give the scalar amplitudes and zeros, the coupled channel diagonal Jones matrices and a characteristic equal to a zero-free gauge times the TE and TM characteristics. Fields of the 4×4 backends are checked against Maxwell's equations directly. Their layer observables (power, energy, dissipation, participation, confinement) equal the 2×2 results on separable stacks, for the TE and TM channels and for the TE and TM eigen-waves of the coupled channel; their closed-form integrals are checked against quadrature of the sampled fields, at a layer cutoff and over decaying exteriors, and against the flux balance (dissipation equals each layer's net flux loss, and the losses sum to the absorptance).
 
 Once two backends produce equivalent raw boundary waves and retained isotropic quantities, higher observable projections need not be duplicated exhaustively for both backends.
 
