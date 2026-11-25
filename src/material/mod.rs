@@ -142,7 +142,10 @@ mod evaluate;
 mod handle;
 mod lifting;
 mod model;
+mod region;
+mod rotation;
 mod sample;
+mod tensor;
 
 pub use evaluate::{
     EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
@@ -155,7 +158,16 @@ pub use handle::{
 pub(crate) use lifting::{ConstitutiveDerivativeEvaluator, ConstitutiveSpectralFirstLift};
 pub use lifting::{ConstitutiveEvaluator, ConstitutiveLift};
 pub use model::Constant;
+pub use region::{
+    AnalyticalMaterialRegion, Constitutive, ConstitutiveClass, ConstitutiveError,
+    ConstitutiveTensor, TensorConstitutiveLift, UnsupportedConstitutive,
+};
+pub use rotation::{Rotation, RotationError, SignedAxis};
 pub use sample::Scalar;
+pub use tensor::{
+    AnalyticalTensorMaterialHandle, DifferentiableMeromorphicTensorMaterial,
+    DifferentiableTensorMaterial, MeromorphicTensorMaterial, Tensor3, TensorMaterial,
+};
 
 pub use sample::Sampled;
 

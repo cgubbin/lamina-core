@@ -10,11 +10,12 @@ use nalgebra::ComplexField;
 use num_traits::Float;
 
 use crate::{
-    ComplexScalar, DifferentiableMaterial, DifferentiableMeromorphicMaterial, IncidentSide,
-    MeromorphicMaterial,
+    ComplexScalar, DifferentiableMaterial, DifferentiableMeromorphicMaterial, FiniteLayerIndex,
+    IncidentSide, MeromorphicMaterial,
     material::{
-        AnalyticalMaterialHandle, DifferentiableMaterialHandle, Material, MaterialHandle,
-        MeromorphicMaterialHandle,
+        AnalyticalMaterialHandle, AnalyticalMaterialRegion, Constitutive,
+        DifferentiableMaterialHandle, Material, MaterialHandle, MeromorphicMaterialHandle,
+        UnsupportedConstitutive,
     },
 };
 
@@ -32,6 +33,19 @@ pub type MeromorphicMaterialStack<C> =
 /// Heterogeneous stack supporting complex continuation and derivatives.
 pub type AnalyticalMaterialStack<C> =
     Stack<AnalyticalMaterialHandle<C>, <C as ComplexField>::RealField>;
+
+/// Stack of regions, each isotropic or tensor-valued, supporting complex
+/// continuation and derivatives.
+pub type AnalyticalTensorStack<C> =
+    Stack<AnalyticalMaterialRegion<C>, <C as ComplexField>::RealField>;
+
+/// One region of a stack: an exterior medium or a finite layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StackRegion {
+    LeftExterior,
+    Layer(FiniteLayerIndex),
+    RightExterior,
+}
 
 /// A planar stack of finite layers between two exterior media.
 ///
@@ -224,6 +238,71 @@ impl<M, F> Stack<M, F> {
     }
 }
 
+impl<S, T, R, F> From<Stack<S, F>> for Stack<Constitutive<S, T, R>, F> {
+    /// Lift a stack of scalar materials to isotropic regions, unchanged.
+    fn from(stack: Stack<S, F>) -> Self {
+        Self {
+            left_exterior: stack.left_exterior.into(),
+            right_exterior: stack.right_exterior.into(),
+            layers_left_to_right: stack
+                .layers_left_to_right
+                .into_iter()
+                .map(|layer| {
+                    let (material, thickness) = layer.into_parts();
+                    Layer::new(material.into(), thickness)
+                })
+                .collect(),
+            left_termination: stack.left_termination,
+            right_termination: stack.right_termination,
+        }
+    }
+}
+
+impl<S, T, R, F> Stack<Constitutive<S, T, R>, F> {
+    /// Return `true` when every region, exteriors included, is separable:
+    /// TE and TM then decouple throughout the stack.
+    pub fn is_separable(&self) -> bool {
+        self.left_exterior.is_separable()
+            && self.right_exterior.is_separable()
+            && self.iter().all(|layer| layer.material().is_separable())
+    }
+
+    /// The stack of scalar materials, for the scalar (2×2) formulations,
+    /// when every region is isotropic; otherwise the first region that is
+    /// not, left to right.
+    pub fn to_isotropic(&self) -> Result<Stack<S, F>, UnsupportedConstitutive>
+    where
+        S: Clone,
+        F: Copy,
+    {
+        let scalar = |region, material: &Constitutive<S, T, R>| {
+            material.scalar().cloned().ok_or(UnsupportedConstitutive {
+                region,
+                class: material.class(),
+            })
+        };
+        let left_exterior = scalar(StackRegion::LeftExterior, &self.left_exterior)?;
+        let layers_left_to_right = self
+            .iter()
+            .enumerate()
+            .map(|(index, layer)| {
+                let region = StackRegion::Layer(FiniteLayerIndex::new(index));
+                Ok(Layer::new(
+                    scalar(region, layer.material())?,
+                    layer.thickness(),
+                ))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Stack {
+            left_exterior,
+            right_exterior: scalar(StackRegion::RightExterior, &self.right_exterior)?,
+            layers_left_to_right,
+            left_termination: self.left_termination,
+            right_termination: self.right_termination,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lamina_units::Length;
@@ -413,5 +492,124 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2],
         );
+    }
+
+    mod regions {
+        use ndarray::Ix0;
+
+        use super::*;
+        use crate::{
+            AnalyticalTensorMaterialHandle, ConstitutiveClass, Rotation, SignedAxis,
+            ValidationConfig, compile_canonical_constant_stack, test_support::jet::HoloJ2,
+        };
+
+        type Region = AnalyticalMaterialRegion<Complex64>;
+
+        /// A principal-axis model (a scalar seen as a tensor) under `rotation`.
+        fn oriented(rotation: Rotation<f64>) -> Region {
+            Region::oriented(
+                AnalyticalTensorMaterialHandle::new(Constant::dielectric(2.5)),
+                rotation,
+            )
+        }
+
+        fn diagonal() -> Region {
+            oriented(
+                Rotation::signed_permutation(
+                    SignedAxis::PlusY,
+                    SignedAxis::MinusX,
+                    SignedAxis::PlusZ,
+                )
+                .unwrap(),
+            )
+        }
+
+        fn isotropic(epsilon: f64) -> Region {
+            AnalyticalMaterialHandle::new(Constant::dielectric(epsilon)).into()
+        }
+
+        fn stack_with(left: Region, layer: Region) -> AnalyticalTensorStack<Complex64> {
+            Stack::builder(left, isotropic(2.0))
+                .layer(isotropic(3.0), Length::centimetres(0.1))
+                .layer(layer, Length::centimetres(0.2))
+                .finalise()
+        }
+
+        #[test]
+        fn scalar_stack_lifts_and_returns_unchanged() {
+            let scalar: AnalyticalMaterialStack<Complex64> =
+                Stack::from_analytical_materials(Constant::vacuum(), Constant::new(2.1, 1.0))
+                    .analytical_layer(Constant::new(3.0, 1.2), Length::centimetres(0.12))
+                    .finalise()
+                    .with_right_termination(Wall::new(
+                        WallKind::PerfectMagnetic,
+                        Length::centimetres(0.2),
+                    ));
+            let lifted = AnalyticalTensorStack::<Complex64>::from(scalar.clone());
+
+            assert!(lifted.is_separable());
+            assert_eq!(lifted.to_isotropic(), Ok(scalar));
+        }
+
+        #[test]
+        fn classes_and_separability_of_a_mixed_stack() {
+            let about_y = oriented(Rotation::from_euler(0.0, 0.6, 0.0));
+            let separable = stack_with(diagonal(), about_y);
+            assert!(separable.is_separable());
+            assert_eq!(
+                separable.left_exterior().class(),
+                ConstitutiveClass::Diagonal
+            );
+            assert_eq!(
+                separable.layers_left_to_right()[1].material().class(),
+                ConstitutiveClass::Full
+            );
+
+            let general = oriented(Rotation::from_euler(0.3, 0.6, 0.0));
+            assert!(!stack_with(isotropic(1.0), general).is_separable());
+        }
+
+        #[test]
+        fn scalar_formulations_refuse_diagonal_and_full_regions_by_name() {
+            let full = oriented(Rotation::from_euler(0.3, 0.6, 0.0));
+            assert_eq!(
+                stack_with(isotropic(1.0), full).to_isotropic(),
+                Err(UnsupportedConstitutive {
+                    region: StackRegion::Layer(FiniteLayerIndex::new(1)),
+                    class: ConstitutiveClass::Full,
+                })
+            );
+            assert_eq!(
+                stack_with(diagonal(), isotropic(2.0)).to_isotropic(),
+                Err(UnsupportedConstitutive {
+                    region: StackRegion::LeftExterior,
+                    class: ConstitutiveClass::Diagonal,
+                })
+            );
+        }
+
+        #[test]
+        fn wall_in_a_uniaxial_exterior_records_the_gap_class() {
+            let stack =
+                stack_with(oriented(Rotation::identity()), isotropic(2.0)).with_left_termination(
+                    Wall::new(WallKind::PerfectElectric, Length::centimetres(-0.05)),
+                );
+
+            let compiled = compile_canonical_constant_stack::<_, HoloJ2>(
+                &stack,
+                Ix0(),
+                &ValidationConfig::permissive(),
+            )
+            .unwrap();
+            assert_eq!(
+                compiled.left_exterior().class(),
+                ConstitutiveClass::Diagonal
+            );
+            assert_eq!(
+                compiled.left_exterior().tensor().unwrap().1,
+                &Rotation::identity()
+            );
+            assert!(!compiled.left_termination().is_open());
+        }
     }
 }

@@ -431,10 +431,14 @@ pub use spatial::{
 };
 
 pub use material::{
-    AnalyticalMaterialHandle, Constant, ConstitutiveEvaluator, ConstitutiveLift, DerivativeOrder,
-    DifferentiableMaterial, DifferentiableMeromorphicMaterial, EvaluateDifferentiableMaterial,
-    EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
-    Material, MeromorphicMaterial, Sampled, Scalar,
+    AnalyticalMaterialHandle, AnalyticalMaterialRegion, AnalyticalTensorMaterialHandle, Constant,
+    Constitutive, ConstitutiveClass, ConstitutiveError, ConstitutiveEvaluator, ConstitutiveLift,
+    ConstitutiveTensor, DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
+    DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial,
+    EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
+    EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, MeromorphicTensorMaterial,
+    Rotation, RotationError, Sampled, Scalar, SignedAxis, TensorConstitutiveLift, TensorMaterial,
+    UnsupportedConstitutive,
 };
 
 pub use field::VectorField;
@@ -449,8 +453,9 @@ pub use parameter::{FiniteLayerIndex, Parameter};
 pub use scalar::ComplexScalar;
 
 pub use stack::{
-    AnalyticalMaterialStack, DifferentiableMaterialStack, Layer, MaterialStack,
-    MeromorphicMaterialStack, Pml, Stack, StackSide, StretchProfile, Termination, Wall, WallKind,
+    AnalyticalMaterialStack, AnalyticalTensorStack, DifferentiableMaterialStack, Layer,
+    MaterialStack, MeromorphicMaterialStack, Pml, Stack, StackRegion, StackSide, StretchProfile,
+    Termination, Wall, WallKind,
 };
 
 pub mod units {
