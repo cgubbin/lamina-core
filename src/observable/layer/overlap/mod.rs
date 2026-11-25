@@ -4,13 +4,14 @@ mod hermitian;
 
 pub use bilinear::{
     AggregateBilinearNormalization, AggregateBilinearOverlap, BilinearLayerNormalization,
+    BilinearLayerOverlap,
 };
 
-pub use hermitian::AggregateHermitianOverlap;
+pub use hermitian::{AggregateHermitianOverlap, HermitianLayerOverlap};
 
-pub(crate) use bilinear::{BilinearLayerOverlap, BilinearLayerOverlapInput};
+pub(crate) use bilinear::BilinearLayerOverlapInput;
 pub(crate) use error::OverlapError;
-pub(crate) use hermitian::{HermitianLayerOverlap, HermitianLayerOverlapInput};
+pub(crate) use hermitian::HermitianLayerOverlapInput;
 
 use crate::{backend::LayerQuantities, observable::BoundaryWaves};
 

@@ -33,7 +33,9 @@
 
 pub(crate) mod berreman;
 pub(crate) mod exponential;
+pub(crate) mod integral;
 pub(crate) mod matrix;
+pub(crate) mod solution;
 pub(crate) mod split;
 
 use nalgebra::ComplexField;
@@ -59,6 +61,8 @@ use berreman::{Region, local_positions, reference_positions};
 use matrix::Matrix;
 use split::{Direction, Monic, Split};
 
+pub use solution::{CoupledSolution, FieldWeights};
+
 /// The errors a 4×4 backend reports while setting up a stack.
 pub(crate) trait CoupledError:
     From<TerminationError> + From<ConstitutiveError> + From<ChannelError>
@@ -80,6 +84,8 @@ pub(crate) struct Boundary<A> {
     incoming: Option<Matrix<A>>,
     /// `σ_min / σ_max` of the outgoing basis of an open side.
     conditioning: Option<f64>,
+    /// The distance to the wall of a closed side without a PML.
+    gap: Option<A>,
 }
 
 impl<A> Boundary<A>
@@ -108,7 +114,7 @@ where
         let like = generator.get(0, 0);
 
         let Some(branch) = branch else {
-            let outgoing = closed_subspace::<A, E, M, Error>(
+            let (outgoing, gap) = closed_subspace::<A, E, M, Error>(
                 side,
                 name,
                 coordinates,
@@ -122,6 +128,7 @@ where
                 outgoing,
                 incoming: None,
                 conditioning: None,
+                gap,
             });
         };
 
@@ -146,11 +153,13 @@ where
             incoming: Some(reference.subtract(&outgoing)),
             region,
             outgoing,
+            gap: None,
         })
     }
 }
 
-/// The states a closed side admits at its outermost interface.
+/// The states a closed side admits at its outermost interface, and the
+/// distance to its wall when it has no PML.
 fn closed_subspace<A, E, M, Error: CoupledError>(
     side: StackSide,
     name: StackRegion,
@@ -159,7 +168,7 @@ fn closed_subspace<A, E, M, Error: CoupledError>(
     termination: &CanonicalTermination<A>,
     region: &Region<A>,
     channel: Channel,
-) -> Result<Matrix<A>, Error>
+) -> Result<(Matrix<A>, Option<A>), Error>
 where
     A: ScalarAlgebra + TensorConstitutiveLift<E, M>,
     A::Scalar: ComplexScalar,
@@ -182,7 +191,9 @@ where
         StackSide::Left => generator.scale(i),
     };
     let mut length = gap.clone();
+    let mut wall_gap = Some(gap.clone());
     if let Some(pml) = termination.pml() {
+        wall_gap = None;
         let at_normal = CanonicalCoordinates::new(
             coordinates.vacuum_angular_wavenumber().clone(),
             like.zero_like(),
@@ -193,8 +204,11 @@ where
         exponent = exponent.shift(&reference.scale(i));
         length = length.add(&pml.optical_thickness_cm);
     }
-    Ok(exponential::exponential(&exponent.scale_by(&length))
-        .multiply(&Matrix::unit_columns(n, &admitted, like)))
+    Ok((
+        exponential::exponential(&exponent.scale_by(&length))
+            .multiply(&Matrix::unit_columns(n, &admitted, like)),
+        wall_gap,
+    ))
 }
 
 /// The exterior data of a solved stack: the channel and each side's boundary
@@ -203,6 +217,8 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct CoupledContext<A> {
     channel: Channel,
+    /// `k₀`.
+    vacuum_angular_wavenumber: A,
     left: Boundary<A>,
     right: Boundary<A>,
 }
@@ -332,6 +348,7 @@ where
     };
     let context = CoupledContext {
         channel,
+        vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
         left: boundary(
             StackSide::Left,
             stack.left_exterior(),
@@ -712,22 +729,14 @@ where
     A::Scalar: ComplexScalar,
     A::Dimension: Dimension,
 {
-    /// `[E, Z₀H]`, all six components in the stack frame, at `depth` into
-    /// `region` for unit amplitude in incoming eigen-wave `wave` of
-    /// `incident_side`.
-    ///
-    /// The depth is measured from a finite layer's left interface, and
-    /// outward from an exterior's interface. `None` when the workspace did
-    /// not retain fields, the incident side is closed, or `region` or `wave`
-    /// does not exist. Fields are propagated from the interface state by the
-    /// entire layer propagator.
-    pub fn fields(
+    /// The solution for unit amplitude in incoming eigen-wave `wave` of
+    /// `incident_side`; `None` when the workspace did not retain fields, the
+    /// incident side is closed, or `wave` does not exist.
+    pub fn excitation(
         &self,
         incident_side: IncidentSide,
         wave: usize,
-        region: StackRegion,
-        depth: &A,
-    ) -> Option<[[A; 3]; 2]> {
+    ) -> Option<CoupledSolution<'_, A>> {
         let retained = self.retained.as_ref()?;
         let context = self.solution.context();
         let m = context.left.outgoing.columns();
@@ -738,45 +747,26 @@ where
         if wave >= m || incident.incoming.is_none() {
             return None;
         }
-        let (region, interface, depth) = match region {
-            StackRegion::Layer(layer) => (
-                &retained.layers.get(layer.get())?.0,
-                layer.get(),
-                depth.clone(),
-            ),
-            StackRegion::LeftExterior => (&context.left.region, 0, depth.negate()),
-            StackRegion::RightExterior => {
-                (&context.right.region, retained.layers.len(), depth.clone())
-            }
-        };
         let column = wave + m * usize::from(incident_side == IncidentSide::Right);
-        let state =
-            exponential::exponential(&region.generator.scale(A::Scalar::i()).scale_by(&depth))
-                .multiply(&retained.states[interface].columns_in(column..column + 1));
+        let states = retained
+            .states
+            .iter()
+            .map(|state| state.columns_in(column..column + 1))
+            .collect();
+        let from_left = incident_side == IncidentSide::Left;
+        Some(CoupledSolution::new(self, states, [!from_left, from_left]))
+    }
 
-        // The full tangential state, with zeros outside the channel.
-        let components = berreman::channel_components(context.channel);
-        let full: [A; 4] = std::array::from_fn(|component| {
-            components
-                .iter()
-                .position(|c| *c == component)
-                .map_or_else(|| depth.zero_like(), |row| state.get(row, 0).clone())
-        });
-        let dot = |row: &berreman::Row<A>| {
-            row.iter()
-                .zip(&full)
-                .map(|(a, b)| a.multiply(b))
-                .reduce(|sum, term| sum.add(&term))
-                .unwrap_or_else(|| depth.zero_like())
-        };
-        let [e_x, eta_y, e_y, minus_eta_x] = full.clone();
-        Some([
-            [e_x, e_y, dot(&region.elimination.electric)],
-            [
-                minus_eta_x.negate(),
-                eta_y,
-                dot(&region.elimination.magnetic),
-            ],
-        ])
+    /// `[E, Z₀H]`, all six components in the stack frame, at `depth` into
+    /// `region` for unit amplitude in incoming eigen-wave `wave` of
+    /// `incident_side` (see [`CoupledSolution::fields`]).
+    pub fn fields(
+        &self,
+        incident_side: IncidentSide,
+        wave: usize,
+        region: StackRegion,
+        depth: &A,
+    ) -> Option<[[A; 3]; 2]> {
+        self.excitation(incident_side, wave)?.fields(region, depth)
     }
 }

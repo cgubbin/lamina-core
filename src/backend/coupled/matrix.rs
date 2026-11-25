@@ -76,6 +76,13 @@ impl<A: Clone> Matrix<A> {
         self.select(&rows.collect::<Vec<_>>(), &columns)
     }
 
+    /// `selfᵀ`.
+    pub(crate) fn transpose(&self) -> Self {
+        Self::from_fn(self.columns, self.rows, |row, column| {
+            self.get(column, row).clone()
+        })
+    }
+
     /// `[self | rhs]`.
     pub(crate) fn hstack(&self, rhs: &Self) -> Self {
         Self::from_fn(self.rows, self.columns + rhs.columns, |row, column| {
@@ -257,6 +264,13 @@ where
 
     pub(crate) fn all_finite(&self) -> bool {
         self.entries.iter().all(A::all_finite)
+    }
+}
+
+impl<A: crate::algebra::RealScalarAlgebra> Matrix<A> {
+    /// `self†`, the conjugate transpose.
+    pub(crate) fn adjoint(&self) -> Self {
+        self.transpose().map(A::conjugated)
     }
 }
 

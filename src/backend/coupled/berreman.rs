@@ -138,6 +138,38 @@ where
     }
 }
 
+impl<A> Region<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: ComplexScalar,
+    A::Dimension: Dimension,
+{
+    /// The `6 × n` map from a channel's state to `(E_x, E_y, E_z, η_x, η_y,
+    /// η_z)`.
+    pub(crate) fn field_map(&self, channel: Channel) -> Matrix<A> {
+        let like = self.generator.get(0, 0);
+        let unit = |component: usize, sign: bool| -> Row<A> {
+            std::array::from_fn(|index| match (index == component, sign) {
+                (false, _) => like.zero_like(),
+                (true, true) => like.one_like(),
+                (true, false) => like.one_like().negate(),
+            })
+        };
+        let rows = [
+            unit(EX, true),
+            unit(EY, true),
+            self.elimination.electric.clone(),
+            unit(HX, false),
+            unit(HY, true),
+            self.elimination.magnetic.clone(),
+        ];
+        let components = channel_components(channel);
+        Matrix::from_fn(6, components.len(), |row, column| {
+            rows[row][components[column]].clone()
+        })
+    }
+}
+
 /// `K = k₀ Δ` of full `ε`, `μ`, and the elimination rows.
 fn generator<A>(
     epsilon: &[[A; 3]; 3],

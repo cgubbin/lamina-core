@@ -42,7 +42,9 @@ mod transfer4;
 mod workspace;
 
 pub use channel::{Channel, ChannelError};
-pub use coupled::{CoupledContext, CoupledEntries, CoupledWorkspace};
+pub use coupled::{
+    CoupledContext, CoupledEntries, CoupledSolution, CoupledWorkspace, FieldWeights,
+};
 pub(crate) use exterior::ExteriorContext;
 #[cfg(test)]
 pub(crate) use exterior::evaluate_exterior_wavevectors;
