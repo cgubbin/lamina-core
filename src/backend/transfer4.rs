@@ -21,7 +21,7 @@ use crate::{
         Channel, ChannelError, ExteriorWavevectors, RunMode, TerminationError,
         coupled::{
             CoupledError, CoupledWorkspace, Layer, Solved, accumulate, coupled_backend,
-            exponential::exponential, matrix::Matrix,
+            exponential::exponential, matrix::Matrix, modal::Modal,
         },
     },
     input::CanonicalStack,
@@ -117,18 +117,29 @@ impl Transfer4 {
                     .hstack(&carried.scale(-J::Scalar::one()))
                     .solve(&transfer.multiply(&from_right).subtract(&from_left));
                 let outgoing = solution.rows_in(0..m);
+                let system = left.hstack(&carried);
                 let states = retain.then(|| {
-                    let start = left.multiply(&outgoing).add(&from_left);
-                    std::iter::once(start.clone())
+                    // The excitations, then the left boundary subspace.
+                    let start = left.multiply(&outgoing).add(&from_left).hstack(left);
+                    let carried: Vec<_> = std::iter::once(start.clone())
                         .chain(layers.iter().scan(start, |state, layer| {
                             *state = propagator(J::Scalar::one(), layer).multiply(state);
                             Some(state.clone())
                         }))
-                        .collect()
+                        .collect();
+                    let states = carried.iter().map(|state| state.columns_in(0..2 * m));
+                    let basis = carried.iter().map(|state| state.columns_in(2 * m..3 * m));
+                    (
+                        states.collect(),
+                        Modal {
+                            system: system.clone(),
+                            basis: basis.collect(),
+                        },
+                    )
                 });
 
                 Ok(Solved {
-                    characteristic: left.hstack(&carried).determinant(),
+                    characteristic: system.determinant(),
                     left: outgoing,
                     right: solution.rows_in(m..2 * m),
                     states,

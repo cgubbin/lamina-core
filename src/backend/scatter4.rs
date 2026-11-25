@@ -42,6 +42,7 @@ use crate::{
             exponential::exponential,
             layer_regions,
             matrix::Matrix,
+            modal::Modal,
             split::{Direction, Split},
         },
     },
@@ -190,19 +191,36 @@ where
     let last = pivot.solve(&right_incoming.subtract(&state.1));
     let mut backward = last.rows_in(0..m);
     let mut states = vec![state.0.multiply(&backward).add(&state.1)];
+    // The homogeneous solution: backward amplitudes of the last layer `b`
+    // carried back with no excitation, as maps from `b`.
+    let mut homogeneous = Matrix::identity(m, left.get(0, 0));
+    let mut basis = vec![state.0.clone()];
     let identity = Matrix::identity(excitations, left.get(0, 0));
     for (elimination, backward_phase, (u, y)) in steps.iter().rev() {
         let amplitudes = backward_phase.multiply(&backward).vstack(&identity);
         backward = elimination.multiply(&amplitudes).rows_in(0..m);
         states.push(u.multiply(&backward).add(y));
+        homogeneous = elimination
+            .columns_in(0..m)
+            .multiply(backward_phase)
+            .multiply(&homogeneous)
+            .rows_in(0..m);
+        basis.push(u.multiply(&homogeneous));
     }
     states.reverse();
+    basis.reverse();
 
     Solved {
         characteristic,
         left: backward,
         right: last.rows_in(m..2 * m),
-        states: retain.then_some(states),
+        states: retain.then_some((
+            states,
+            Modal {
+                system: pivot,
+                basis,
+            },
+        )),
     }
 }
 

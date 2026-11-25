@@ -108,7 +108,7 @@ fn full_stack() -> AnalyticalTensorStack<C> {
 }
 
 /// [`full_stack`] with a second layer of thickness `thickness` cm.
-fn full_stack_with(thickness: f64) -> AnalyticalTensorStack<C> {
+pub(super) fn full_stack_with(thickness: f64) -> AnalyticalTensorStack<C> {
     Stack::builder(
         isotropic(material(c(1.0, 0.0), c(1.0, 0.0))),
         oriented(

@@ -417,6 +417,7 @@ where
     A::Dimension: Dimension,
 {
     type Algebra = A;
+    type Mode = PlaneWaveModeCandidate<A>;
 
     fn modal_boundary_solution(
         &self,

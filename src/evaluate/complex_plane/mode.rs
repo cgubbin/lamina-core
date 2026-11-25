@@ -94,7 +94,7 @@ where
         W: PlaneWaveSolutionSource
             + ReconstructLayerModeWaves<Algebra = J>
             + RetainedIsotropicLayers<Algebra = J>
-            + ModalSolutionSource<Algebra = J>,
+            + ModalSolutionSource<Algebra = J, Mode = PlaneWaveModeCandidate<J>>,
         <W::Entries as PlaneWaveEntries>::ExteriorContext: ExteriorContextProvider<Algebra = J>,
     {
         if !state.stack().is_open() {

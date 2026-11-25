@@ -35,6 +35,7 @@ pub(crate) mod berreman;
 pub(crate) mod exponential;
 pub(crate) mod integral;
 pub(crate) mod matrix;
+pub(crate) mod modal;
 pub(crate) mod solution;
 pub(crate) mod split;
 
@@ -48,8 +49,9 @@ use crate::{
     algebra::{RealScalarAlgebra, ScalarAlgebra},
     backend::{
         Channel, ChannelError, ExteriorBranch, ExteriorSelectionError, ExteriorWavevectors,
-        PlaneWaveEntries, PlaneWaveSolution, PlaneWaveSolutionSource, RunMode, SolutionWorkspace,
-        TerminationError, termination::check_exterior_pattern,
+        ModalSolutionSource, ModeReconstructionError, PlaneWaveEntries, PlaneWaveSolution,
+        PlaneWaveSolutionSource, RunMode, SolutionWorkspace, TerminationError,
+        termination::check_exterior_pattern,
     },
     input::{CanonicalCoordinates, CanonicalStack, canonical::CanonicalTermination},
     material::{ConstitutiveError, ConstitutiveTensor, TensorConstitutiveLift},
@@ -61,6 +63,7 @@ use berreman::{Region, local_positions, reference_positions};
 use matrix::Matrix;
 use split::{Direction, Monic, Split};
 
+pub use modal::CoupledModeCandidate;
 pub use solution::{CoupledSolution, FieldWeights};
 
 /// The errors a 4×4 backend reports while setting up a stack.
@@ -319,8 +322,9 @@ pub(crate) struct Solved<A> {
     pub(crate) left: Matrix<A>,
     /// The outgoing amplitudes on the right, `m × 2m`.
     pub(crate) right: Matrix<A>,
-    /// The state at every interface, `n × 2m`, when retained.
-    pub(crate) states: Option<Vec<Matrix<A>>>,
+    /// The state at every interface, `n × 2m`, and the homogeneous system,
+    /// when retained.
+    pub(crate) states: Option<(Vec<Matrix<A>>, modal::Modal<A>)>,
 }
 
 /// A finite layer: its region and thickness.
@@ -409,7 +413,11 @@ where
             ),
         ],
     };
-    let retained = solved.states.map(|states| Retained { layers, states });
+    let retained = solved.states.map(|(states, modal)| Retained {
+        layers,
+        states,
+        modal,
+    });
 
     Ok(CoupledWorkspace {
         solution: PlaneWaveSolution::new(entries, context),
@@ -686,6 +694,8 @@ struct Retained<A> {
     layers: Vec<Layer<A>>,
     /// The state at every interface for the `2m` excitations.
     states: Vec<Matrix<A>>,
+    /// The homogeneous interface system.
+    modal: modal::Modal<A>,
 }
 
 impl<A> PlaneWaveSolutionSource for CoupledWorkspace<A> {
@@ -693,6 +703,20 @@ impl<A> PlaneWaveSolutionSource for CoupledWorkspace<A> {
 
     fn solution(&self) -> crate::backend::PlaneWaveSolutionView<'_, Self::Entries> {
         self.solution.as_view()
+    }
+}
+
+impl<A> ModalSolutionSource for CoupledWorkspace<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: ComplexScalar,
+    A::Dimension: Dimension,
+{
+    type Algebra = A;
+    type Mode = CoupledModeCandidate<A>;
+
+    fn modal_boundary_solution(&self) -> Result<Self::Mode, ModeReconstructionError> {
+        self.mode()
     }
 }
 
@@ -755,6 +779,22 @@ where
             .collect();
         let from_left = incident_side == IncidentSide::Left;
         Some(CoupledSolution::new(self, states, [!from_left, from_left]))
+    }
+
+    /// The mode of the homogeneous interface system: its null vector (see
+    /// [`modal`]) with its residual. Exteriors of the mode hold only their
+    /// outgoing waves.
+    pub fn mode(&self) -> Result<CoupledModeCandidate<A>, ModeReconstructionError> {
+        self.retained
+            .as_ref()
+            .ok_or(ModeReconstructionError::ModeDataNotRetained)?
+            .modal
+            .candidate()
+    }
+
+    /// The solution of a mode of this workspace.
+    pub fn mode_solution(&self, mode: &CoupledModeCandidate<A>) -> CoupledSolution<'_, A> {
+        CoupledSolution::new(self, mode.states.clone(), [true, true])
     }
 
     /// `[E, Z₀H]`, all six components in the stack frame, at `depth` into
