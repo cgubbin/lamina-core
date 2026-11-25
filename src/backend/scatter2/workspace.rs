@@ -5,7 +5,7 @@ use crate::{
         ExteriorContext, ExteriorContextProvider, LayerQuantities, ModalSolutionSource,
         ModeReconstructionError, PlaneWaveModeCandidate, PlaneWaveSolution,
         PlaneWaveSolutionSource, PlaneWaveSolutionView, ReconstructExteriorModeWaves,
-        ReconstructLayerModeWaves, RetainedIsotropicLayers, RunMode, SolutionWorkspace,
+        ReconstructLayerModeWaves, RetainedLayers, RunMode, SolutionWorkspace,
         right_exterior_mode_waves,
         scatter2::{
             Scatter2ProjectiveEntries, cascade_projection,
@@ -13,6 +13,7 @@ use crate::{
         },
     },
     input::IncidentSide,
+    material::ConstitutiveTensor,
     observable::BoundaryState,
     waves::{
         BidirectionalWaves, ExteriorBoundaryWaves, LayerBoundaryWaves,
@@ -87,15 +88,20 @@ impl<A> SolutionWorkspace for Scatter2Workspace<A> {
     }
 }
 
-impl<A> RetainedIsotropicLayers for Scatter2Workspace<A> {
+impl<A: Clone> RetainedLayers for Scatter2Workspace<A> {
     type Algebra = A;
+    type Layer = LayerQuantities<A>;
 
     fn retained_layer_count(&self) -> Option<usize> {
         self.retained.as_ref().map(|x| x.num_layers())
     }
 
-    fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<Self::Algebra>> {
+    fn layer(&self, index: usize) -> Option<&LayerQuantities<A>> {
         self.retained.as_ref()?.get_quantities(index)
+    }
+
+    fn layer_tensors(&self, index: usize) -> Option<[ConstitutiveTensor<A>; 2]> {
+        Some(self.layer(index)?.constitutive().tensors())
     }
 
     fn layer_thickness(&self, index: usize) -> Option<&Self::Algebra> {

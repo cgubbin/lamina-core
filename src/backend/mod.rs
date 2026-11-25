@@ -66,7 +66,7 @@ pub use termination::TerminationError;
 pub(crate) use termination::{right_exterior_mode_waves, undefined_amplitudes};
 pub use transfer2::{Transfer2, Transfer2Error};
 pub use transfer4::{Transfer4, Transfer4Error};
-pub(crate) use workspace::{RetainedIsotropicLayers, SolutionWorkspace};
+pub(crate) use workspace::{RetainedIsotropicLayers, RetainedLayers, SolutionWorkspace};
 
 /// The polarisation of a scalar channel; the 2×2 backends refuse the coupled
 /// channel.

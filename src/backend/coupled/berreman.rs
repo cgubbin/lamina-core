@@ -72,7 +72,7 @@ pub(crate) type Row<A> = [A; 4];
 
 /// The linear maps from `ψ` to the eliminated normal components.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Elimination<A> {
+pub struct Elimination<A> {
     pub(crate) electric: Row<A>,
     pub(crate) magnetic: Row<A>,
 }
@@ -80,9 +80,11 @@ pub(crate) struct Elimination<A> {
 /// One region's Berreman generator `K` restricted to a channel, with the
 /// elimination of the normal fields.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Region<A> {
+pub struct Region<A> {
     pub(crate) generator: Matrix<A>,
     pub(crate) elimination: Elimination<A>,
+    /// The stack-frame `[ε, μ]`.
+    pub(crate) tensors: [ConstitutiveTensor<A>; 2],
 }
 
 impl<A> Region<A>
@@ -119,17 +121,19 @@ where
 
     /// The region of stack-frame `[ε, μ]` at `k₀` and `k∥`.
     pub(crate) fn new(
-        [epsilon, mu]: &[ConstitutiveTensor<A>; 2],
+        tensors: &[ConstitutiveTensor<A>; 2],
         k0: &A,
         k_parallel: &A,
         channel: Channel,
     ) -> Self {
+        let [epsilon, mu] = tensors;
         let (generator, elimination) = generator(&epsilon.full(), &mu.full(), k0, k_parallel);
         let components = channel_components(channel);
 
         Self {
             generator: generator.select(components, components),
             elimination,
+            tensors: tensors.clone(),
         }
     }
 }

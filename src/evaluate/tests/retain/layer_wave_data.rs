@@ -1,6 +1,6 @@
 use crate::{
     FiniteLayerIndex, IncidentSide, Polarisation, RealAxisEvaluator,
-    backend::{RetainedIsotropicLayers, scatter2::Scatter2, transfer2::Transfer2},
+    backend::{RetainedIsotropicLayers, RetainedLayers, scatter2::Scatter2, transfer2::Transfer2},
     test_support::planar::{scalar_real_input, two_layer_stack},
 };
 

@@ -228,15 +228,23 @@ mod tests {
         }
     }
 
-    impl RetainedIsotropicLayers for MockRetainedWorkspace {
+    impl crate::backend::RetainedLayers for MockRetainedWorkspace {
         type Algebra = A;
+        type Layer = LayerQuantities<A>;
 
         fn retained_layer_count(&self) -> Option<usize> {
             self.retained_layer_count
         }
 
-        fn layer_quantities(&self, index: usize) -> Option<&LayerQuantities<A>> {
+        fn layer(&self, index: usize) -> Option<&LayerQuantities<A>> {
             self.quantities.get(index)
+        }
+
+        fn layer_tensors(
+            &self,
+            index: usize,
+        ) -> Option<[crate::material::ConstitutiveTensor<A>; 2]> {
+            Some(self.quantities.get(index)?.constitutive().tensors())
         }
 
         fn layer_thickness(&self, index: usize) -> Option<&Self::Algebra> {

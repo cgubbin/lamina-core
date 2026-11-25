@@ -1,3 +1,4 @@
+use crate::backend::RetainedLayers;
 use lamina_units::Length;
 use ndarray::{ArrayBase, Ix1, OwnedRepr};
 use num_complex::Complex64;

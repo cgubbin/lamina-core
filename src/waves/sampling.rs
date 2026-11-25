@@ -256,6 +256,7 @@ mod tests {
     use ndarray::Ix0;
 
     use super::*;
+    use crate::backend::RetainedLayers;
 
     use crate::{
         FiniteLayerIndex, Polarisation, RealAxis,

@@ -50,7 +50,7 @@ use crate::{
         TerminationError, termination::check_exterior_pattern,
     },
     input::{CanonicalCoordinates, CanonicalStack, canonical::CanonicalTermination},
-    material::{ConstitutiveError, TensorConstitutiveLift},
+    material::{ConstitutiveError, ConstitutiveTensor, TensorConstitutiveLift},
     observable::{ProjectJonesAmplitudes, ProjectPlaneWaveModeDeterminant, ProjectPower},
     stack::{StackRegion, StackSide, WallKind},
 };
@@ -492,6 +492,66 @@ struct Response<A> {
 
 /// The solved response of a 4×4 backend: the characteristic and the Jones
 /// matrices for incidence from either side.
+///
+/// Scalar reflection and transmission amplitudes belong to the scalar
+/// channels of the 2×2 backends:
+///
+/// ```
+/// # use lamina_core::{
+/// #     CoordinateInput, Coordinates, InPlaneCoordinate, IncidentSide, MaterialStack,
+/// #     Polarisation, RealAxisEvaluator, SpectralCoordinate, Stack, Transfer2,
+/// #     material::Constant, units::{InverseLengthUnit, Length},
+/// # };
+/// # let stack: MaterialStack<num_complex::Complex64> =
+/// #     Stack::from_materials(Constant::new(1.0, 1.0), Constant::new(2.0, 1.0))
+/// #         .material_layer(Constant::new(2.25, 1.0), Length::nanometres(500.0f64))
+/// #         .finalise();
+/// # let coordinates = CoordinateInput::intrinsic(
+/// #     Coordinates::new(
+/// #         SpectralCoordinate::VacuumAngularWavenumber(InverseLengthUnit::PerCentimetre),
+/// #         InPlaneCoordinate::ParallelAngularWavenumber(InverseLengthUnit::PerCentimetre),
+/// #     ),
+/// #     ndarray::arr0(1.0e4),
+/// #     ndarray::arr0(0.0),
+/// # )?;
+/// let response = RealAxisEvaluator::new(Transfer2::new()).evaluate(
+///     coordinates,
+///     &stack,
+///     Polarisation::TransverseElectric,
+/// )?;
+/// let amplitudes = response.amplitudes(IncidentSide::Left)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// The 4×4 entries do not provide them, in any channel; their responses are
+/// Jones matrices ([`ProjectJonesAmplitudes`]):
+///
+/// ```compile_fail
+/// # use lamina_core::{
+/// #     CoordinateInput, Coordinates, InPlaneCoordinate, IncidentSide, MaterialStack,
+/// #     Polarisation, RealAxisEvaluator, SpectralCoordinate, Stack, Transfer4,
+/// #     material::Constant, units::{InverseLengthUnit, Length},
+/// # };
+/// # let stack: MaterialStack<num_complex::Complex64> =
+/// #     Stack::from_materials(Constant::new(1.0, 1.0), Constant::new(2.0, 1.0))
+/// #         .material_layer(Constant::new(2.25, 1.0), Length::nanometres(500.0f64))
+/// #         .finalise();
+/// # let coordinates = CoordinateInput::intrinsic(
+/// #     Coordinates::new(
+/// #         SpectralCoordinate::VacuumAngularWavenumber(InverseLengthUnit::PerCentimetre),
+/// #         InPlaneCoordinate::ParallelAngularWavenumber(InverseLengthUnit::PerCentimetre),
+/// #     ),
+/// #     ndarray::arr0(1.0e4),
+/// #     ndarray::arr0(0.0),
+/// # )?;
+/// let response = RealAxisEvaluator::new(Transfer4::new()).evaluate(
+///     coordinates,
+///     &stack,
+///     Polarisation::TransverseElectric,
+/// )?;
+/// let amplitudes = response.amplitudes(IncidentSide::Left)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CoupledEntries<A> {
@@ -622,6 +682,27 @@ impl<A> PlaneWaveSolutionSource for CoupledWorkspace<A> {
 impl<A> SolutionWorkspace for CoupledWorkspace<A> {
     fn into_solution(self) -> PlaneWaveSolution<CoupledEntries<A>> {
         self.solution
+    }
+}
+
+impl<A: Clone> crate::backend::RetainedLayers for CoupledWorkspace<A> {
+    type Algebra = A;
+    type Layer = Region<A>;
+
+    fn retained_layer_count(&self) -> Option<usize> {
+        Some(self.retained.as_ref()?.layers.len())
+    }
+
+    fn layer(&self, index: usize) -> Option<&Region<A>> {
+        Some(&self.retained.as_ref()?.layers.get(index)?.0)
+    }
+
+    fn layer_tensors(&self, index: usize) -> Option<[ConstitutiveTensor<A>; 2]> {
+        Some(self.layer(index)?.tensors.clone())
+    }
+
+    fn layer_thickness(&self, index: usize) -> Option<&A> {
+        Some(&self.retained.as_ref()?.layers.get(index)?.1)
     }
 }
 
