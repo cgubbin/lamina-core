@@ -11,7 +11,10 @@ use crate::{
     backend::{Backend, Scatter2, Scatter4, Transfer2, Transfer4},
     input::{CanonicalStack, canonical::CanonicalLayer, compile_terminations},
 };
-use crate::{ElectromagneticFields, FieldSampling, SpatialResponse, backend::ModalSolutionSource};
+use crate::{
+    ElectromagneticFields, FieldSampling, SpatialResponse,
+    backend::{CoupledSolution, ModalSolutionSource},
+};
 use ndarray::{Ix0, arr0};
 use num_complex::Complex64 as C;
 use std::{error::Error, sync::Arc};
@@ -249,6 +252,130 @@ pub struct DirectionalModeFields {
     pub tangent: OwnedModeFields,
 }
 
+/// One mode of [`ModalDerivativeBackend::directional_forms`]: the direction
+/// it is evaluated along and the constant amplitude multiplying the
+/// backend's homogeneous seed, as for
+/// [`ModalDerivativeBackend::directional_fields`].
+pub struct ModalFormOperand<'a, M = AnalyticalMaterialHandle<C>, R = (C, C), P = Polarisation> {
+    pub direction: ModalCharacteristicDirection<'a, M, R, P>,
+    pub amplitude: C,
+}
+
+impl<M, R, P: Copy> Clone for ModalFormOperand<'_, M, R, P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M, R, P: Copy> Copy for ModalFormOperand<'_, M, R, P> {}
+
+/// A quadratic form `∫ f_a^{†,ᵀ} W f_b dz` of the six components
+/// `f = (E_x, E_y, E_z, Z₀H_x, Z₀H_y, Z₀H_z)` of two modes.
+#[derive(Clone, Copy, Debug)]
+pub struct ModalForm<'a> {
+    /// Conjugate `f_a` (a Hermitian form) or not (a bilinear form).
+    pub conjugate: bool,
+    /// The `6 × 6` weight `W`, rows indexing `f_a`: one for every region, or
+    /// one per region (left exterior, layers left to right, right exterior).
+    pub weights: &'a [[[C; 6]; 6]],
+}
+
+/// Integrals of [`ModalForm`]s, form by form, each region by region: left
+/// exterior, layers left to right, right exterior, in cm times the
+/// fields' units squared, with their first derivatives along the
+/// operands' common direction.
+pub type ModalFormIntegrals = Vec<Vec<J>>;
+
+/// The regions of a stack with `layers` finite layers, left to right.
+fn regions(layers: usize) -> impl Iterator<Item = StackRegion> {
+    std::iter::once(StackRegion::LeftExterior)
+        .chain((0..layers).map(|index| StackRegion::Layer(FiniteLayerIndex::new(index))))
+        .chain(std::iter::once(StackRegion::RightExterior))
+}
+
+/// Whether two operands are the same mode by reference, evaluated once.
+fn same_operand<M, R, P>(modes: &[ModalFormOperand<'_, M, R, P>; 2]) -> bool
+where
+    P: Into<Channel> + Copy,
+{
+    let [a, b] = modes.map(|mode| mode.direction);
+    std::ptr::eq(a.stack, b.stack)
+        && std::ptr::eq(a.coordinates, b.coordinates)
+        && std::ptr::eq(a.exterior, b.exterior)
+        && std::ptr::eq(a.thickness_rates, b.thickness_rates)
+        && std::ptr::eq(a.constitutive_rates, b.constitutive_rates)
+        && a.polarisation.into() == b.polarisation.into()
+        && modes[0].amplitude == modes[1].amplitude
+}
+
+/// A jet conjugated as a function of a real parameter: value and derivative.
+fn conjugated(jet: &J) -> J {
+    J::from_parts(
+        jet.value().mapv(|v| v.conj()),
+        jet.first().mapv(|v| v.conj()),
+    )
+}
+
+/// The forms of two mode solutions over every region of a stack with
+/// `layers` finite layers.
+fn integrate_forms(
+    solutions: [&CoupledSolution<'_, J>; 2],
+    layers: usize,
+    forms: &[ModalForm<'_>],
+) -> Result<ModalFormIntegrals, Arc<dyn Error + Send + Sync>> {
+    let count = layers + 2;
+    if forms
+        .iter()
+        .any(|form| form.weights.len() != 1 && form.weights.len() != count)
+    {
+        return Err(Arc::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "form weights do not match the stack's regions",
+        )));
+    }
+    let lift = |weight: &[[C; 6]; 6]| -> [[J; 6]; 6] {
+        weight.map(|row| row.map(|entry| J::constant(arr0(entry))))
+    };
+    let mut integrals = vec![Vec::with_capacity(count); forms.len()];
+    for (index, region) in regions(layers).enumerate() {
+        // The forms of one pairing over one region in one call.
+        for conjugate in [true, false] {
+            let selected: Vec<usize> = (0..forms.len())
+                .filter(|&form| forms[form].conjugate == conjugate)
+                .collect();
+            if selected.is_empty() {
+                continue;
+            }
+            let weights: Vec<[[J; 6]; 6]> = selected
+                .iter()
+                .map(|&form| {
+                    let weights = forms[form].weights;
+                    lift(&weights[if weights.len() == 1 { 0 } else { index }])
+                })
+                .collect();
+            let values = solutions[0]
+                .forms(
+                    solutions[1],
+                    region,
+                    conjugate.then_some(conjugated),
+                    &weights,
+                )
+                .ok_or_else(|| {
+                    Arc::new(std::io::Error::other(format!(
+                        "no closed-form integral over {region:?}: a PML side or incoming waves"
+                    ))) as Arc<dyn Error + Send + Sync>
+                })?;
+            for (form, value) in selected.into_iter().zip(values) {
+                if !value.all_finite() {
+                    return Err(Arc::new(std::io::Error::other("nonfinite form integral")));
+                }
+                integrals[form].push(value);
+            }
+        }
+    }
+    Ok(integrals)
+}
+
 /// Checked characteristic evaluation on a caller-supplied canonical stack.
 ///
 /// Implemented only by the built-in 2×2 modal backends. This keeps
@@ -273,6 +400,25 @@ pub trait ModalDerivativeBackend: Clone {
         sampling: &FieldSampling<f64>,
         amplitude: C,
     ) -> Result<DirectionalModeFields, Arc<dyn Error + Send + Sync>>
+    where
+        ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
+        R: ConstitutiveRates,
+        P: Into<Channel> + Copy;
+
+    /// Closed-form integrals over every region of quadratic forms of two
+    /// modes' fields (see [`ModalForm`]), each mode the backend's
+    /// homogeneous seed along its direction times its amplitude, the gauge
+    /// of [`Self::directional_fields`]. Exact over finite layers, wall gaps
+    /// and open exteriors (whose fields hold only their outgoing waves),
+    /// including at degenerate and defective layer eigenvalues; a side
+    /// closed by a PML is refused. The two modes may belong to different
+    /// stacks with the same layer thicknesses; operands that are the same
+    /// by reference are evaluated once.
+    fn directional_forms<M, R, P>(
+        &self,
+        modes: [ModalFormOperand<'_, M, R, P>; 2],
+        forms: &[ModalForm<'_>],
+    ) -> Result<ModalFormIntegrals, Arc<dyn Error + Send + Sync>>
     where
         ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
         R: ConstitutiveRates,
@@ -457,21 +603,204 @@ where
     )
 }
 
+/// The retained 4×4 workspace of a direction's seeded stack, with its
+/// number of finite layers.
+fn coupled_workspace<B, M, R, P>(
+    backend: &B,
+    direction: ModalCharacteristicDirection<'_, M, R, P>,
+) -> Result<(crate::backend::CoupledWorkspace<J>, usize), Arc<dyn Error + Send + Sync>>
+where
+    B: Backend<J, SeededConstitutive, Workspace = crate::backend::CoupledWorkspace<J>>,
+    ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
+    R: ConstitutiveRates,
+    P: Into<Channel> + Copy,
+{
+    let stack = direction.canonical_stack()?;
+    let workspace = backend
+        .retain(
+            direction.coordinates,
+            &stack,
+            direction.exterior,
+            direction.polarisation.into(),
+        )
+        .map_err(super::shared_error)?;
+    Ok((workspace, stack.layers().len()))
+}
+
+/// Forms of two modes of a 4×4 backend: its own modal solutions.
+fn coupled_forms<B, M, R, P>(
+    backend: &B,
+    modes: [ModalFormOperand<'_, M, R, P>; 2],
+    forms: &[ModalForm<'_>],
+) -> Result<ModalFormIntegrals, Arc<dyn Error + Send + Sync>>
+where
+    B: Backend<J, SeededConstitutive, Workspace = crate::backend::CoupledWorkspace<J>>,
+    ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
+    R: ConstitutiveRates,
+    P: Into<Channel> + Copy,
+{
+    for mode in &modes {
+        invalid_amplitude(mode.amplitude)?;
+    }
+    let same = same_operand(&modes);
+    let (first, layers) = coupled_workspace(backend, modes[0].direction)?;
+    let second = match same {
+        true => None,
+        false => Some(coupled_workspace(backend, modes[1].direction)?.0),
+    };
+    fn solution(
+        workspace: &crate::backend::CoupledWorkspace<J>,
+        amplitude: C,
+    ) -> Result<CoupledSolution<'_, J>, Arc<dyn Error + Send + Sync>> {
+        let mode = workspace.mode().map_err(super::shared_error)?;
+        Ok(workspace
+            .mode_solution(&mode)
+            .scaled(&J::constant(arr0(amplitude))))
+    }
+    let a = solution(&first, modes[0].amplitude)?;
+    let b = match &second {
+        Some(workspace) => Some(solution(workspace, modes[1].amplitude)?),
+        None => None,
+    };
+    integrate_forms([&a, b.as_ref().unwrap_or(&a)], layers, forms)
+}
+
+/// The six field components of a 2×2 backend's mode at every interface,
+/// left to right, and the 4×4 workspace of its channel that integrates
+/// them; the mode keeps the 2×2 backend's gauge.
+macro_rules! scalar_interface_fields {
+    ($backend:expr, $direction:expr, $amplitude:expr) => {{
+        let (direction, amplitude) = ($direction, $amplitude);
+        invalid_amplitude(amplitude)?;
+        let stack = direction.canonical_stack()?;
+        let channel = direction.polarisation.into();
+        let workspace = <Self as Backend<J, SeededConstitutive>>::retain(
+            $backend,
+            direction.coordinates,
+            &stack,
+            direction.exterior,
+            channel,
+        )
+        .map_err(super::shared_error)?;
+        let state = ComplexPlaneState::new(
+            direction.coordinates.clone(),
+            direction.exterior.clone(),
+            &stack,
+            workspace,
+            channel,
+        );
+        let seed = state
+            .workspace()
+            .modal_boundary_solution()
+            .map_err(super::shared_error)?
+            .scaled(&J::constant(arr0(amplitude)));
+        let layers = stack.layers().len();
+        // The left interface of every layer, then the last interface.
+        let zero = || vec![0.0];
+        let sampling = (0..layers)
+            .fold(FieldSampling::new(), |sampling, index| {
+                sampling.layer(
+                    index,
+                    crate::LayerSampling::offsets_in(zero(), lamina_units::LengthUnit::Centimetre),
+                )
+            })
+            .right_exterior(crate::ExteriorSampling::point(
+                lamina_units::Length::centimetres(0.0),
+            ));
+        let resolved = sampling
+            .resolve(direction.stack)
+            .map_err(super::shared_error)?;
+        let (electric, magnetic) =
+            reconstruct_mode_fields(&state, &seed, &resolved, ExteriorWaves::Outgoing)
+                .map_err(super::shared_error)?
+                .into_parts();
+        let (value, first) = (
+            [electric.value(), magnetic.value()],
+            [electric.first(), magnetic.first()],
+        );
+        let component = |field: usize, index: usize, sample: usize| {
+            let pick = |part: &VectorField<C, ndarray::Ix1>| match index {
+                0 => part.x()[sample],
+                1 => part.y()[sample],
+                _ => part.z()[sample],
+            };
+            J::from_parts(arr0(pick(value[field])), arr0(pick(first[field])))
+        };
+        let fields: Vec<[J; 6]> = (0..=layers)
+            .map(|sample| std::array::from_fn(|k| component(k / 3, k % 3, sample)))
+            .collect();
+        let coupled = <crate::backend::Transfer4 as Backend<J, SeededConstitutive>>::retain(
+            &crate::backend::Transfer4::new(),
+            direction.coordinates,
+            &stack,
+            direction.exterior,
+            channel,
+        )
+        .map_err(super::shared_error)?;
+        (fields, coupled, layers)
+    }};
+}
+
+/// Forms of two modes of a 2×2 backend: their fields at the interfaces,
+/// carried through each region by the 4×4 generators of their channel.
+macro_rules! scalar_forms {
+    ($backend:expr, $modes:expr, $forms:expr) => {{
+        let (modes, forms) = ($modes, $forms);
+        let same = same_operand(&modes);
+        let (fields_a, workspace_a, layers) =
+            scalar_interface_fields!($backend, modes[0].direction, modes[0].amplitude);
+        let second = match same {
+            true => None,
+            false => {
+                let (fields, workspace, _) =
+                    scalar_interface_fields!($backend, modes[1].direction, modes[1].amplitude);
+                Some((fields, workspace))
+            }
+        };
+        let unavailable = || {
+            Arc::new(std::io::Error::other(
+                "interface fields do not match the stack",
+            )) as Arc<dyn Error + Send + Sync>
+        };
+        let a = workspace_a
+            .interface_solution(&fields_a)
+            .ok_or_else(unavailable)?;
+        let b = match &second {
+            Some((fields, workspace)) => Some(
+                workspace
+                    .interface_solution(fields)
+                    .ok_or_else(unavailable)?,
+            ),
+            None => None,
+        };
+        integrate_forms([&a, b.as_ref().unwrap_or(&a)], layers, forms)
+    }};
+}
+
 macro_rules! implementation {
     ($backend:ty, scalar) => {
         implementation!(
             $backend,
             |backend, direction, sampling, amplitude| scalar_fields!(
                 backend, direction, sampling, amplitude
-            )
+            ),
+            |backend, modes, forms| scalar_forms!(backend, modes, forms)
         );
     };
     ($backend:ty, coupled) => {
-        implementation!($backend, |backend, direction, sampling, amplitude| {
-            coupled_fields(backend, direction, sampling, amplitude)
-        });
+        implementation!(
+            $backend,
+            |backend, direction, sampling, amplitude| {
+                coupled_fields(backend, direction, sampling, amplitude)
+            },
+            |backend, modes, forms| coupled_forms(backend, modes, forms)
+        );
     };
-    ($backend:ty, |$b:ident, $d:ident, $s:ident, $a:ident| $fields:expr) => {
+    (
+        $backend:ty,
+        |$b:ident, $d:ident, $s:ident, $a:ident| $fields:expr,
+        |$fb:ident, $fm:ident, $ff:ident| $forms:expr
+    ) => {
         impl ModalDerivativeBackend for $backend {
             fn directional_characteristic<M, R, P>(
                 &self,
@@ -514,6 +843,20 @@ macro_rules! implementation {
             {
                 let ($b, $d, $s, $a) = (self, direction, sampling, amplitude);
                 $fields
+            }
+
+            fn directional_forms<M, R, P>(
+                &self,
+                modes: [ModalFormOperand<'_, M, R, P>; 2],
+                forms: &[ModalForm<'_>],
+            ) -> Result<ModalFormIntegrals, Arc<dyn Error + Send + Sync>>
+            where
+                ValueJet: TensorConstitutiveLift<ComplexPlane, M>,
+                R: ConstitutiveRates,
+                P: Into<Channel> + Copy,
+            {
+                let ($fb, $fm, $ff) = (self, modes, forms);
+                $forms
             }
 
             fn checked_characteristic<M>(

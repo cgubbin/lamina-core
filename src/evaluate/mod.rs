@@ -25,8 +25,8 @@ mod tests;
 
 pub use complex_plane::{
     ComplexPlaneEvaluator, ConstitutiveRates, DeterminantEvaluationError, DirectionalModeFields,
-    ModalCharacteristicDirection, ModalDerivativeBackend, ModalFieldBackend, OwnedModeFields,
-    UnscaledFieldError, UnscaledFieldResult,
+    ModalCharacteristicDirection, ModalDerivativeBackend, ModalFieldBackend, ModalForm,
+    ModalFormIntegrals, ModalFormOperand, OwnedModeFields, UnscaledFieldError, UnscaledFieldResult,
 };
 pub use error::{RealAxisEvaluationError, SolveRequestError};
 pub use real_axis::{RealAxisEvaluator, RealAxisExcitation, RealAxisResult, RealAxisState};
