@@ -22,9 +22,8 @@
 //! the same Sylvester matrix.
 
 use nalgebra::{DMatrix, DVector};
-use ndarray::{Array, Dimension};
 
-use crate::{ComplexScalar, algebra::ScalarAlgebra};
+use crate::{ComplexScalar, algebra::EntryAlgebra};
 
 use super::matrix::{Matrix, sample_matrices};
 
@@ -54,9 +53,7 @@ pub(crate) enum Direction {
 
 impl<A> Monic<A>
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    A: EntryAlgebra,
 {
     pub(crate) fn degree(&self) -> usize {
         self.0.len()
@@ -131,9 +128,7 @@ where
 /// `Σ cᵢ Kⁱ` by Horner's rule.
 fn polynomial<A>(coefficients: &[A], generator: &Matrix<A>) -> Matrix<A>
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    A: EntryAlgebra,
 {
     let n = generator.rows();
     coefficients.iter().rev().fold(
@@ -152,9 +147,7 @@ pub(crate) struct Split<A> {
 
 impl<A> Split<A>
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    A: EntryAlgebra,
 {
     /// The split of `generator` whose outgoing roots are the roots of
     /// `outgoing`; `None` when its projector is not idempotent (a branch
@@ -249,9 +242,7 @@ where
 /// The Sylvester matrix `S` with `S [a; b] = a g + b f` for `deg a, deg b < m`.
 fn sylvester<A>(f: &Monic<A>, g: &Monic<A>, like: &A) -> Matrix<A>
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    A: EntryAlgebra,
 {
     let m = f.degree();
     let (f, g) = (f.full(like), g.full(like));
@@ -271,9 +262,7 @@ where
 /// roots, with the roots lifted as constants.
 fn factors<A>(generator: &Matrix<A>, ordered: &[Vec<A::Scalar>]) -> Option<(Monic<A>, Monic<A>)>
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    A: EntryAlgebra,
 {
     let like = generator.get(0, 0);
     let lifted = (0..generator.rows())
@@ -282,9 +271,7 @@ where
                 .iter()
                 .map(|roots| roots.get(k).copied())
                 .collect::<Option<Vec<_>>>()?;
-            Array::from_shape_vec(like.value().raw_dim(), values)
-                .ok()
-                .map(A::lift_constant)
+            A::from_sample_values(like, values)
         })
         .collect::<Option<Vec<A>>>()?;
     let (chosen, rest) = lifted.split_at(generator.rows() / 2);
@@ -428,8 +415,7 @@ pub(crate) fn try_f64<R: nalgebra::RealField>(value: R) -> f64 {
 /// basis over every sample: the conditioning of a reference-built basis.
 pub(crate) fn conditioning<A>(basis: &Matrix<A>) -> f64
 where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
+    A: EntryAlgebra,
 {
     sample_matrices(basis)
         .into_iter()

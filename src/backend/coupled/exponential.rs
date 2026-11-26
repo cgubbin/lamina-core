@@ -6,9 +6,7 @@
 //! entire in the entries of `A`, with no eigenvalues, and so holds at
 //! degenerate and defective matrices alike.
 
-use ndarray::Dimension;
-
-use crate::{ComplexScalar, algebra::ScalarAlgebra};
+use crate::algebra::EntryAlgebra;
 
 use super::matrix::Matrix;
 
@@ -21,12 +19,7 @@ const TAYLOR_DEGREE: u32 = 16;
 const MAX_SQUARINGS: u32 = 1100;
 
 /// `exp(A)` of a square matrix.
-pub(crate) fn exponential<A>(matrix: &Matrix<A>) -> Matrix<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+pub(crate) fn exponential<A: EntryAlgebra>(matrix: &Matrix<A>) -> Matrix<A> {
     let norm = matrix.value_norm();
     let squarings = if norm.is_finite() && norm > 0.5 {
         ((norm / 0.5).log2().ceil() as u32).min(MAX_SQUARINGS)
@@ -55,7 +48,7 @@ mod tests {
     use num_complex::Complex64 as C;
 
     use super::*;
-    use crate::algebra::{ArrayJet0, ArrayJet1, RealParameter, SeedJet};
+    use crate::algebra::{ArrayJet0, ArrayJet1, RealParameter, ScalarAlgebra, SeedJet};
 
     type J0 = ArrayJet0<C, Ix0, RealParameter>;
     type J1 = ArrayJet1<C, Ix0, RealParameter>;
@@ -125,8 +118,8 @@ mod tests {
         let t = 2.5;
         let derivative_at = |p: f64| {
             let parameter = <J1 as SeedJet>::variable(arr0(C::new(p, 0.0)), 0).unwrap();
-            let one = parameter.one_like();
-            let zero = parameter.zero_like();
+            let one = ScalarAlgebra::one_like(&parameter);
+            let zero = ScalarAlgebra::zero_like(&parameter);
             let matrix = Matrix::from_fn(2, 2, |row, column| match (row, column) {
                 (0, 1) => one.clone(),
                 (1, 0) => parameter.clone(),

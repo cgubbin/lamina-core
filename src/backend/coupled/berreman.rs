@@ -27,7 +27,7 @@ use ndarray::Dimension;
 
 use crate::{
     ComplexScalar,
-    algebra::ScalarAlgebra,
+    algebra::{EntryAlgebra, InlineJet, ScalarAlgebra},
     backend::{Channel, ChannelError},
     input::CanonicalCoordinates,
     material::{ConstitutiveError, ConstitutiveTensor, TensorConstitutiveLift},
@@ -87,6 +87,22 @@ pub struct Region<A> {
     pub(crate) tensors: [ConstitutiveTensor<A>; 2],
 }
 
+impl<A> Region<A> {
+    /// The region with every jet mapped by value, for moving between jet
+    /// forms.
+    pub(crate) fn into_map<B>(self, f: &mut impl FnMut(A) -> B) -> Region<B> {
+        let [epsilon, mu] = self.tensors;
+        Region {
+            generator: self.generator.into_map(&mut *f),
+            elimination: Elimination {
+                electric: self.elimination.electric.map(&mut *f),
+                magnetic: self.elimination.magnetic.map(&mut *f),
+            },
+            tensors: [epsilon.into_map(&mut *f), mu.into_map(&mut *f)],
+        }
+    }
+}
+
 impl<A> Region<A>
 where
     A: ScalarAlgebra,
@@ -118,7 +134,43 @@ where
             channel,
         ))
     }
+}
 
+impl<J> Region<J>
+where
+    J: InlineJet,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+{
+    /// [`Region::evaluate`] in the inline form of the jets: the material is
+    /// lifted with the caller's jets and the generator built from the
+    /// converted tensors.
+    pub(crate) fn evaluate_inline<E, M, Error>(
+        region: StackRegion,
+        material: &M,
+        coordinates: &CanonicalCoordinates<J>,
+        channel: Channel,
+    ) -> Result<Region<J::Inline>, Error>
+    where
+        J: TensorConstitutiveLift<E, M>,
+        Error: From<ConstitutiveError> + From<ChannelError>,
+    {
+        if channel != Channel::Coupled && !J::is_separable(material) {
+            return Err(ChannelError::NotInvariant { region, channel }.into());
+        }
+        let tensors =
+            J::constitutive_tensors(region, material, coordinates.vacuum_angular_wavenumber())?;
+
+        Ok(Region::new(
+            &tensors.map(|tensor| tensor.map(J::to_inline)),
+            &coordinates.vacuum_angular_wavenumber().to_inline(),
+            &coordinates.parallel_angular_wavenumber().to_inline(),
+            channel,
+        ))
+    }
+}
+
+impl<A: EntryAlgebra> Region<A> {
     /// The region of stack-frame `[ε, μ]` at `k₀` and `k∥`.
     pub(crate) fn new(
         tensors: &[ConstitutiveTensor<A>; 2],
@@ -138,12 +190,7 @@ where
     }
 }
 
-impl<A> Region<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+impl<A: EntryAlgebra> Region<A> {
     /// The `6 × n` map from a channel's state to `(E_x, E_y, E_z, η_x, η_y,
     /// η_z)`.
     pub(crate) fn field_map(&self, channel: Channel) -> Matrix<A> {
@@ -171,17 +218,12 @@ where
 }
 
 /// `K = k₀ Δ` of full `ε`, `μ`, and the elimination rows.
-fn generator<A>(
+fn generator<A: EntryAlgebra>(
     epsilon: &[[A; 3]; 3],
     mu: &[[A; 3]; 3],
     k0: &A,
     k_parallel: &A,
-) -> (Matrix<A>, Elimination<A>)
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+) -> (Matrix<A>, Elimination<A>) {
     let xi = k_parallel.divide(k0);
     let unit = |component: usize, sign: bool| -> Row<A> {
         std::array::from_fn(|index| match (index == component, sign) {

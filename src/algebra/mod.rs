@@ -22,12 +22,14 @@
 
 mod cartesian;
 mod entire;
+mod entry;
 mod exprel;
 mod jet_bivariate_one;
 mod jet_bivariate_two;
 mod jet_one;
 mod jet_two;
 mod jet_zero;
+mod point;
 mod scalar;
 mod scale;
 mod seed;
@@ -36,6 +38,7 @@ mod stack;
 #[cfg(test)]
 mod tests;
 
+pub use entry::InlineJet;
 pub use jet_one::ModeJet1;
 pub use scalar::{Jet, ScalarAlgebra};
 pub use seed::SeedJet;
@@ -46,6 +49,7 @@ pub(crate) use jet_one::{ArrayJet1, FirstOrderExpansion, Jet1};
 pub(crate) use jet_two::{ArrayJet2, Jet2, SecondOrderExpansion};
 pub(crate) use jet_zero::{ArrayJet0, Jet0};
 
+pub(crate) use entry::EntryAlgebra;
 pub(crate) use exprel::{exprel, exprel_first, exprel_second};
 pub(crate) use scalar::{ComplexJet, RealScalarAlgebra, ScalarAlgebraExpRelExt};
 pub(crate) use seed::UnsupportedDerivativeSlot;

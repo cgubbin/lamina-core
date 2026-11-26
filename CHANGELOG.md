@@ -208,6 +208,16 @@ Changed:
   copied, `solve` takes the determinant from the cofactors of its adjugate,
   the characteristic polynomial sums the trace of each product without
   forming it, and a projector's idempotency is checked on its values.
+- Scatter4 and Transfer4 compute one-sample (`Ix0`) characteristics on point
+  jets, whose value and derivatives are stored inline, instead of jets of
+  one-element arrays that allocate on every operation: the material tensors,
+  coordinates, thicknesses and exterior waves are converted once on entry and
+  the results once on exit. A first-order characteristic of a one-layer
+  rotated uniaxial film takes 1.1 M instead of 7.8 M instructions with Scatter4
+  and 0.6 M instead of 5.9 M with Transfer4, with 20 times fewer allocations;
+  results are bit for bit the same. The new `#[doc(hidden)]` trait `InlineJet`,
+  implemented for every jet family and dimension, bounds the 4×4 `Backend`
+  impls.
 
 ## 0.1.0 (unreleased)
 

@@ -57,6 +57,20 @@ impl<A> CoupledModeCandidate<A> {
     }
 }
 
+impl<A> Modal<A> {
+    /// The system with every jet mapped, for moving between jet forms.
+    pub(crate) fn into_map<B>(self, f: &mut impl FnMut(A) -> B) -> Modal<B> {
+        Modal {
+            system: self.system.into_map(&mut *f),
+            basis: self
+                .basis
+                .into_iter()
+                .map(|basis| basis.into_map(&mut *f))
+                .collect(),
+        }
+    }
+}
+
 impl<A> Modal<A>
 where
     A: ScalarAlgebra,
