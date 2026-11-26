@@ -189,26 +189,63 @@ where
         })
     }
 
-    /// The trace of a square matrix.
-    pub(crate) fn trace(&self) -> A {
-        (1..self.rows).fold(self.get(0, 0).clone(), |sum, index| {
-            sum.add(self.get(index, index))
-        })
+    /// `tr(self rhs)` without forming the off-diagonal entries of the
+    /// product: each diagonal entry is summed in the order
+    /// [`Self::multiply`] uses, so the result equals the trace of
+    /// `self.multiply(rhs)`.
+    pub(crate) fn trace_of_product(&self, rhs: &Self) -> A {
+        let diagonal = |index: usize| {
+            (1..self.columns).fold(
+                self.get(index, 0).multiply(rhs.get(0, index)),
+                |sum, inner| sum.add(&self.get(index, inner).multiply(rhs.get(inner, index))),
+            )
+        };
+        (1..self.rows).fold(diagonal(0), |sum, index| sum.add(&diagonal(index)))
     }
 
     /// The determinant of a square matrix by cofactor expansion along the
     /// first row.
     pub(crate) fn determinant(&self) -> A {
-        match self.rows {
-            1 => self.get(0, 0).clone(),
+        let all: Vec<usize> = (0..self.rows).collect();
+        self.minor(&all, &all)
+    }
+
+    /// The determinant of the submatrix of `rows` and `columns`, expanded
+    /// along its first row, read in place rather than copied out.
+    fn minor(&self, rows: &[usize], columns: &[usize]) -> A {
+        match rows.len() {
+            1 => self.get(rows[0], columns[0]).clone(),
             2 => self
-                .get(0, 0)
-                .multiply(self.get(1, 1))
-                .subtract(&self.get(0, 1).multiply(self.get(1, 0))),
-            n => (0..n)
-                .map(|column| self.get(0, column).multiply(&self.cofactor(0, column)))
-                .reduce(|sum, term| sum.add(&term))
-                .unwrap_or_else(|| self.get(0, 0).one_like()),
+                .get(rows[0], columns[0])
+                .multiply(self.get(rows[1], columns[1]))
+                .subtract(
+                    &self
+                        .get(rows[0], columns[1])
+                        .multiply(self.get(rows[1], columns[0])),
+                ),
+            n => {
+                let mut rest = Vec::with_capacity(n - 1);
+                (0..n)
+                    .map(|column| {
+                        rest.clear();
+                        rest.extend(
+                            columns
+                                .iter()
+                                .enumerate()
+                                .filter(|&(k, _)| k != column)
+                                .map(|(_, &c)| c),
+                        );
+                        let minor = self.minor(&rows[1..], &rest);
+                        let cofactor = if column % 2 == 0 {
+                            minor
+                        } else {
+                            minor.negate()
+                        };
+                        self.get(rows[0], columns[column]).multiply(&cofactor)
+                    })
+                    .reduce(|sum, term| sum.add(&term))
+                    .unwrap_or_else(|| self.get(0, 0).one_like())
+            }
         }
     }
 
@@ -217,7 +254,7 @@ where
         let keep = |skip: usize| (0..self.rows).filter(move |&index| index != skip);
         let rows: Vec<usize> = keep(row).collect();
         let columns: Vec<usize> = keep(column).collect();
-        let minor = self.select(&rows, &columns).determinant();
+        let minor = self.minor(&rows, &columns);
 
         if (row + column) % 2 == 0 {
             minor
@@ -236,10 +273,19 @@ where
         })
     }
 
-    /// `self⁻¹ rhs`, by the adjugate.
+    /// `self⁻¹ rhs`, by the adjugate. The determinant is the expansion along
+    /// the first row with the cofactors the adjugate already holds.
     pub(crate) fn solve(&self, rhs: &Self) -> Self {
-        let reciprocal = self.determinant().reciprocal();
-        self.adjugate().multiply(rhs).scale_by(&reciprocal)
+        let adjugate = self.adjugate();
+        let determinant = match self.rows {
+            // The 1×1 adjugate is the identity, not the cofactor.
+            1 | 2 => self.determinant(),
+            n => (0..n)
+                .map(|column| self.get(0, column).multiply(adjugate.get(column, 0)))
+                .reduce(|sum, term| sum.add(&term))
+                .unwrap_or_else(|| self.get(0, 0).one_like()),
+        };
+        adjugate.multiply(rhs).scale_by(&determinant.reciprocal())
     }
 
     /// The largest absolute row sum of the values over every sample; NaN
@@ -304,4 +350,68 @@ where
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use num_complex::Complex64 as C;
+
+    use super::*;
+    use crate::backend::coupled::berreman::tests::{J, jet, random};
+
+    fn random_matrix(n: usize, seed: &mut u64) -> Matrix<J> {
+        Matrix::from_fn(n, n, |_, _| jet(random(seed)))
+    }
+
+    #[test]
+    fn determinant_and_solve_agree_with_lu() {
+        let mut seed = 11;
+        for n in 1..=6 {
+            let matrix = random_matrix(n, &mut seed);
+            let rhs = Matrix::from_fn(n, 2, |_, _| jet(random(&mut seed)));
+            let sample = &sample_matrices(&matrix)[0];
+            let lu = sample.clone().lu();
+            let determinant = matrix.determinant().value()[()];
+            assert!(
+                (determinant - lu.determinant()).norm() <= 1e-12 * lu.determinant().norm(),
+                "{n}: {determinant} {}",
+                lu.determinant()
+            );
+            let solved = sample_matrices(&matrix.solve(&rhs))[0].clone();
+            let expected = lu.solve(&sample_matrices(&rhs)[0]).unwrap();
+            assert!(
+                (solved - &expected).norm() <= 1e-12 * expected.norm(),
+                "{n}"
+            );
+        }
+    }
+
+    #[test]
+    fn trace_of_product_equals_the_trace_of_the_product() {
+        let mut seed = 7;
+        for n in 1..=4 {
+            let (a, b) = (random_matrix(n, &mut seed), random_matrix(n, &mut seed));
+            let product = a.multiply(&b);
+            let direct = (1..n).fold(product.get(0, 0).clone(), |sum, k| {
+                sum.add(product.get(k, k))
+            });
+            let fused = a.trace_of_product(&b);
+            assert_eq!(direct.value()[()], fused.value()[()], "{n}");
+        }
+    }
+
+    #[test]
+    fn solve_uses_the_determinant_of_the_expansion() {
+        // The determinant inside `solve` is the first-row expansion, so A x = b
+        // holds to round-off and det(A) adj(A) = det(A)² A⁻¹ is consistent.
+        let mut seed = 5;
+        for n in 1..=5 {
+            let matrix = random_matrix(n, &mut seed);
+            let identity = Matrix::identity(n, matrix.get(0, 0));
+            let inverse = matrix.solve(&identity);
+            let product = sample_matrices(&matrix.multiply(&inverse))[0].clone();
+            let unit = nalgebra::DMatrix::<C>::identity(n, n);
+            assert!((product - unit).norm() < 1e-12, "{n}");
+        }
+    }
 }

@@ -79,7 +79,7 @@ where
         for k in 1..=n {
             let current = generator.multiply(&previous).shift(&leading);
             let reciprocal: A::Scalar = nalgebra::convert(-1.0 / k as f64);
-            leading = generator.multiply(&current).trace().scale(reciprocal);
+            leading = generator.trace_of_product(&current).scale(reciprocal);
             coefficients[n - k] = leading.clone();
             previous = current;
         }
@@ -226,10 +226,18 @@ where
         let interpolant: Vec<A> = (0..m).map(|index| bezout.get(index, 0).clone()).collect();
         let projector = polynomial(&interpolant, generator).multiply(&complement.of(generator));
 
-        let residual = projector
-            .multiply(&projector)
-            .subtract(&projector)
-            .value_norm();
+        // Idempotency is a property of the values: test it sample by sample
+        // without carrying the jets through the product.
+        let residual = sample_matrices(&projector)
+            .iter()
+            .map(|p| row_sum_norm(&(p * p - p)))
+            .fold(0.0, |a: f64, b| {
+                if a.is_nan() || b.is_nan() {
+                    f64::NAN
+                } else {
+                    a.max(b)
+                }
+            });
         let scale = projector.value_norm().max(1.0);
         (residual <= PROJECTOR_TOLERANCE * scale).then_some(Self {
             outgoing,
@@ -396,6 +404,20 @@ fn flux<C: ComplexScalar>(generator: &DMatrix<C>, root: C, scale: f64) -> Option
     });
     let flux = try_f64(flux.real());
     flux.is_finite().then_some(flux)
+}
+
+/// The largest absolute row sum; NaN when a value is not finite.
+fn row_sum_norm<C: ComplexScalar>(matrix: &DMatrix<C>) -> f64 {
+    matrix
+        .row_iter()
+        .map(|row| row.iter().map(|value| try_f64(value.abs())).sum::<f64>())
+        .fold(0.0, |a, b| {
+            if a.is_nan() || b.is_nan() {
+                f64::NAN
+            } else {
+                a.max(b)
+            }
+        })
 }
 
 pub(crate) fn try_f64<R: nalgebra::RealField>(value: R) -> f64 {
