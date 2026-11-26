@@ -11,8 +11,8 @@ use super::{
     ConstitutiveEvaluator, ConstitutiveLift, ConstitutiveSpectralFirstLift, DerivativeOrder,
     DifferentiableMaterialHandle, EvaluateDifferentiableMaterial,
     EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
-    Material, MaterialHandle, MeromorphicMaterialHandle, Rotation, Sampled, Tensor3,
-    TensorMaterialHandle,
+    Material, MaterialHandle, MeromorphicMaterialHandle, Rotation, Sampled, SpectralSingularity,
+    Tensor3, TensorMaterialHandle,
     tensor::{TensorHandle, TensorMaterialPoint, TensorMaterialValuePoint},
 };
 use crate::{ComplexScalar, algebra::ScalarAlgebra, stack::StackRegion};
@@ -145,6 +145,44 @@ impl<S, T, R> Constitutive<S, T, R> {
             Kind::Oriented {
                 material, rotation, ..
             } => Some((material, rotation)),
+        }
+    }
+}
+
+impl<C> AnalyticalMaterialRegion<C>
+where
+    C: ComplexScalar,
+    C::RealField: Float,
+{
+    /// The declared poles and zeros of the region's entries in the stack
+    /// frame, or `None` when they are not declared.
+    ///
+    /// An isotropic region gives its material's declaration. A diagonal
+    /// region gives its material's, each entry moved to the stack axis the
+    /// rotation sends it to. A full region declares none: its stack-frame
+    /// entries mix the principal models, so their zeros are not the
+    /// models' zeros.
+    pub fn spectral_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        match &self.kind {
+            Kind::Isotropic(material) => material.spectral_singularities(),
+            Kind::Oriented {
+                diagonal: false, ..
+            } => None,
+            Kind::Oriented {
+                material, rotation, ..
+            } => {
+                let matrix = rotation.matrix();
+                let stack_axis =
+                    |axis: usize| (0..3).find(|&row| matrix[row][axis] != C::RealField::zero());
+                material
+                    .spectral_singularities()?
+                    .into_iter()
+                    .map(|point| match point.axis {
+                        None => Some(point),
+                        Some(axis) => stack_axis(axis).map(|row| point.on_axis(row)),
+                    })
+                    .collect()
+            }
         }
     }
 }
@@ -545,7 +583,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ComplexPlane, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
+        ComplexPlane, Constant, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
         DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial, FiniteLayerIndex,
         Material, MeromorphicMaterial, MeromorphicTensorMaterial, RealAxis, Scalar, SignedAxis,
         TensorMaterial,
@@ -647,6 +685,22 @@ mod tests {
         {
             axes!(self, relative_permeability_complex, k)
         }
+
+        /// A stand-in declaration: a zero of ε_c and a pole of every entry.
+        fn tensor_spectral_singularities<X>(&self) -> Option<Vec<SpectralSingularity<X>>>
+        where
+            X: ComplexScalar<RealField = f64>,
+        {
+            Some(declared())
+        }
+    }
+
+    fn declared<X: ComplexScalar<RealField = f64>>() -> Vec<SpectralSingularity<X>> {
+        use crate::material::{ConstitutiveQuantity::*, SingularityKind::*};
+        vec![
+            SpectralSingularity::scalar(X::from_real(3.0), Zero, Permittivity).on_axis(2),
+            SpectralSingularity::scalar(X::from_real(5.0), Pole, Permeability),
+        ]
     }
 
     impl<const PRINCIPAL: bool> DifferentiableMeromorphicTensorMaterial for Uniaxial<PRINCIPAL> {
@@ -705,6 +759,54 @@ mod tests {
                 std::mem::discriminant(other)
             ),
         }
+    }
+
+    #[test]
+    fn undeclared_and_constant_materials() {
+        let undeclared =
+            AnalyticalMaterialHandle::<Complex64>::new(quadratic(2.0, 0.1, 0.0, 1.0, 0.0, 0.0));
+        assert_eq!(undeclared.spectral_singularities(), None);
+        assert_eq!(Region::from(undeclared).spectral_singularities(), None);
+        let constant = AnalyticalMaterialHandle::<Complex64>::new(Constant::dielectric(2.0));
+        assert_eq!(constant.spectral_singularities(), Some(vec![]));
+        assert_eq!(
+            Region::from(constant).spectral_singularities(),
+            Some(vec![])
+        );
+        let vanishing = AnalyticalMaterialHandle::<Complex64>::new(Constant::dielectric(0.0));
+        assert_eq!(vanishing.spectral_singularities(), None);
+    }
+
+    #[test]
+    fn regions_declare_in_the_stack_frame() {
+        let handle = AnalyticalTensorMaterialHandle::new(uniaxial::<true>());
+        assert_eq!(
+            handle.spectral_singularities(),
+            Some(declared::<Complex64>())
+        );
+        let upright = oriented::<true>(Rotation::identity());
+        assert_eq!(
+            upright.spectral_singularities(),
+            Some(declared::<Complex64>())
+        );
+        // The c axis onto stack x: the zero of ε_c moves to entry xx.
+        let permutation =
+            Rotation::signed_permutation(SignedAxis::PlusZ, SignedAxis::MinusY, SignedAxis::PlusX)
+                .unwrap();
+        let [zero, pole] = declared::<Complex64>().try_into().unwrap();
+        assert_eq!(
+            oriented::<true>(permutation).spectral_singularities(),
+            Some(vec![zero.on_axis(0), pole])
+        );
+        // Rotated entries mix the axis models; an undeclared structure has
+        // no principal entries to name.
+        let tilted = Rotation::from_optic_axis(0.3, 0.0);
+        assert_eq!(oriented::<true>(tilted).spectral_singularities(), None);
+        assert_eq!(
+            AnalyticalTensorMaterialHandle::<Complex64>::new(uniaxial::<false>())
+                .spectral_singularities(),
+            None
+        );
     }
 
     #[test]

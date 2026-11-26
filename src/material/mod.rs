@@ -145,6 +145,7 @@ mod model;
 mod region;
 mod rotation;
 mod sample;
+mod singularity;
 mod tensor;
 
 pub use evaluate::{
@@ -165,6 +166,7 @@ pub use region::{
 };
 pub use rotation::{Rotation, RotationError, SignedAxis};
 pub use sample::Scalar;
+pub use singularity::{ConstitutiveQuantity, SingularityKind, SpectralSingularity};
 pub use tensor::{
     AnalyticalTensorMaterialHandle, DifferentiableMeromorphicTensorMaterial,
     DifferentiableTensorMaterial, MeromorphicTensorMaterial, Tensor3, TensorMaterial,
@@ -371,6 +373,20 @@ pub trait MeromorphicMaterial: Material {
     where
         C: ComplexScalar<RealField = Self::Real>,
         I: Sampled<Elem = C>;
+
+    /// Every pole and zero of ε and μ in the finite complex `k₀` plane, each
+    /// location once, with `axis` `None`; or `None` when the model does not
+    /// declare them.
+    ///
+    /// A declaration is a promise that no other pole or zero exists. The
+    /// default declares nothing, which a consumer must read as unknown,
+    /// never as free of singularities.
+    fn spectral_singularities<C>(&self) -> Option<Vec<SpectralSingularity<C>>>
+    where
+        C: ComplexScalar<RealField = Self::Real>,
+    {
+        None
+    }
 }
 
 /// Meromorphic material model with analytical complex derivatives.

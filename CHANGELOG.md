@@ -7,6 +7,14 @@ released in step until 1.0. Each entry names any shared convention it changes.
 
 Added:
 
+- Declared spectral singularities: `MeromorphicMaterial::spectral_singularities`
+  and `MeromorphicTensorMaterial::tensor_spectral_singularities` list every
+  pole and zero of ε and μ in the complex k0 plane (`SpectralSingularity`,
+  `SingularityKind`, `ConstitutiveQuantity`), or `None` when a model does not
+  declare them (the default). The analytical handles forward the declaration,
+  and `AnalyticalMaterialRegion::spectral_singularities` gives it in the stack
+  frame (a full-class region declares none). `Constant` declares none unless
+  ε or μ is zero.
 - `Termination`, `Wall` and `WallKind`: either side of a `Stack` may be closed
   by a perfect electric or perfect magnetic wall at an absolute position in the
   stack frame (`z = 0` at the first interface). Open remains the default.
