@@ -201,6 +201,14 @@ Changed (breaking):
 Open stacks keep their numerical results bit for bit, and isotropic stacks
 through every observable.
 
+Changed:
+
+- Scatter4 and Transfer4 evaluate the characteristic with about a fifth fewer
+  instructions and the same results: minors are read in place rather than
+  copied, `solve` takes the determinant from the cofactors of its adjugate,
+  the characteristic polynomial sums the trace of each product without
+  forming it, and a projector's idempotency is checked on its values.
+
 ## 0.1.0 (unreleased)
 
 First release on crates.io.
