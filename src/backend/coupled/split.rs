@@ -339,10 +339,26 @@ pub(crate) fn matched<C: ComplexScalar>(generator: &DMatrix<C>, targets: &[C]) -
             .map(|(&k, target)| try_f64((roots[k] - *target).modulus()))
             .sum()
     };
-    let best = permutations(roots.len())
-        .into_iter()
-        .min_by(|a, b| cost(a).total_cmp(&cost(b)))?;
+    let best = with_permutations(roots.len(), |orders| {
+        orders
+            .iter()
+            .min_by(|a, b| cost(a).total_cmp(&cost(b)))
+            .cloned()
+    })?;
     Some(best.into_iter().map(|k| roots[k]).collect())
+}
+
+/// `f` of every ordering of `0..n` in the order of [`permutations`], built
+/// once for the orders of the 2×2 and 4×4 generators.
+fn with_permutations<R>(n: usize, f: impl FnOnce(&[Vec<usize>]) -> R) -> R {
+    static SMALL: std::sync::OnceLock<[Vec<Vec<usize>>; 5]> = std::sync::OnceLock::new();
+    match SMALL
+        .get_or_init(|| std::array::from_fn(permutations))
+        .get(n)
+    {
+        Some(orders) => f(orders),
+        None => f(&permutations(n)),
+    }
 }
 
 /// The least distance between a root of the first half of `roots` and one

@@ -218,6 +218,10 @@ Changed:
   results are bit for bit the same. The new `#[doc(hidden)]` trait `InlineJet`,
   implemented for every jet family and dimension, bounds the 4×4 `Backend`
   impls.
+- The 4×4 jet matrices take minors, cofactors and blocks through index lists
+  on the stack, read a one-sample matrix's values without collecting them per
+  entry, and reuse the root orderings of 2×2 and 4×4 generators: a further 10 %
+  fewer instructions and 40 % fewer allocations per Scatter4 characteristic.
 
 ## 0.1.0 (unreleased)
 
