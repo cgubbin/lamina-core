@@ -241,6 +241,17 @@ Changed:
   on the stack, read a one-sample matrix's values without collecting them per
   entry, and reuse the root orderings of 2×2 and 4×4 generators: a further 10 %
   fewer instructions and 40 % fewer allocations per Scatter4 characteristic.
+- An oriented region's stack-frame ε and μ are lifted from one evaluation and
+  one rotation of each tensor per Taylor coefficient, instead of one per
+  entry (nine for a full tensor), and in the 4×4 backends directly on point
+  jets: a first-order Scatter4 characteristic of a one-layer rotated uniaxial
+  film takes 0.79 M instead of 1.03 M instructions and 748 instead of 1 044
+  allocations (five layers: 2.4 M instead of 3.4 M), bit for bit the same.
+  `TensorConstitutiveLift` gains a provided `#[doc(hidden)]` method
+  `constitutive_tensors_inline`; the oriented-region impl is bounded by the
+  hidden per-jet trait `StackFrameLift` instead of
+  `ConstitutiveLift<E, StackFrameEntry<T>>`, implemented for every jet family
+  and dimension under the same material capabilities.
 
 ## 0.1.0 (unreleased)
 

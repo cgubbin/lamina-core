@@ -12,10 +12,14 @@ use super::{
     DifferentiableMaterialHandle, EvaluateDifferentiableMaterial,
     EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
     Material, MaterialHandle, MeromorphicMaterialHandle, Rotation, Sampled, SpectralSingularity,
-    Tensor3, TensorMaterialHandle,
+    StackFrame, StackFrameLift, Tensor3, TensorMaterialHandle,
     tensor::{TensorHandle, TensorMaterialPoint, TensorMaterialValuePoint},
 };
-use crate::{ComplexScalar, algebra::ScalarAlgebra, stack::StackRegion};
+use crate::{
+    ComplexScalar,
+    algebra::{EntryAlgebra, InlineJet, ScalarAlgebra},
+    stack::StackRegion,
+};
 
 /// Structural class of a region's stack-frame ε and μ.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,6 +216,7 @@ impl<J> ConstitutiveTensor<J> {
     }
 
     /// The tensor of the same structure with every stored entry mapped.
+    #[cfg(test)]
     pub(crate) fn map<K>(&self, mut f: impl FnMut(&J) -> K) -> ConstitutiveTensor<K> {
         match self {
             Self::Isotropic(value) => ConstitutiveTensor::Isotropic(f(value)),
@@ -377,6 +382,23 @@ pub trait TensorConstitutiveLift<E, M>: ScalarAlgebra {
     /// and μ have no `xy`, `yx`, `yz` or `zy` component, so that TE and TM
     /// decouple in it.
     fn is_separable(material: &M) -> bool;
+
+    /// [`Self::constitutive_tensors`] in the inline form of the jets, the
+    /// form the 4×4 backends compute in.
+    #[doc(hidden)]
+    fn constitutive_tensors_inline(
+        region: StackRegion,
+        material: &M,
+        vacuum_angular_wavenumber: &Self,
+    ) -> Result<[ConstitutiveTensor<Self::Inline>; 2], ConstitutiveError>
+    where
+        Self: InlineJet,
+    {
+        Ok(
+            Self::constitutive_tensors(region, material, vacuum_angular_wavenumber)?
+                .map(|tensor| tensor.into_map(|entry| entry.to_inline())),
+        )
+    }
 }
 
 /// `[∂ε/∂k0, ∂μ/∂k0]` of a region in the stack frame and its class, lifted
@@ -455,33 +477,27 @@ type Region<S, T> = Constitutive<S, T, Real<T>>;
 impl<J, E, S, T> TensorConstitutiveLift<E, Region<S, T>> for J
 where
     T: TensorHandle,
-    J: ConstitutiveLift<E, S> + ConstitutiveLift<E, StackFrameEntry<T>>,
+    J: ConstitutiveLift<E, S> + StackFrameLift<E, T>,
     J: ScalarAlgebra<Scalar = T::Scalar>,
     J::Dimension: Dimension,
     Real<T>: Copy,
-    E: ConstitutiveEvaluator<T::Scalar, J::Dimension, S>
-        + ConstitutiveEvaluator<T::Scalar, J::Dimension, StackFrameEntry<T>>,
+    E: ConstitutiveEvaluator<T::Scalar, J::Dimension, S>,
 {
     fn constitutive_tensors(
         region: StackRegion,
         material: &Region<S, T>,
         k0: &Self,
     ) -> Result<[ConstitutiveTensor<Self>; 2], ConstitutiveError> {
-        let tensors = lift(
-            material,
-            |scalar| {
-                [
-                    <J as ConstitutiveLift<E, S>>::relative_permittivity(scalar, k0),
-                    <J as ConstitutiveLift<E, S>>::relative_permeability(scalar, k0),
-                ]
-            },
-            |entry| {
-                [
-                    <J as ConstitutiveLift<E, _>>::relative_permittivity(entry, k0),
-                    <J as ConstitutiveLift<E, _>>::relative_permeability(entry, k0),
-                ]
-            },
-        );
+        let tensors = match oriented(material) {
+            None => scalar_tensors::<J, E, S, T>(material, k0),
+            Some((material, rotation, diagonal)) => stack_frame_tensors(
+                diagonal,
+                |frame| J::stack_frame_entries(frame, k0),
+                |frame| J::stack_frame_entries(frame, k0),
+                material,
+                rotation,
+            ),
+        };
         for tensor in &tensors {
             validate(region, tensor)?;
         }
@@ -490,6 +506,99 @@ where
 
     fn is_separable(material: &Region<S, T>) -> bool {
         material.is_separable()
+    }
+
+    /// An isotropic region lifts its two scalar entries and converts them;
+    /// an oriented one lifts its entries directly in the inline form.
+    fn constitutive_tensors_inline(
+        region: StackRegion,
+        material: &Region<S, T>,
+        k0: &Self,
+    ) -> Result<[ConstitutiveTensor<J::Inline>; 2], ConstitutiveError>
+    where
+        J: InlineJet,
+    {
+        let tensors = match oriented(material) {
+            None => scalar_tensors::<J, E, S, T>(material, k0)
+                .map(|tensor| tensor.into_map(|entry| entry.to_inline())),
+            Some((material, rotation, diagonal)) => stack_frame_tensors(
+                diagonal,
+                |frame| J::stack_frame_entries_inline(frame, k0),
+                |frame| J::stack_frame_entries_inline(frame, k0),
+                material,
+                rotation,
+            ),
+        };
+        for tensor in &tensors {
+            validate(region, tensor)?;
+        }
+        Ok(tensors)
+    }
+}
+
+/// The handle, rotation and diagonal flag of an oriented region; `None` for
+/// an isotropic one.
+fn oriented<S, T: TensorHandle>(region: &Region<S, T>) -> Option<(&T, &Rotation<Real<T>>, bool)> {
+    match &region.kind {
+        Kind::Isotropic(_) => None,
+        Kind::Oriented {
+            material,
+            rotation,
+            diagonal,
+            ..
+        } => Some((material, rotation, *diagonal)),
+    }
+}
+
+/// `[ε, μ]` of an isotropic region, lifted as its scalar material.
+fn scalar_tensors<J, E, S, T>(region: &Region<S, T>, k0: &J) -> [ConstitutiveTensor<J>; 2]
+where
+    T: TensorHandle,
+    J: ConstitutiveLift<E, S>,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
+    E: ConstitutiveEvaluator<J::Scalar, J::Dimension, S>,
+{
+    let Kind::Isotropic(material) = &region.kind else {
+        unreachable!("an oriented region lifts its stack-frame entries");
+    };
+    [
+        ConstitutiveTensor::Isotropic(J::relative_permittivity(material, k0)),
+        ConstitutiveTensor::Isotropic(J::relative_permeability(material, k0)),
+    ]
+}
+
+/// `[ε, μ]` of an oriented region from its lifted stack-frame entries: the
+/// three diagonal entries of a diagonal region, all nine otherwise.
+fn stack_frame_tensors<A, T>(
+    diagonal: bool,
+    three: impl FnOnce(&StackFrame<'_, T, 3>) -> [[A; 3]; 2],
+    nine: impl FnOnce(&StackFrame<'_, T, 9>) -> [[A; 9]; 2],
+    material: &T,
+    rotation: &Rotation<Real<T>>,
+) -> [ConstitutiveTensor<A>; 2]
+where
+    T: TensorHandle,
+{
+    if diagonal {
+        three(&StackFrame {
+            material,
+            rotation,
+            positions: [(0, 0), (1, 1), (2, 2)],
+        })
+        .map(ConstitutiveTensor::Diagonal)
+    } else {
+        nine(&StackFrame {
+            material,
+            rotation,
+            positions: std::array::from_fn(|index| (index / 3, index % 3)),
+        })
+        .map(|entries| {
+            let mut entries = entries.into_iter();
+            ConstitutiveTensor::Full(std::array::from_fn(|_| {
+                std::array::from_fn(|_| entries.next().expect("nine entries"))
+            }))
+        })
     }
 }
 
@@ -576,20 +685,23 @@ fn unzip<J: Clone, const N: usize>(pairs: [[J; 2]; N]) -> [[J; N]; 2] {
 /// Every entry of a tensor of any class finite, in its value and every
 /// derivative part, and the `zz` entry of a diagonal or full tensor nonzero at
 /// every sample.
-fn validate<J>(region: StackRegion, tensor: &ConstitutiveTensor<J>) -> Result<(), ConstitutiveError>
-where
-    J: ScalarAlgebra,
-    J::Scalar: ComplexScalar,
-{
-    if !tensor.entries().all(J::all_finite) {
+fn validate<A: EntryAlgebra>(
+    region: StackRegion,
+    tensor: &ConstitutiveTensor<A>,
+) -> Result<(), ConstitutiveError> {
+    let (finite, zz) = match tensor {
+        ConstitutiveTensor::Isotropic(value) => (value.all_finite(), None),
+        ConstitutiveTensor::Diagonal(diagonal) => {
+            (diagonal.iter().all(A::all_finite), Some(&diagonal[2]))
+        }
+        ConstitutiveTensor::Full(full) => {
+            (full.iter().flatten().all(A::all_finite), Some(&full[2][2]))
+        }
+    };
+    if !finite {
         return Err(ConstitutiveError::NonFinite { region });
     }
-    let zz = match tensor {
-        ConstitutiveTensor::Isotropic(_) => return Ok(()),
-        ConstitutiveTensor::Diagonal(diagonal) => &diagonal[2],
-        ConstitutiveTensor::Full(full) => &full[2][2],
-    };
-    if zz.value().iter().any(|value| *value == J::Scalar::zero()) {
+    if zz.is_some_and(|zz| zz.sample_values().any(|value| value == A::Scalar::zero())) {
         return Err(ConstitutiveError::NormalComponentVanishes { region });
     }
     Ok(())
@@ -1247,6 +1359,179 @@ mod tests {
                 layer, &region, &k0
             )
             .is_ok()
+        );
+    }
+
+    /// The stack-frame lift (one evaluation and rotation per tensor and
+    /// coefficient, inline for point jets) against lifting each entry as its
+    /// own scalar material, bit for bit: every jet family, both domains,
+    /// diagonal and full regions, one and several samples.
+    #[test]
+    fn stack_frame_lift_is_bit_identical_to_the_per_entry_lift() {
+        use crate::algebra::{ArrayJetBivariate1, ArrayJetBivariate2, InlineJet};
+        use ndarray::{Array1, array};
+
+        let handle = AnalyticalTensorMaterialHandle::new(uniaxial::<true>());
+        let rotations = [
+            Rotation::from_euler(0.4, -1.3, 2.0),
+            Rotation::signed_permutation(SignedAxis::PlusY, SignedAxis::PlusZ, SignedAxis::PlusX)
+                .unwrap(),
+        ];
+
+        // `Debug` prints every f64 as its shortest round-trip form, so equal
+        // strings mean equal bits (including the sign of zero).
+        fn bits(jet: &impl std::fmt::Debug) -> String {
+            format!("{jet:?}")
+        }
+
+        macro_rules! check {
+            ($jet:ty, $domain:ty, $k0:expr) => {{
+                let k0: $jet = $k0;
+                for rotation in rotations {
+                    let region = Region::oriented(handle.clone(), rotation);
+                    let lifted = tensors::<$jet, $domain>(&region, &k0);
+                    for (quantity, tensor) in lifted.iter().enumerate() {
+                        for row in 0..3 {
+                            for column in 0..3 {
+                                let entry = StackFrameEntry {
+                                    material: handle.clone(),
+                                    rotation,
+                                    row,
+                                    column,
+                                };
+                                let expected = if quantity == 0 {
+                                    <$jet as ConstitutiveLift<$domain, _>>::relative_permittivity(
+                                        &entry, &k0,
+                                    )
+                                } else {
+                                    <$jet as ConstitutiveLift<$domain, _>>::relative_permeability(
+                                        &entry, &k0,
+                                    )
+                                };
+                                let actual = match tensor {
+                                    ConstitutiveTensor::Full(full) => full[row][column].clone(),
+                                    ConstitutiveTensor::Diagonal(diagonal) if row == column => {
+                                        diagonal[row].clone()
+                                    }
+                                    ConstitutiveTensor::Diagonal(_) => continue,
+                                    ConstitutiveTensor::Isotropic(_) => panic!("oriented region"),
+                                };
+                                assert_eq!(bits(&actual), bits(&expected), "({row}, {column})");
+                            }
+                        }
+                    }
+                }
+            }};
+        }
+
+        macro_rules! check_inline {
+            ($jet:ty, $domain:ty, $k0:expr) => {{
+                let k0: $jet = $k0;
+                for rotation in rotations {
+                    let region = Region::oriented(handle.clone(), rotation);
+                    let inline =
+                        <$jet as TensorConstitutiveLift<$domain, _>>::constitutive_tensors_inline(
+                            StackRegion::LeftExterior,
+                            &region,
+                            &k0,
+                        )
+                        .unwrap();
+                    let converted = tensors::<$jet, $domain>(&region, &k0)
+                        .map(|tensor| tensor.into_map(|entry| entry.to_inline()));
+                    for (inline, converted) in inline.iter().zip(&converted) {
+                        let pairs: Vec<_> = match (inline, converted) {
+                            (ConstitutiveTensor::Full(a), ConstitutiveTensor::Full(b)) => {
+                                a.iter().flatten().zip(b.iter().flatten()).collect()
+                            }
+                            (ConstitutiveTensor::Diagonal(a), ConstitutiveTensor::Diagonal(b)) => {
+                                a.iter().zip(b).collect()
+                            }
+                            _ => panic!("classes differ"),
+                        };
+                        for (a, b) in pairs {
+                            assert_eq!(bits(a), bits(b));
+                        }
+                    }
+                }
+            }};
+        }
+
+        let real = C::from(1.3);
+        let complex = C::new(1.3, -0.2);
+        let (d1, d2) = (C::new(0.7, 0.0), C::new(-0.4, 0.0));
+        let (h1, h2) = (C::new(0.7, -0.3), C::new(-0.4, 0.2));
+
+        check!(RealJ0, RealAxis, ArrayJet0::new(arr0(real)));
+        check!(
+            RealJ1,
+            RealAxis,
+            ArrayJet1::from_parts(arr0(real), arr0(d1))
+        );
+        check!(
+            RealJ2,
+            RealAxis,
+            ArrayJet2::from_parts(arr0(real), arr0(d1), arr0(d2))
+        );
+        check!(HoloJ0, ComplexPlane, ArrayJet0::new(arr0(complex)));
+        check!(
+            HoloJ1,
+            ComplexPlane,
+            ArrayJet1::from_parts(arr0(complex), arr0(h1))
+        );
+        check!(
+            HoloJ2,
+            ComplexPlane,
+            ArrayJet2::from_parts(arr0(complex), arr0(h1), arr0(h2))
+        );
+        check!(
+            ArrayJetBivariate1<C, ndarray::Ix0, P>,
+            RealAxis,
+            ArrayJetBivariate1::from_components(arr0(real), arr0(d1), arr0(d2))
+        );
+        check!(
+            ArrayJetBivariate2<C, ndarray::Ix0, H>,
+            ComplexPlane,
+            ArrayJetBivariate2::from_components(
+                arr0(complex),
+                arr0(h1),
+                arr0(h2),
+                arr0(d1),
+                arr0(d2),
+                arr0(h1 * h2)
+            )
+        );
+        let samples: Array1<C> = array![complex, C::new(0.8, 0.1), C::new(2.1, -0.4)];
+        check!(
+            ArrayJet1<C, ndarray::Ix1, H>,
+            ComplexPlane,
+            ArrayJet1::from_parts(samples.clone(), samples.mapv(|k| k * h1))
+        );
+        check!(
+            ArrayJet2<C, ndarray::Ix1, P>,
+            RealAxis,
+            ArrayJet2::from_parts(samples.mapv(|k| C::from(k.re)), samples.mapv(|_| d1), samples.mapv(|_| d2))
+        );
+
+        check_inline!(RealJ0, RealAxis, ArrayJet0::new(arr0(real)));
+        check_inline!(
+            RealJ1,
+            RealAxis,
+            ArrayJet1::from_parts(arr0(real), arr0(d1))
+        );
+        check_inline!(
+            RealJ2,
+            RealAxis,
+            ArrayJet2::from_parts(arr0(real), arr0(d1), arr0(d2))
+        );
+        check_inline!(
+            HoloJ1,
+            ComplexPlane,
+            ArrayJet1::from_parts(arr0(complex), arr0(h1))
+        );
+        check_inline!(
+            HoloJ2,
+            ComplexPlane,
+            ArrayJet2::from_parts(arr0(complex), arr0(h1), arr0(h2))
         );
     }
 }

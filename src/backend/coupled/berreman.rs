@@ -142,9 +142,9 @@ where
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
 {
-    /// [`Region::evaluate`] in the inline form of the jets: the material is
-    /// lifted with the caller's jets and the generator built from the
-    /// converted tensors.
+    /// [`Region::evaluate`] in the inline form of the jets: the stack-frame
+    /// tensors are lifted in the inline form and the generator built from
+    /// them.
     pub(crate) fn evaluate_inline<E, M, Error>(
         region: StackRegion,
         material: &M,
@@ -158,11 +158,14 @@ where
         if channel != Channel::Coupled && !J::is_separable(material) {
             return Err(ChannelError::NotInvariant { region, channel }.into());
         }
-        let tensors =
-            J::constitutive_tensors(region, material, coordinates.vacuum_angular_wavenumber())?;
+        let tensors = J::constitutive_tensors_inline(
+            region,
+            material,
+            coordinates.vacuum_angular_wavenumber(),
+        )?;
 
         Ok(Region::new(
-            &tensors.map(|tensor| tensor.map(J::to_inline)),
+            &tensors,
             &coordinates.vacuum_angular_wavenumber().to_inline(),
             &coordinates.parallel_angular_wavenumber().to_inline(),
             channel,
