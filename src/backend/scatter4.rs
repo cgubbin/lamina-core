@@ -43,7 +43,7 @@ use crate::{
     backend::{
         Channel, ChannelError, ExteriorWavevectors, RunMode, TerminationError,
         coupled::{
-            CoupledError, CoupledWorkspace, Solved, accumulate,
+            Accumulated, CoupledError, Solved, accumulate,
             berreman::{Region, reference_positions},
             coupled_backend,
             exponential::exponential,
@@ -276,7 +276,7 @@ impl Scatter4 {
         exterior: &ExteriorWavevectors<J>,
         channel: Channel,
         request: RunMode,
-    ) -> Result<CoupledWorkspace<J>, Scatter4Error>
+    ) -> Result<Accumulated<J>, Scatter4Error>
     where
         J: InlineJet + TensorConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,

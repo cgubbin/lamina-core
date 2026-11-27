@@ -179,7 +179,8 @@ impl<J, M, B> ComplexPlaneEvaluator<J, M, B> {
         B: Backend<J, ComplexPlane>,
         <B as Backend<J, ComplexPlane>>::Entries: ProjectPlaneWaveModeDeterminant,
     {
-        Ok(self.solve(coordinates, exterior, channel)?.determinant())
+        self.backend
+            .solve_determinant(coordinates, &self.stack, exterior, channel.into())
     }
 
     /// Evaluate the outgoing characteristic, checking every input and output

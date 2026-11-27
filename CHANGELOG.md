@@ -252,6 +252,14 @@ Changed:
   hidden per-jet trait `StackFrameLift` instead of
   `ConstitutiveLift<E, StackFrameEntry<T>>`, implemented for every jet family
   and dimension under the same material capabilities.
+- The complex-plane evaluator's `determinant` and `checked_determinant` (the
+  mode-search path) take the characteristic of Scatter4 and Transfer4 without
+  converting the rest of the solution (boundary subspaces, Jones responses)
+  back to the caller's jets: 0.69 M instead of 0.79 M instructions and 498
+  instead of 748 allocations per first-order Scatter4 characteristic of a
+  one-layer rotated uniaxial film, bit for bit the same. `Backend` gains a
+  provided `#[doc(hidden)]` method `solve_determinant` (default: `solve`, then
+  the determinant), overridden by the 4×4 backends.
 
 ## 0.1.0 (unreleased)
 

@@ -1202,3 +1202,65 @@ mod forms {
         );
     }
 }
+
+/// The characteristic-only solve behind `determinant` gives the bits of the
+/// full solve's characteristic, for value and first-order jets.
+#[test]
+fn determinant_only_solve_matches_the_full_solve_bit_for_bit() {
+    use crate::test_support::jet::HoloJ1;
+
+    let bits = |value: C| [value.re.to_bits(), value.im.to_bits()];
+    let stack = film(uniaxial(Rotation::from_euler(0.4, -1.3, 2.0)));
+    for beta in [c(4.3, 0.0), c(5.1, 0.02), c(6.7, -0.1)] {
+        let (coordinates, exterior) = inputs(beta, Channel::Coupled);
+        macro_rules! check {
+            ($backend:expr) => {{
+                let evaluator =
+                    ComplexPlaneEvaluator::<RealJ0, _, _>::compile(&stack, $backend).unwrap();
+                let only = evaluator
+                    .determinant(&coordinates, &exterior, Channel::Coupled)
+                    .unwrap();
+                let full = evaluator
+                    .solve(&coordinates, &exterior, Channel::Coupled)
+                    .unwrap()
+                    .determinant();
+                assert_eq!(
+                    bits(only.value().value()[()]),
+                    bits(full.value().value()[()])
+                );
+            }};
+        }
+        check!(Scatter4::new());
+        check!(Transfer4::new());
+
+        // β seeded: value and first derivative.
+        let seeded = |value: C| <HoloJ1 as SeedJet>::constant(arr0(value));
+        let coordinates = CanonicalCoordinates::new(
+            seeded(c(K0, 0.0)),
+            <HoloJ1 as SeedJet>::variable(arr0(beta), 0).unwrap(),
+        );
+        let kappa = |epsilon| seeded(decaying(epsilon, beta));
+        let exterior = ExteriorWavevectors::from_branches(
+            Some(ExteriorBranch::Pair([kappa(CLADDING), kappa(CLADDING)])),
+            Some(ExteriorBranch::Pair([kappa(SUBSTRATE), kappa(SUBSTRATE)])),
+        );
+        macro_rules! check_first {
+            ($backend:expr) => {{
+                let evaluator =
+                    ComplexPlaneEvaluator::<HoloJ1, _, _>::compile(&stack, $backend).unwrap();
+                let only = evaluator
+                    .determinant(&coordinates, &exterior, Channel::Coupled)
+                    .unwrap();
+                let full = evaluator
+                    .solve(&coordinates, &exterior, Channel::Coupled)
+                    .unwrap()
+                    .determinant();
+                let (only, full) = (only.value(), full.value());
+                assert_eq!(bits(only.value()[()]), bits(full.value()[()]));
+                assert_eq!(bits(only.first()[()]), bits(full.first()[()]));
+            }};
+        }
+        check_first!(Scatter4::new());
+        check_first!(Transfer4::new());
+    }
+}

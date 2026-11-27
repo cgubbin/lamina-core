@@ -20,7 +20,7 @@ use crate::{
     backend::{
         Channel, ChannelError, ExteriorWavevectors, RunMode, TerminationError,
         coupled::{
-            CoupledError, CoupledWorkspace, Layer, Solved, accumulate, coupled_backend,
+            Accumulated, CoupledError, Layer, Solved, accumulate, coupled_backend,
             exponential::exponential, matrix::Matrix, modal::Modal,
         },
     },
@@ -80,7 +80,7 @@ impl Transfer4 {
         exterior: &ExteriorWavevectors<J>,
         channel: Channel,
         request: RunMode,
-    ) -> Result<CoupledWorkspace<J>, Transfer4Error>
+    ) -> Result<Accumulated<J>, Transfer4Error>
     where
         J: InlineJet + TensorConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,
