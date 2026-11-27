@@ -15,6 +15,17 @@ Added:
   and `AnalyticalMaterialRegion::spectral_singularities` gives it in the stack
   frame (a full-class region declares none). `Constant` declares none unless
   ε or μ is zero.
+- `ModalDerivativeBackend::directional_forms`: closed-form integrals over every
+  region of quadratic forms `∫ f_a^{†,ᵀ} W f_b dz` of two modes' six field
+  components (`ModalForm`, `ModalFormOperand`, `ModalFormIntegrals`), in the
+  gauge of `directional_fields`, with first derivatives along the direction.
+  Weights are one 6×6 matrix for all regions or one per region. Finite layers
+  and wall gaps integrate by Van Loan block exponentials, open exteriors by a
+  Sylvester equation in their outgoing waves; a PML side is refused. The 2×2
+  backends read their mode at the interfaces, in their own gauge, and carry it
+  with the 4×4 generators of its channel. The two modes may belong to stacks
+  with the same layer thicknesses.
+- `CoupledSolution::forms`: one region's forms with general 6×6 weights.
 - `Termination`, `Wall` and `WallKind`: either side of a `Stack` may be closed
   by a perfect electric or perfect magnetic wall at an absolute position in the
   stack frame (`z = 0` at the first interface). Open remains the default.

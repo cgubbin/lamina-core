@@ -56,7 +56,7 @@ impl<A, F> FieldWeights<A> for F where
 }
 
 /// How a form pairs its left operand: conjugate transpose or transpose.
-type Pairing<A> = fn(&Matrix<A>) -> Matrix<A>;
+type Pairing<'p, A> = &'p dyn Fn(&Matrix<A>) -> Matrix<A>;
 
 /// One region of a solution: its generator data, the exponent `A` per unit
 /// depth, the state at its reference interface and its extent.
@@ -208,7 +208,7 @@ where
         &self,
         other: &Self,
         region: StackRegion,
-        pairing: Pairing<A>,
+        pairing: Pairing<'_, A>,
         weights: &[Matrix<A>],
     ) -> Option<Vec<A>> {
         let (a, b) = (self.segment(region)?, other.segment(region)?);
@@ -257,16 +257,47 @@ where
         region: StackRegion,
         weights: impl FieldWeights<A>,
     ) -> Option<BilinearLayerOverlap<A>> {
-        let [electric, magnetic] = self.overlap(other, region, Matrix::transpose, &weights)?;
+        let [electric, magnetic] = self.overlap(other, region, &Matrix::transpose, &weights)?;
         let total = electric.add(&magnetic);
         Some(BilinearLayerOverlap::from_parts(electric, magnetic, total))
+    }
+
+    /// `∫ f_a^{†,ᵀ} M f_b dz` over `region` of the six components
+    /// `f = (E, η)` of this solution (`a`) and `other` (`b`), for each
+    /// `6 × 6` weight `M`, rows indexing `f_a`. `conjugate` conjugates an
+    /// entry of `f_a` for a Hermitian form (for a jet in a real parameter,
+    /// its value and derivatives); `None` gives the bilinear form. Closed
+    /// form over a finite layer, a wall gap and an open exterior that holds
+    /// only outgoing waves; `None` for a PML side or incoming waves.
+    ///
+    /// `other` may be a solution of another stack with the same layer
+    /// thicknesses (each field evolves with its own region's generator); the
+    /// thickness of this solution's layer is used.
+    pub fn forms(
+        &self,
+        other: &Self,
+        region: StackRegion,
+        conjugate: Option<fn(&A) -> A>,
+        weights: &[[[A; 6]; 6]],
+    ) -> Option<Vec<A>> {
+        let weights: Vec<Matrix<A>> = weights
+            .iter()
+            .map(|weight| Matrix::from_fn(6, 6, |row, column| weight[row][column].clone()))
+            .collect();
+        match conjugate {
+            Some(conjugate) => {
+                let adjoint = |matrix: &Matrix<A>| matrix.transpose().map(conjugate);
+                self.integrate(other, region, &adjoint, &weights)
+            }
+            None => self.integrate(other, region, &Matrix::transpose, &weights),
+        }
     }
 
     fn overlap(
         &self,
         other: &Self,
         region: StackRegion,
-        pairing: Pairing<A>,
+        pairing: Pairing<'_, A>,
         weights: &impl FieldWeights<A>,
     ) -> Option<[A; 2]> {
         let tensors = &self.segment(region)?.region.tensors;
@@ -314,7 +345,7 @@ where
         region: StackRegion,
         weights: impl FieldWeights<A>,
     ) -> Option<HermitianLayerOverlap<A>> {
-        let [electric, magnetic] = self.overlap(other, region, Matrix::adjoint, &weights)?;
+        let [electric, magnetic] = self.overlap(other, region, &Matrix::adjoint, &weights)?;
         let total = electric.add(&magnetic);
         Some(HermitianLayerOverlap::new(electric, magnetic, total))
     }
@@ -330,7 +361,7 @@ where
             _ => like.zero_like(),
         });
         let [value] = self
-            .integrate(self, region, Matrix::adjoint, &[density])?
+            .integrate(self, region, &Matrix::adjoint, &[density])?
             .try_into()
             .ok()?;
         Some(value.real().scale(nalgebra::convert(0.5)))
@@ -340,6 +371,36 @@ where
     /// crossing it along `+z`.
     pub fn flux(&self, index: usize) -> Option<A::RealJet> {
         Some(super::flux(self.states.get(index)?).scale(nalgebra::convert(0.5)))
+    }
+}
+
+impl<A> CoupledWorkspace<A>
+where
+    A: ScalarAlgebra,
+    A::Scalar: ComplexScalar,
+    A::Dimension: Dimension,
+{
+    /// A solution of this workspace's regions with the given six components
+    /// `(E, η)` at every interface, left to right, of a mode whose exteriors
+    /// hold only outgoing waves: the tangential state of the workspace's
+    /// channel read from each. `None` for the wrong number of interfaces.
+    pub(crate) fn interface_solution(&self, fields: &[[A; 6]]) -> Option<CoupledSolution<'_, A>> {
+        let retained = self.retained.as_ref()?;
+        if fields.len() != retained.layers.len() + 1 {
+            return None;
+        }
+        let channel = self.solution.context().channel;
+        // ψ = (E_x, η_y, E_y, −η_x), restricted to the channel.
+        let full = |f: &[A; 6]| [f[0].clone(), f[4].clone(), f[1].clone(), f[3].negate()];
+        let states = fields
+            .iter()
+            .map(|f| {
+                let full = full(f);
+                let components = super::berreman::channel_components(channel);
+                Matrix::from_fn(components.len(), 1, |row, _| full[components[row]].clone())
+            })
+            .collect();
+        Some(CoupledSolution::new(self, states, [true, true]))
     }
 }
 
