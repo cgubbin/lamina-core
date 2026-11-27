@@ -51,6 +51,7 @@ pub(crate) use jet_zero::{ArrayJet0, Jet0};
 
 pub(crate) use entry::EntryAlgebra;
 pub(crate) use exprel::{exprel, exprel_first, exprel_second};
+pub(crate) use point::{Point, PointJet0, PointJet1, PointJet2};
 pub(crate) use scalar::{ComplexJet, RealScalarAlgebra, ScalarAlgebraExpRelExt};
 pub(crate) use seed::UnsupportedDerivativeSlot;
 pub(crate) use stack::JetStack;

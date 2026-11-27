@@ -20,8 +20,10 @@
 //! differentiation implementation.
 
 mod differential;
+mod stack_frame;
 
 pub(crate) use differential::ConstitutiveSpectralFirstLift;
+pub(crate) use stack_frame::{StackFrame, StackFrameLift};
 
 use ndarray::{Array, Dimension};
 use std::fmt::Debug;
