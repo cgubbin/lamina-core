@@ -74,14 +74,16 @@ impl<A: Clone> Matrix<A> {
 
     /// The given contiguous columns.
     pub(crate) fn columns_in(&self, columns: std::ops::Range<usize>) -> Self {
-        let rows: Vec<usize> = (0..self.rows).collect();
-        self.select(&rows, &columns.collect::<Vec<_>>())
+        Self::from_fn(self.rows, columns.len(), |row, column| {
+            self.get(row, columns.start + column).clone()
+        })
     }
 
     /// The given contiguous rows.
     pub(crate) fn rows_in(&self, rows: std::ops::Range<usize>) -> Self {
-        let columns: Vec<usize> = (0..self.columns).collect();
-        self.select(&rows.collect::<Vec<_>>(), &columns)
+        Self::from_fn(rows.len(), self.columns, |row, column| {
+            self.get(rows.start + row, column).clone()
+        })
     }
 
     /// `selfᵀ`.
@@ -209,8 +211,7 @@ impl<A: EntryAlgebra> Matrix<A> {
     /// The determinant of a square matrix by cofactor expansion along the
     /// first row.
     pub(crate) fn determinant(&self) -> A {
-        let all: Vec<usize> = (0..self.rows).collect();
-        self.minor(&all, &all)
+        with_indices(self.rows, |index| index, |all| self.minor(all, all))
     }
 
     /// The determinant of the submatrix of `rows` and `columns`, expanded
@@ -226,38 +227,31 @@ impl<A: EntryAlgebra> Matrix<A> {
                         .get(rows[0], columns[1])
                         .multiply(self.get(rows[1], columns[0])),
                 ),
-            n => {
-                let mut rest = Vec::with_capacity(n - 1);
-                (0..n)
-                    .map(|column| {
-                        rest.clear();
-                        rest.extend(
-                            columns
-                                .iter()
-                                .enumerate()
-                                .filter(|&(k, _)| k != column)
-                                .map(|(_, &c)| c),
-                        );
-                        let minor = self.minor(&rows[1..], &rest);
-                        let cofactor = if column % 2 == 0 {
-                            minor
-                        } else {
-                            minor.negate()
-                        };
-                        self.get(rows[0], columns[column]).multiply(&cofactor)
-                    })
-                    .reduce(|sum, term| sum.add(&term))
-                    .unwrap_or_else(|| self.get(0, 0).one_like())
-            }
+            n => (0..n)
+                .map(|column| {
+                    let minor = with_indices(n - 1, skipping(columns, column), |rest| {
+                        self.minor(&rows[1..], rest)
+                    });
+                    let cofactor = if column % 2 == 0 {
+                        minor
+                    } else {
+                        minor.negate()
+                    };
+                    self.get(rows[0], columns[column]).multiply(&cofactor)
+                })
+                .reduce(|sum, term| sum.add(&term))
+                .unwrap_or_else(|| self.get(0, 0).one_like()),
         }
     }
 
     /// The signed minor `(−1)^{row+column} det(self without row, column)`.
     fn cofactor(&self, row: usize, column: usize) -> A {
-        let keep = |skip: usize| (0..self.rows).filter(move |&index| index != skip);
-        let rows: Vec<usize> = keep(row).collect();
-        let columns: Vec<usize> = keep(column).collect();
-        let minor = self.minor(&rows, &columns);
+        let keep = |skip: usize| move |index: usize| index + usize::from(index >= skip);
+        let minor = with_indices(self.rows - 1, keep(row), |rows| {
+            with_indices(self.columns - 1, keep(column), |columns| {
+                self.minor(rows, columns)
+            })
+        });
 
         if (row + column) % 2 == 0 {
             minor
@@ -294,18 +288,22 @@ impl<A: EntryAlgebra> Matrix<A> {
     /// The largest absolute row sum of the values over every sample; NaN
     /// when a value is not finite.
     pub(crate) fn value_norm(&self) -> f64 {
+        if self.entries.first().map(A::sample_count) == Some(1) {
+            // One sample: the same sums without forming its matrix.
+            return (0..self.rows)
+                .map(|row| {
+                    (0..self.columns)
+                        .map(|column| absolute(only_sample(self.get(row, column))))
+                        .sum::<f64>()
+                })
+                .fold(0.0, max_nan);
+        }
         sample_matrices(self)
             .iter()
             .map(|matrix| {
                 matrix
                     .row_iter()
-                    .map(|row| {
-                        row.iter()
-                            .map(|value| {
-                                nalgebra::try_convert::<_, f64>(value.abs()).unwrap_or(f64::NAN)
-                            })
-                            .sum::<f64>()
-                    })
+                    .map(|row| row.iter().map(|value| absolute(*value)).sum::<f64>())
                     .fold(0.0, max_nan)
             })
             .fold(0.0, max_nan)
@@ -323,6 +321,41 @@ impl<A: crate::algebra::RealScalarAlgebra> Matrix<A> {
     }
 }
 
+/// Index lists up to this length are built on the stack.
+const INLINE_INDICES: usize = 8;
+
+/// `f` of the index list `[index(0), …, index(len − 1)]`, held on the stack
+/// when it is short: the minors of the small matrices here need no heap.
+fn with_indices<R>(len: usize, index: impl Fn(usize) -> usize, f: impl FnOnce(&[usize]) -> R) -> R {
+    if len <= INLINE_INDICES {
+        let mut buffer = [0; INLINE_INDICES];
+        for (position, slot) in buffer[..len].iter_mut().enumerate() {
+            *slot = index(position);
+        }
+        f(&buffer[..len])
+    } else {
+        f(&(0..len).map(index).collect::<Vec<_>>())
+    }
+}
+
+/// The entries of `indices` without the one at `skip`, by position.
+fn skipping(indices: &[usize], skip: usize) -> impl Fn(usize) -> usize + '_ {
+    move |position| indices[position + usize::from(position >= skip)]
+}
+
+/// The value of a one-sample entry.
+fn only_sample<A: EntryAlgebra>(entry: &A) -> A::Scalar {
+    entry
+        .sample_values()
+        .next()
+        .expect("a one-sample entry has a value")
+}
+
+/// `|value|` as `f64`, NaN when it does not convert.
+fn absolute<C: ComplexField>(value: C) -> f64 {
+    nalgebra::try_convert::<_, f64>(value.abs()).unwrap_or(f64::NAN)
+}
+
 /// `max` that propagates NaN.
 fn max_nan(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
@@ -337,6 +370,13 @@ fn max_nan(a: f64, b: f64) -> f64 {
 pub(crate) fn sample_matrices<A: EntryAlgebra>(
     matrix: &Matrix<A>,
 ) -> Vec<nalgebra::DMatrix<A::Scalar>> {
+    if matrix.entries().first().map(A::sample_count) == Some(1) {
+        return vec![nalgebra::DMatrix::from_fn(
+            matrix.rows(),
+            matrix.columns(),
+            |row, column| only_sample(matrix.get(row, column)),
+        )];
+    }
     let values: Vec<Vec<A::Scalar>> = matrix
         .entries()
         .iter()
