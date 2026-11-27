@@ -349,12 +349,22 @@ pub(crate) struct Solved<A> {
 /// A finite layer: its region and thickness.
 pub(crate) type Layer<A> = (Region<A>, A);
 
+/// A stack solved in the inline form of the caller's jets `J`, before the
+/// results are converted back.
+pub(crate) struct Accumulated<J: InlineJet> {
+    context: CoupledContext<J::Inline>,
+    layers: Vec<Layer<J::Inline>>,
+    solved: Solved<J::Inline>,
+}
+
 /// Set up `stack` and solve it with `compose`, which composes the layers
 /// between the two boundary subspaces and retains the interface states when
 /// asked.
 ///
 /// The boundaries, layers and composition run in the inline form of the
-/// caller's jets ([`InlineJet`]); the results are converted back once.
+/// caller's jets ([`InlineJet`]); [`Accumulated::into_workspace`] converts the
+/// results back once, [`Accumulated::into_characteristic`] only the
+/// characteristic.
 #[allow(clippy::type_complexity)]
 pub(crate) fn accumulate<J, E, M, Error: CoupledError>(
     coordinates: &CanonicalCoordinates<J>,
@@ -367,7 +377,7 @@ pub(crate) fn accumulate<J, E, M, Error: CoupledError>(
         &[Layer<J::Inline>],
         bool,
     ) -> Result<Solved<J::Inline>, Error>,
-) -> Result<CoupledWorkspace<J>, Error>
+) -> Result<Accumulated<J>, Error>
 where
     J: InlineJet + TensorConstitutiveLift<E, M>,
     J::Scalar: ComplexScalar,
@@ -395,82 +405,106 @@ where
     };
     let layers = layer_regions::<J, E, M, Error>(coordinates, stack, channel)?;
     let solved = compose(&context, &layers, request.is_requested())?;
-
-    // Back to the caller's jets.
-    let back = &mut J::from_inline;
-    let context = context.into_map(back);
-    let solved = Solved {
-        characteristic: back(solved.characteristic),
-        left: solved.left.into_map(&mut *back),
-        right: solved.right.into_map(&mut *back),
-        states: solved.states.map(|(states, modal)| {
-            (
-                states
-                    .into_iter()
-                    .map(|state| state.into_map(&mut *back))
-                    .collect::<Vec<_>>(),
-                modal.into_map(&mut *back),
-            )
-        }),
-    };
-
-    let m = context.left.outgoing.columns();
-    let response = |incident: &Boundary<J>,
-                    other: &Boundary<J>,
-                    columns: std::ops::Range<usize>,
-                    own: &Matrix<J>,
-                    far: &Matrix<J>| {
-        let like = own.get(0, 0);
-        if incident.incoming.is_none() {
-            let nan = Matrix::from_fn(m, m, |_, _| {
-                like.constant(J::Scalar::from_real(nalgebra::convert(f64::NAN)))
-            });
-            return Response {
-                reflection: nan.clone(),
-                transmission: nan,
-            };
-        }
-        Response {
-            reflection: own.columns_in(columns.clone()),
-            transmission: if other.incoming.is_some() {
-                far.columns_in(columns)
-            } else {
-                Matrix::zeros(m, m, like)
-            },
-        }
-    };
-    let entries = CoupledEntries {
-        characteristic: solved.characteristic,
-        responses: [
-            response(
-                &context.left,
-                &context.right,
-                0..m,
-                &solved.left,
-                &solved.right,
-            ),
-            response(
-                &context.right,
-                &context.left,
-                m..2 * m,
-                &solved.right,
-                &solved.left,
-            ),
-        ],
-    };
-    let retained = solved.states.map(|(states, modal)| Retained {
-        layers: layers
-            .into_iter()
-            .map(|(region, thickness)| (region.into_map(&mut *back), back(thickness)))
-            .collect(),
-        states,
-        modal,
-    });
-
-    Ok(CoupledWorkspace {
-        solution: PlaneWaveSolution::new(entries, context),
-        retained,
+    Ok(Accumulated {
+        context,
+        layers,
+        solved,
     })
+}
+
+impl<J> Accumulated<J>
+where
+    J: InlineJet,
+    J::Scalar: ComplexScalar,
+{
+    /// The characteristic in the caller's jets.
+    pub(crate) fn into_characteristic(self) -> J {
+        J::from_inline(self.solved.characteristic)
+    }
+
+    /// The solution, and the retained layers and states when they were
+    /// requested, in the caller's jets.
+    pub(crate) fn into_workspace(self) -> CoupledWorkspace<J> {
+        let Self {
+            context,
+            layers,
+            solved,
+        } = self;
+        let back = &mut J::from_inline;
+        let context = context.into_map(back);
+        let solved = Solved {
+            characteristic: back(solved.characteristic),
+            left: solved.left.into_map(&mut *back),
+            right: solved.right.into_map(&mut *back),
+            states: solved.states.map(|(states, modal)| {
+                (
+                    states
+                        .into_iter()
+                        .map(|state| state.into_map(&mut *back))
+                        .collect::<Vec<_>>(),
+                    modal.into_map(&mut *back),
+                )
+            }),
+        };
+
+        let m = context.left.outgoing.columns();
+        let response = |incident: &Boundary<J>,
+                        other: &Boundary<J>,
+                        columns: std::ops::Range<usize>,
+                        own: &Matrix<J>,
+                        far: &Matrix<J>| {
+            let like = own.get(0, 0);
+            if incident.incoming.is_none() {
+                let nan = Matrix::from_fn(m, m, |_, _| {
+                    like.constant(J::Scalar::from_real(nalgebra::convert(f64::NAN)))
+                });
+                return Response {
+                    reflection: nan.clone(),
+                    transmission: nan,
+                };
+            }
+            Response {
+                reflection: own.columns_in(columns.clone()),
+                transmission: if other.incoming.is_some() {
+                    far.columns_in(columns)
+                } else {
+                    Matrix::zeros(m, m, like)
+                },
+            }
+        };
+        let entries = CoupledEntries {
+            characteristic: solved.characteristic,
+            responses: [
+                response(
+                    &context.left,
+                    &context.right,
+                    0..m,
+                    &solved.left,
+                    &solved.right,
+                ),
+                response(
+                    &context.right,
+                    &context.left,
+                    m..2 * m,
+                    &solved.right,
+                    &solved.left,
+                ),
+            ],
+        };
+        let retained = solved.states.map(|(states, modal)| Retained {
+            layers: layers
+                .into_iter()
+                .map(|(region, thickness)| (region.into_map(&mut *back), back(thickness)))
+                .collect(),
+            states,
+            modal,
+        });
+
+        CoupledWorkspace {
+            solution: PlaneWaveSolution::new(entries, context),
+            retained,
+        }
+    }
 }
 
 /// The finite layers of a stack for a channel, with their thicknesses, in
@@ -532,7 +566,35 @@ macro_rules! coupled_backend {
                     channel,
                     $crate::backend::RunMode::ResponseOnly,
                 )
-                .map(SolutionWorkspace::into_solution)
+                .map(|accumulated| accumulated.into_workspace().into_solution())
+            }
+
+            /// The characteristic alone: the context and responses stay in
+            /// the inline form and are dropped.
+            fn solve_determinant<M>(
+                &self,
+                coordinates: &$crate::CanonicalCoordinates<J>,
+                stack: &$crate::input::CanonicalStack<M, J>,
+                exterior: &$crate::ExteriorWavevectors<J>,
+                channel: $crate::Channel,
+            ) -> Result<
+                <Self::Entries as $crate::observable::ProjectPlaneWaveModeDeterminant>::Determinant,
+                Self::Error,
+            >
+            where
+                J: $crate::material::TensorConstitutiveLift<Domain, M>,
+            {
+                Self::accumulate::<J, Domain, M>(
+                    self,
+                    coordinates,
+                    stack,
+                    exterior,
+                    channel,
+                    $crate::backend::RunMode::ResponseOnly,
+                )
+                .map(|accumulated| {
+                    $crate::PlaneWaveDeterminant::new(accumulated.into_characteristic())
+                })
             }
 
             fn retain<M>(
@@ -553,6 +615,7 @@ macro_rules! coupled_backend {
                     channel,
                     $crate::backend::RunMode::InternalFields,
                 )
+                .map($crate::backend::coupled::Accumulated::into_workspace)
             }
         }
     };

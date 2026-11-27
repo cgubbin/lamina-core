@@ -23,7 +23,7 @@
 
 use crate::{
     CanonicalCoordinates, ComplexScalar, algebra::Jet, input::CanonicalStack,
-    material::TensorConstitutiveLift,
+    material::TensorConstitutiveLift, observable::ProjectPlaneWaveModeDeterminant,
 };
 
 use ndarray::Dimension;
@@ -150,4 +150,24 @@ where
     ) -> Result<Self::Workspace, Self::Error>
     where
         J: TensorConstitutiveLift<Domain, M>;
+
+    /// The mode determinant of [`Self::solve`] alone. A backend may skip
+    /// work that only the rest of the solution needs; the determinant is the
+    /// same.
+    #[doc(hidden)]
+    fn solve_determinant<M>(
+        &self,
+        coordinates: &CanonicalCoordinates<J>,
+        stack: &CanonicalStack<M, J>,
+        exterior: &ExteriorWavevectors<J>,
+        channel: Channel,
+    ) -> Result<<Self::Entries as ProjectPlaneWaveModeDeterminant>::Determinant, Self::Error>
+    where
+        J: TensorConstitutiveLift<Domain, M>,
+        Self::Entries: ProjectPlaneWaveModeDeterminant,
+    {
+        Ok(self
+            .solve(coordinates, stack, exterior, channel)?
+            .determinant())
+    }
 }
