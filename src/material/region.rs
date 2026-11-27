@@ -211,11 +211,32 @@ impl<J> ConstitutiveTensor<J> {
         }
     }
 
+    /// The tensor of the same structure with every stored entry mapped.
+    pub(crate) fn map<K>(&self, mut f: impl FnMut(&J) -> K) -> ConstitutiveTensor<K> {
+        match self {
+            Self::Isotropic(value) => ConstitutiveTensor::Isotropic(f(value)),
+            Self::Diagonal(diagonal) => ConstitutiveTensor::Diagonal(diagonal.each_ref().map(f)),
+            Self::Full(full) => {
+                ConstitutiveTensor::Full(full.each_ref().map(|row| row.each_ref().map(&mut f)))
+            }
+        }
+    }
+
+    /// The tensor of the same structure with every stored entry mapped by
+    /// value.
+    pub(crate) fn into_map<K>(self, mut f: impl FnMut(J) -> K) -> ConstitutiveTensor<K> {
+        match self {
+            Self::Isotropic(value) => ConstitutiveTensor::Isotropic(f(value)),
+            Self::Diagonal(diagonal) => ConstitutiveTensor::Diagonal(diagonal.map(f)),
+            Self::Full(full) => ConstitutiveTensor::Full(full.map(|row| row.map(&mut f))),
+        }
+    }
+
     /// All nine entries, row-major, with the structural zeros of an
     /// isotropic or diagonal tensor.
     pub(crate) fn full(&self) -> [[J; 3]; 3]
     where
-        J: ScalarAlgebra,
+        J: crate::algebra::EntryAlgebra,
     {
         match self {
             Self::Full(full) => full.clone(),
@@ -227,7 +248,7 @@ impl<J> ConstitutiveTensor<J> {
                     if row == column {
                         diagonal[row].clone()
                     } else {
-                        diagonal[row].zero_like()
+                        crate::algebra::EntryAlgebra::zero_like(&diagonal[row])
                     }
                 })
             }),

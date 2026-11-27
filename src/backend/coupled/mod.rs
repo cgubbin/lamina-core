@@ -39,6 +39,9 @@ pub(crate) mod modal;
 pub(crate) mod solution;
 pub(crate) mod split;
 
+#[cfg(test)]
+mod point_tests;
+
 use nalgebra::ComplexField;
 use ndarray::Dimension;
 use num_traits::One;
@@ -46,7 +49,7 @@ use num_traits::One;
 use crate::{
     ComplexScalar, FiniteLayerIndex, IncidentSide, JonesAmplitudes, PlaneWaveDeterminant,
     PlaneWavePower,
-    algebra::{RealScalarAlgebra, ScalarAlgebra},
+    algebra::{EntryAlgebra, InlineJet, RealScalarAlgebra, ScalarAlgebra},
     backend::{
         Channel, ChannelError, ExteriorBranch, ExteriorSelectionError, ExteriorWavevectors,
         ModalSolutionSource, ModeReconstructionError, PlaneWaveEntries, PlaneWaveSolution,
@@ -91,33 +94,32 @@ pub(crate) struct Boundary<A> {
     gap: Option<A>,
 }
 
-impl<A> Boundary<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
-    fn new<E, M, Error: CoupledError>(
+impl<A: EntryAlgebra> Boundary<A> {
+    /// The boundary of `side` in the inline form `A` of the caller's jets
+    /// `J`.
+    fn new<J, E, M, Error: CoupledError>(
         side: StackSide,
-        coordinates: &CanonicalCoordinates<A>,
+        coordinates: &CanonicalCoordinates<J>,
         material: &M,
-        termination: &CanonicalTermination<A>,
-        branch: Option<&ExteriorBranch<A>>,
+        termination: &CanonicalTermination<J>,
+        branch: Option<&ExteriorBranch<J>>,
         channel: Channel,
     ) -> Result<Self, Error>
     where
-        A: TensorConstitutiveLift<E, M>,
+        J: InlineJet<Inline = A> + TensorConstitutiveLift<E, M>,
+        J::Scalar: ComplexScalar,
+        J::Dimension: Dimension,
     {
         let name = match side {
             StackSide::Left => StackRegion::LeftExterior,
             StackSide::Right => StackRegion::RightExterior,
         };
-        let region = Region::evaluate::<E, M, Error>(name, material, coordinates, channel)?;
+        let region = Region::evaluate_inline::<E, M, Error>(name, material, coordinates, channel)?;
         let generator = &region.generator;
         let like = generator.get(0, 0);
 
         let Some(branch) = branch else {
-            let (outgoing, gap) = closed_subspace::<A, E, M, Error>(
+            let (outgoing, gap) = closed_subspace::<J, E, M, Error>(
                 side,
                 name,
                 coordinates,
@@ -135,10 +137,12 @@ where
             });
         };
 
-        let outward = match (branch, channel) {
-            (ExteriorBranch::Pair(pair), Channel::Coupled) => pair.to_vec(),
+        let outward: Vec<A> = match (branch, channel) {
+            (ExteriorBranch::Pair(pair), Channel::Coupled) => {
+                pair.iter().map(J::to_inline).collect()
+            }
             (ExteriorBranch::Scalar(kappa), _) if channel != Channel::Coupled => {
-                vec![kappa.clone()]
+                vec![kappa.to_inline()]
             }
             _ => return Err(ChannelError::BranchKind { side, channel }.into()),
         };
@@ -159,23 +163,35 @@ where
             gap: None,
         })
     }
+
+    /// The boundary with every jet mapped, for moving between jet forms.
+    fn into_map<B>(self, f: &mut impl FnMut(A) -> B) -> Boundary<B> {
+        Boundary {
+            region: self.region.into_map(f),
+            outgoing: self.outgoing.into_map(&mut *f),
+            incoming: self.incoming.map(|incoming| incoming.into_map(&mut *f)),
+            conditioning: self.conditioning,
+            gap: self.gap.map(&mut *f),
+        }
+    }
 }
 
 /// The states a closed side admits at its outermost interface, and the
 /// distance to its wall when it has no PML.
-fn closed_subspace<A, E, M, Error: CoupledError>(
+#[allow(clippy::type_complexity)]
+fn closed_subspace<J, E, M, Error: CoupledError>(
     side: StackSide,
     name: StackRegion,
-    coordinates: &CanonicalCoordinates<A>,
+    coordinates: &CanonicalCoordinates<J>,
     material: &M,
-    termination: &CanonicalTermination<A>,
-    region: &Region<A>,
+    termination: &CanonicalTermination<J>,
+    region: &Region<J::Inline>,
     channel: Channel,
-) -> Result<(Matrix<A>, Option<A>), Error>
+) -> Result<(Matrix<J::Inline>, Option<J::Inline>), Error>
 where
-    A: ScalarAlgebra + TensorConstitutiveLift<E, M>,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    J: InlineJet + TensorConstitutiveLift<E, M>,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
 {
     let (Some(kind), Some(gap)) = (termination.wall_kind(), termination.gap_cm()) else {
         return Err(TerminationError::ExteriorBranchMismatch { side, open: true }.into());
@@ -186,26 +202,24 @@ where
         WallKind::PerfectElectric => local_positions(channel, &[1, 3]),
         WallKind::PerfectMagnetic => local_positions(channel, &[0, 2]),
     };
-    let i = A::Scalar::i();
+    let i = J::Scalar::i();
 
     // Right: ψ = exp(−iℓ(K − n_ref)) w; left: ψ = exp(iℓ(K + n_ref)) w.
     let mut exponent = match side {
         StackSide::Right => generator.scale(-i),
         StackSide::Left => generator.scale(i),
     };
-    let mut length = gap.clone();
-    let mut wall_gap = Some(gap.clone());
+    let mut length = gap.to_inline();
+    let mut wall_gap = Some(length.clone());
     if let Some(pml) = termination.pml() {
         wall_gap = None;
-        let at_normal = CanonicalCoordinates::new(
-            coordinates.vacuum_angular_wavenumber().clone(),
-            like.zero_like(),
-        );
-        let normal = Region::evaluate::<E, M, Error>(name, material, &at_normal, channel)?;
+        let k0 = coordinates.vacuum_angular_wavenumber();
+        let at_normal = CanonicalCoordinates::new(k0.clone(), ScalarAlgebra::zero_like(k0));
+        let normal = Region::evaluate_inline::<E, M, Error>(name, material, &at_normal, channel)?;
         let e2 = &Monic::characteristic(&normal.generator).0[n - 2];
         let reference = e2.scale(nalgebra::convert(-2.0 / n as f64)).sqrt();
         exponent = exponent.shift(&reference.scale(i));
-        length = length.add(&pml.optical_thickness_cm);
+        length = length.add(&pml.optical_thickness_cm.to_inline());
     }
     Ok((
         exponential::exponential(&exponent.scale_by(&length))
@@ -244,12 +258,17 @@ impl<A> CoupledContext<A> {
     }
 }
 
-impl<A> CoupledContext<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+impl<A: EntryAlgebra> CoupledContext<A> {
+    /// The context with every jet mapped, for moving between jet forms.
+    fn into_map<B>(self, f: &mut impl FnMut(A) -> B) -> CoupledContext<B> {
+        CoupledContext {
+            channel: self.channel,
+            vacuum_angular_wavenumber: f(self.vacuum_angular_wavenumber),
+            left: self.left.into_map(f),
+            right: self.right.into_map(f),
+        }
+    }
+
     /// The incoming states at the first and at the last interface of the
     /// `2m` excitations: unit amplitude in each incoming wave of the left
     /// side, then of the right side (zero for a closed side).
@@ -333,26 +352,34 @@ pub(crate) type Layer<A> = (Region<A>, A);
 /// Set up `stack` and solve it with `compose`, which composes the layers
 /// between the two boundary subspaces and retains the interface states when
 /// asked.
+///
+/// The boundaries, layers and composition run in the inline form of the
+/// caller's jets ([`InlineJet`]); the results are converted back once.
+#[allow(clippy::type_complexity)]
 pub(crate) fn accumulate<J, E, M, Error: CoupledError>(
     coordinates: &CanonicalCoordinates<J>,
     stack: &CanonicalStack<M, J>,
     exterior: &ExteriorWavevectors<J>,
     channel: Channel,
     request: RunMode,
-    compose: impl FnOnce(&CoupledContext<J>, &[Layer<J>], bool) -> Result<Solved<J>, Error>,
+    compose: impl FnOnce(
+        &CoupledContext<J::Inline>,
+        &[Layer<J::Inline>],
+        bool,
+    ) -> Result<Solved<J::Inline>, Error>,
 ) -> Result<CoupledWorkspace<J>, Error>
 where
-    J: ScalarAlgebra + TensorConstitutiveLift<E, M>,
+    J: InlineJet + TensorConstitutiveLift<E, M>,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
 {
     check_exterior_pattern(stack, exterior)?;
     let boundary = |side, material, termination, branch| {
-        Boundary::new::<E, M, Error>(side, coordinates, material, termination, branch, channel)
+        Boundary::new::<J, E, M, Error>(side, coordinates, material, termination, branch, channel)
     };
     let context = CoupledContext {
         channel,
-        vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().clone(),
+        vacuum_angular_wavenumber: coordinates.vacuum_angular_wavenumber().to_inline(),
         left: boundary(
             StackSide::Left,
             stack.left_exterior(),
@@ -368,6 +395,24 @@ where
     };
     let layers = layer_regions::<J, E, M, Error>(coordinates, stack, channel)?;
     let solved = compose(&context, &layers, request.is_requested())?;
+
+    // Back to the caller's jets.
+    let back = &mut J::from_inline;
+    let context = context.into_map(back);
+    let solved = Solved {
+        characteristic: back(solved.characteristic),
+        left: solved.left.into_map(&mut *back),
+        right: solved.right.into_map(&mut *back),
+        states: solved.states.map(|(states, modal)| {
+            (
+                states
+                    .into_iter()
+                    .map(|state| state.into_map(&mut *back))
+                    .collect::<Vec<_>>(),
+                modal.into_map(&mut *back),
+            )
+        }),
+    };
 
     let m = context.left.outgoing.columns();
     let response = |incident: &Boundary<J>,
@@ -414,7 +459,10 @@ where
         ],
     };
     let retained = solved.states.map(|(states, modal)| Retained {
-        layers,
+        layers: layers
+            .into_iter()
+            .map(|(region, thickness)| (region.into_map(&mut *back), back(thickness)))
+            .collect(),
         states,
         modal,
     });
@@ -425,16 +473,17 @@ where
     })
 }
 
-/// The finite layers of a stack for a channel, with their thicknesses.
-pub(crate) fn layer_regions<A, E, M, Error>(
-    coordinates: &CanonicalCoordinates<A>,
-    stack: &CanonicalStack<M, A>,
+/// The finite layers of a stack for a channel, with their thicknesses, in
+/// the inline form of the jets.
+pub(crate) fn layer_regions<J, E, M, Error>(
+    coordinates: &CanonicalCoordinates<J>,
+    stack: &CanonicalStack<M, J>,
     channel: Channel,
-) -> Result<Vec<Layer<A>>, Error>
+) -> Result<Vec<Layer<J::Inline>>, Error>
 where
-    A: ScalarAlgebra + TensorConstitutiveLift<E, M>,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
+    J: InlineJet + TensorConstitutiveLift<E, M>,
+    J::Scalar: ComplexScalar,
+    J::Dimension: Dimension,
     Error: From<ConstitutiveError> + From<ChannelError>,
 {
     stack
@@ -443,8 +492,8 @@ where
         .enumerate()
         .map(|(index, layer)| {
             let name = StackRegion::Layer(FiniteLayerIndex::new(index));
-            Region::evaluate::<E, M, Error>(name, layer.material(), coordinates, channel)
-                .map(|region| (region, layer.thickness_cm().clone()))
+            Region::evaluate_inline::<E, M, Error>(name, layer.material(), coordinates, channel)
+                .map(|region| (region, layer.thickness_cm().to_inline()))
         })
         .collect()
 }
@@ -455,7 +504,7 @@ macro_rules! coupled_backend {
     ($backend:ty, $error:ty) => {
         impl<J, Domain> $crate::backend::Backend<J, Domain> for $backend
         where
-            J: $crate::algebra::ScalarAlgebra,
+            J: $crate::algebra::InlineJet,
             J::Scalar: $crate::ComplexScalar,
             J::Dimension: ndarray::Dimension,
             <J::Scalar as nalgebra::ComplexField>::RealField: Copy,

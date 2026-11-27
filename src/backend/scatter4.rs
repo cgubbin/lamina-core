@@ -39,7 +39,7 @@ use num_traits::One;
 
 use crate::{
     CanonicalCoordinates, ComplexScalar, FiniteLayerIndex,
-    algebra::ScalarAlgebra,
+    algebra::{EntryAlgebra, InlineJet},
     backend::{
         Channel, ChannelError, ExteriorWavevectors, RunMode, TerminationError,
         coupled::{
@@ -136,12 +136,7 @@ struct EigenLayer<A> {
     backward_phase: Matrix<A>,
 }
 
-impl<A> EigenLayer<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+impl<A: EntryAlgebra> EigenLayer<A> {
     /// The layer `region` of `thickness` with forward waves from `split`.
     fn new(region: &Region<A>, split: &Split<A>, thickness: &A, channel: Channel) -> Self {
         let generator = &region.generator;
@@ -175,16 +170,11 @@ where
 /// per excitation. Eliminating continuity into the next layer gives
 /// `[b; a] = Z [c; 1]`, with `a` and `c` the forward and backward amplitudes
 /// of the layer at its left boundary.
-fn sweep<A>(
+fn sweep<A: EntryAlgebra>(
     context: &crate::backend::coupled::CoupledContext<A>,
     layers: &[EigenLayer<A>],
     retain: bool,
-) -> Solved<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+) -> Solved<A> {
     let (left, right) = (
         &context.boundary(StackSide::Left).outgoing,
         &context.boundary(StackSide::Right).outgoing,
@@ -288,7 +278,7 @@ impl Scatter4 {
         request: RunMode,
     ) -> Result<CoupledWorkspace<J>, Scatter4Error>
     where
-        J: ScalarAlgebra + TensorConstitutiveLift<E, M>,
+        J: InlineJet + TensorConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
     {
@@ -306,7 +296,7 @@ impl Scatter4 {
                 );
                 let references =
                     layer_regions::<J, E, M, Scatter4Error>(&reference, stack, channel)?;
-                Box::new(move |index, region: &Region<J>| {
+                Box::new(move |index, region: &Region<J::Inline>| {
                     Split::select(
                         &region.generator,
                         &references[index].0.generator,
@@ -317,7 +307,7 @@ impl Scatter4 {
             }
             Some(reference) => {
                 let roots = continued_roots::<J, E, M>(reference, coordinates, stack, channel)?;
-                Box::new(move |index, region: &Region<J>| {
+                Box::new(move |index, region: &Region<J::Inline>| {
                     Split::from_ordered(&region.generator, &roots[index]).ok_or(defective(index))
                 })
             }
@@ -345,7 +335,13 @@ impl Scatter4 {
 }
 
 /// The split of finite layer `index`.
-type LayerSplits<'a, J> = Box<dyn Fn(usize, &Region<J>) -> Result<Split<J>, Scatter4Error> + 'a>;
+type LayerSplits<'a, J> = Box<
+    dyn Fn(
+            usize,
+            &Region<<J as InlineJet>::Inline>,
+        ) -> Result<Split<<J as InlineJet>::Inline>, Scatter4Error>
+        + 'a,
+>;
 
 /// Each layer's eigenvalues at every sample of `coordinates`, forward first,
 /// classified at `reference` and tracked along the segment from it.
@@ -357,7 +353,7 @@ fn continued_roots<J, E, M>(
     channel: Channel,
 ) -> Result<Vec<Vec<Vec<J::Scalar>>>, Scatter4Error>
 where
-    J: ScalarAlgebra + TensorConstitutiveLift<E, M>,
+    J: InlineJet + TensorConstitutiveLift<E, M>,
     J::Scalar: ComplexScalar,
     J::Dimension: Dimension,
 {

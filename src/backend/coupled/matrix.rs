@@ -6,9 +6,8 @@
 //! derivative component.
 
 use nalgebra::ComplexField;
-use ndarray::Dimension;
 
-use crate::{ComplexScalar, algebra::ScalarAlgebra};
+use crate::algebra::EntryAlgebra;
 
 /// A dense row-major matrix of jets.
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +44,15 @@ impl<A> Matrix<A> {
 
     pub(crate) fn entries(&self) -> &[A] {
         &self.entries
+    }
+
+    /// The matrix of the entries mapped by value.
+    pub(crate) fn into_map<B>(self, f: impl FnMut(A) -> B) -> Matrix<B> {
+        Matrix {
+            rows: self.rows,
+            columns: self.columns,
+            entries: self.entries.into_iter().map(f).collect(),
+        }
     }
 
     pub(crate) fn map<B>(&self, f: impl FnMut(&A) -> B) -> Matrix<B> {
@@ -106,12 +114,7 @@ impl<A: Clone> Matrix<A> {
     }
 }
 
-impl<A> Matrix<A>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-    A::Dimension: Dimension,
-{
+impl<A: EntryAlgebra> Matrix<A> {
     /// The `rows × columns` zero matrix with the sampled shape of `like`.
     pub(crate) fn zeros(rows: usize, columns: usize, like: &A) -> Self {
         Self::from_fn(rows, columns, |_, _| like.zero_like())
@@ -331,15 +334,13 @@ fn max_nan(a: f64, b: f64) -> f64 {
 
 /// The values of a matrix of jets, one matrix per sample in the logical order
 /// of the sampled arrays.
-pub(crate) fn sample_matrices<A>(matrix: &Matrix<A>) -> Vec<nalgebra::DMatrix<A::Scalar>>
-where
-    A: ScalarAlgebra,
-    A::Scalar: ComplexScalar,
-{
+pub(crate) fn sample_matrices<A: EntryAlgebra>(
+    matrix: &Matrix<A>,
+) -> Vec<nalgebra::DMatrix<A::Scalar>> {
     let values: Vec<Vec<A::Scalar>> = matrix
         .entries()
         .iter()
-        .map(|entry| entry.value().iter().copied().collect())
+        .map(|entry| entry.sample_values().collect())
         .collect();
     let samples = values.first().map_or(0, Vec::len);
 

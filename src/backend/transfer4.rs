@@ -16,7 +16,7 @@ use num_traits::One;
 
 use crate::{
     CanonicalCoordinates, ComplexScalar,
-    algebra::ScalarAlgebra,
+    algebra::InlineJet,
     backend::{
         Channel, ChannelError, ExteriorWavevectors, RunMode, TerminationError,
         coupled::{
@@ -82,7 +82,7 @@ impl Transfer4 {
         request: RunMode,
     ) -> Result<CoupledWorkspace<J>, Transfer4Error>
     where
-        J: ScalarAlgebra + TensorConstitutiveLift<E, M>,
+        J: InlineJet + TensorConstitutiveLift<E, M>,
         J::Scalar: ComplexScalar,
         J::Dimension: Dimension,
     {
@@ -99,7 +99,7 @@ impl Transfer4 {
                 );
                 let (n, m) = (left.rows(), left.columns());
                 let i = J::Scalar::i();
-                let propagator = |sign: J::Scalar, (region, thickness): &Layer<J>| {
+                let propagator = |sign: J::Scalar, (region, thickness): &Layer<J::Inline>| {
                     exponential(&region.generator.scale(sign * i).scale_by(thickness))
                 };
                 let transfer = layers
