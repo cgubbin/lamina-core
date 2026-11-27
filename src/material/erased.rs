@@ -6,7 +6,7 @@
 
 use super::{
     DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial, Material,
-    MeromorphicMaterial, Scalar,
+    MeromorphicMaterial, Scalar, SpectralSingularity,
 };
 use crate::ComplexScalar;
 
@@ -80,6 +80,7 @@ where
 {
     fn relative_permittivity_complex_at(&self, vacuum_angular_wavenumber: C) -> C;
     fn relative_permeability_complex_at(&self, vacuum_angular_wavenumber: C) -> C;
+    fn declared_singularities(&self) -> Option<Vec<SpectralSingularity<C>>>;
 }
 
 impl<M, C> MeromorphicMaterialPoint<C> for M
@@ -94,6 +95,10 @@ where
 
     fn relative_permeability_complex_at(&self, vacuum_angular_wavenumber: C) -> C {
         self.relative_permeability_complex(Scalar(vacuum_angular_wavenumber))
+    }
+
+    fn declared_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        self.spectral_singularities()
     }
 }
 

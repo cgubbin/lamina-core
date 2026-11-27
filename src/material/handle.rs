@@ -11,7 +11,7 @@ use crate::ComplexScalar;
 use super::{
     DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
     EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
-    EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, Sampled,
+    EvaluateMeromorphicMaterial, Material, MeromorphicMaterial, Sampled, SpectralSingularity,
     erased::{
         DifferentiableMaterialPoint, DifferentiableMeromorphicMaterialPoint, MaterialPoint,
         MeromorphicMaterialPoint,
@@ -265,6 +265,12 @@ where
     pub fn concrete_type_name(&self) -> &'static str {
         self.type_name
     }
+
+    /// The material's declared poles and zeros, or `None` when it declares
+    /// none; see [`MeromorphicMaterial::spectral_singularities`].
+    pub fn spectral_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        self.inner.declared_singularities()
+    }
 }
 
 impl<M, C> From<M> for MeromorphicMaterialHandle<C>
@@ -393,6 +399,12 @@ where
     /// Return the erased concrete Rust type name.
     pub fn concrete_type_name(&self) -> &'static str {
         self.type_name
+    }
+
+    /// The material's declared poles and zeros, or `None` when it declares
+    /// none; see [`MeromorphicMaterial::spectral_singularities`].
+    pub fn spectral_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        self.inner.declared_singularities()
     }
 }
 

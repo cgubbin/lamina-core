@@ -3,7 +3,10 @@ use num_traits::{Float, One, Zero};
 use super::{DerivativeOrder, Material, Sampled};
 use crate::{
     ComplexScalar,
-    material::{DifferentiableMaterial, DifferentiableMeromorphicMaterial, MeromorphicMaterial},
+    material::{
+        DifferentiableMaterial, DifferentiableMeromorphicMaterial, MeromorphicMaterial,
+        SpectralSingularity,
+    },
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -94,6 +97,14 @@ where
         I: Sampled<Elem = C>,
     {
         vacuum_angular_wavenumber.map(|_| C::from_real(self.mu))
+    }
+
+    /// None, unless ε or μ is zero and so vanishes everywhere.
+    fn spectral_singularities<C>(&self) -> Option<Vec<SpectralSingularity<C>>>
+    where
+        C: ComplexScalar<RealField = Self::Real>,
+    {
+        (self.epsilon != R::zero() && self.mu != R::zero()).then(Vec::new)
     }
 }
 

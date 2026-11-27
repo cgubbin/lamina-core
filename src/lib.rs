@@ -439,12 +439,13 @@ pub use spatial::{
 pub use material::{
     AnalyticalMaterialHandle, AnalyticalMaterialRegion, AnalyticalTensorMaterialHandle, Constant,
     Constitutive, ConstitutiveClass, ConstitutiveError, ConstitutiveEvaluator, ConstitutiveLift,
-    ConstitutiveTensor, DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial,
-    DifferentiableMeromorphicTensorMaterial, DifferentiableTensorMaterial,
-    EvaluateDifferentiableMaterial, EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial,
-    EvaluateMeromorphicMaterial, Material, MaterialRegion, MeromorphicMaterial,
-    MeromorphicTensorMaterial, Rotation, RotationError, Sampled, Scalar, ScalarMaterial,
-    SignedAxis, Tensor3, TensorConstitutiveLift, TensorMaterial, TensorMaterialHandle,
+    ConstitutiveQuantity, ConstitutiveTensor, DerivativeOrder, DifferentiableMaterial,
+    DifferentiableMeromorphicMaterial, DifferentiableMeromorphicTensorMaterial,
+    DifferentiableTensorMaterial, EvaluateDifferentiableMaterial,
+    EvaluateDifferentiableMeromorphicMaterial, EvaluateMaterial, EvaluateMeromorphicMaterial,
+    Material, MaterialRegion, MeromorphicMaterial, MeromorphicTensorMaterial, Rotation,
+    RotationError, Sampled, Scalar, ScalarMaterial, SignedAxis, SingularityKind,
+    SpectralSingularity, Tensor3, TensorConstitutiveLift, TensorMaterial, TensorMaterialHandle,
 };
 
 pub use field::VectorField;

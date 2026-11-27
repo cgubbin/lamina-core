@@ -12,7 +12,7 @@ use num_traits::{One, Zero};
 
 use super::{
     DerivativeOrder, DifferentiableMaterial, DifferentiableMeromorphicMaterial, Material,
-    MeromorphicMaterial, Sampled, Scalar,
+    MeromorphicMaterial, Sampled, Scalar, SpectralSingularity,
 };
 use crate::ComplexScalar;
 
@@ -122,6 +122,23 @@ pub trait MeromorphicTensorMaterial: TensorMaterial {
     where
         C: ComplexScalar<RealField = Self::Real>,
         I: Sampled<Elem = C>;
+
+    /// Every pole and zero of the diagonal entries of ε and μ in the finite
+    /// complex `k₀` plane, in the material's own frame; or `None` when the
+    /// model does not declare them.
+    ///
+    /// Only a material diagonal in its own frame
+    /// ([`TensorMaterial::PRINCIPAL_AXES`]) may declare. Each point names its
+    /// entry in `axis`, or `None` when it is on all three. As for
+    /// [`MeromorphicMaterial::spectral_singularities`], a declaration
+    /// promises that no other pole or zero exists, and the default declares
+    /// nothing.
+    fn tensor_spectral_singularities<C>(&self) -> Option<Vec<SpectralSingularity<C>>>
+    where
+        C: ComplexScalar<RealField = Self::Real>,
+    {
+        None
+    }
 }
 
 /// Meromorphic tensor material model with complex derivatives.
@@ -190,7 +207,14 @@ scalar_as_isotropic!(DifferentiableTensorMaterial for DifferentiableMaterial, Se
     relative_permittivity_tensor_derivative => relative_permittivity_derivative(order);
     relative_permeability_tensor_derivative => relative_permeability_derivative(order);
 );
-scalar_as_isotropic!(MeromorphicTensorMaterial for MeromorphicMaterial, C {}
+scalar_as_isotropic!(MeromorphicTensorMaterial for MeromorphicMaterial, C {
+    fn tensor_spectral_singularities<C>(&self) -> Option<Vec<SpectralSingularity<C>>>
+    where
+        C: ComplexScalar<RealField = Self::Real>,
+    {
+        self.spectral_singularities()
+    }
+}
     relative_permittivity_tensor_complex => relative_permittivity_complex;
     relative_permeability_tensor_complex => relative_permeability_complex;
 );
@@ -234,6 +258,7 @@ pub trait TensorMaterialPoint<C: ComplexScalar>: TensorMaterialValuePoint<C> {
     fn permeability_complex_at(&self, k0: C) -> Tensor3<C>;
     fn permittivity_complex_derivative_at(&self, k0: C, order: DerivativeOrder) -> Tensor3<C>;
     fn permeability_complex_derivative_at(&self, k0: C, order: DerivativeOrder) -> Tensor3<C>;
+    fn declared_singularities(&self) -> Option<Vec<SpectralSingularity<C>>>;
 }
 
 impl<M, C> TensorMaterialPoint<C> for M
@@ -264,6 +289,14 @@ where
 
     fn permeability_complex_derivative_at(&self, k0: C, order: DerivativeOrder) -> Tensor3<C> {
         self.relative_permeability_tensor_complex_derivative(Scalar(k0), order)
+    }
+
+    fn declared_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        if M::PRINCIPAL_AXES {
+            self.tensor_spectral_singularities()
+        } else {
+            None
+        }
     }
 }
 
@@ -373,6 +406,15 @@ tensor_handles!(
     TensorMaterialHandle: TensorMaterial => TensorMaterialValuePoint;
     AnalyticalTensorMaterialHandle: DifferentiableMeromorphicTensorMaterial => TensorMaterialPoint;
 );
+
+impl<C: ComplexScalar> AnalyticalTensorMaterialHandle<C> {
+    /// The material's declared poles and zeros in its own frame, or `None`
+    /// when it declares none; see
+    /// [`MeromorphicTensorMaterial::tensor_spectral_singularities`].
+    pub fn spectral_singularities(&self) -> Option<Vec<SpectralSingularity<C>>> {
+        self.inner.declared_singularities()
+    }
+}
 
 #[cfg(test)]
 mod tests {
