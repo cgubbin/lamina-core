@@ -5,6 +5,8 @@ released in step until 1.0. Each entry names any shared convention it changes.
 
 ## Unreleased
 
+## 0.2.0 (2026-11-27)
+
 Added:
 
 - Declared spectral singularities: `MeromorphicMaterial::spectral_singularities`
@@ -261,7 +263,7 @@ Changed:
   provided `#[doc(hidden)]` method `solve_determinant` (default: `solve`, then
   the determinant), overridden by the 4×4 backends.
 
-## 0.1.0 (unreleased)
+## 0.1.0
 
 First release on crates.io.
 
